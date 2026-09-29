@@ -6,9 +6,11 @@ models:
     id: claude-sonnet-5-5
     effort: high
     thinking_display: summarized   # readable summaries of reasoning in the agent's text box
+    max_tokens: 32000
   associate:                  # Ledger, Pip, Tally, Wren, Juno: tool runs, data pulls, first drafts, routing
     id: claude-haiku-4-5
     thinking_budget_tokens: 2048   # Haiku 4.5 uses a thinking token budget, not effort (0 = off)
+    max_tokens: 16000
 
 # USD per million tokens (Anthropic first-party rates, checked 2026-09-29).
 # Cache writes: 5-minute TTL = 1.25x input, 1-hour TTL = 2x input. Cache reads = 0.1x input.
@@ -19,7 +21,7 @@ pricing:
 delegation:                   # a lead hands a narrow job to its associate, who returns a compact summary
   per_delegation_cap_usd: 0.50
   max_turns: 25
-  max_context_tokens: 200000
+  max_context_tokens: 150000   # headroom below Haiku 4.5's 200K window, so the guard trips first
 
 budget:
   daily_cap_usd: 10.00        # hard cap; at the cap in-flight steps finish, then everyone clocks out
@@ -32,6 +34,8 @@ limits:
   max_turns_per_task: 40
   max_agent_exchanges: 6      # consecutive agent-to-agent messages before Juno must step in
   repeat_similarity: 0.9      # near-duplicate messages above this are blocked as a loop
+  repeat_tool_calls: 3        # the same tool with identical input this many times = a loop; task pauses
+  max_delegations_per_task: 5
 
 portfolio:
   starting_capital_usd: 100000
