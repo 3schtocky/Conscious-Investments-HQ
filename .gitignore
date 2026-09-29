@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets
+.env
+
+# Office state stays local (this repo is public): database, memory, chats, drafts
+data/
+memory/
+outbox/
+
+# Web
+web/node_modules/
+web/dist/
+
+# OS
+.DS_Store
