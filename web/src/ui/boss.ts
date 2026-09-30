@@ -23,10 +23,20 @@ export class BossChannel {
 
   constructor(private root: HTMLElement, private state: OfficeState) {}
 
-  /** Pre-select a recipient (e.g. when zoomed in on an agent). */
+  /** Pre-select a recipient (e.g. when zoomed in on an agent) unless a draft is under way. */
   setDefaultRecipient(id: string | null) {
     if (!this.preview && !this.text) { this.to = id ?? "office"; this.render(); }
   }
+
+  /** Address the bar to someone explicitly (Start a chat, picking a thread) and focus it. */
+  setRecipient(to: string, focus = false) {
+    if (this.preview || this.to === to) { if (focus) this.focus(); return; }
+    this.to = to;
+    this.render();
+    if (focus) this.focus();
+  }
+
+  focus() { this.root.querySelector<HTMLTextAreaElement>("textarea")?.focus(); }
 
   render() {
     clear(this.root);
@@ -35,7 +45,7 @@ export class BossChannel {
       if (this.status) this.root.append(h("div", { class: `boss-status ${this.status.ok ? "ok" : "err"}` }, this.status.text));
       return;
     }
-    const recipients = [["office", "Office (Juno routes it)"],
+    const recipients = [["office", "Office (Juno routes it)"], ["all", "Everyone (group text: Stott → All)"],
       ...[...this.state.agents.values()].map((a) => [a.id, `${a.nickname} · ${a.role}`])];
     const select = h("select", { class: "to", title: "Send to", onchange: (e: Event) => { this.to = (e.target as HTMLSelectElement).value; } },
       ...recipients.map(([v, label]) => h("option", { value: v, selected: v === this.to }, label)));
@@ -66,7 +76,7 @@ export class BossChannel {
   }
 
   private previewEl(p: Preview): HTMLElement {
-    const who = this.to === "office" ? "the office (via Juno)" : this.state.name(this.to);
+    const who = this.to === "office" ? "the office (via Juno)" : this.to === "all" ? "everyone (group text)" : this.state.name(this.to);
     const checkBox = h("div", { class: "tone-check" });
     const renderCheck = (c: Check) => {
       clear(checkBox);
@@ -115,7 +125,7 @@ export class BossChannel {
     this.sending = false;
     if (!res.ok) { this.status = { text: body.detail ?? "Couldn't send.", ok: false }; this.render(); return; }
     const who = this.state.name(body.routed_to);
-    this.status = { text: this.to === "office" ? `Sent. Juno is routing it.` :
+    this.status = { text: this.to === "office" ? `Sent. Juno is routing it.` : this.to === "all" ? "Announced. Replies will come in under Chat › Stott → All." :
       body.delivered === "inbox" ? `Sent. ${who} will see it on their next step.` : `Sent. ${who} is on it.`, ok: true };
     this.text = ""; this.preview = null; this.render();
   }

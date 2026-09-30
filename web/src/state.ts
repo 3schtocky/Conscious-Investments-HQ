@@ -147,11 +147,17 @@ export class OfficeState {
         if (ev.is_error) b("result", ev.text, true);
         break;
       case "chat": {
-        const to = (ev.recipients as string[]).map((r) => this.name(r)).join(", ");
-        b("chat", `→ ${to}: ${ev.text}`);
-        for (const r of ev.recipients as string[]) {
-          this.push(this.agents.get(r), { kind: "chat", text: `${this.name(ev.agent)}: ${ev.text}`, ts: ev.ts, task_id: null });
+        const group = String(ev.channel ?? "").startsWith("group:");
+        if (group) {
+          b("chat", `In ${groupName(ev.channel, this)}: ${ev.text}`);   // no copy into 10 other logs
+        } else {
+          const to = (ev.recipients as string[]).map((r) => this.name(r)).join(", ");
+          b("chat", `→ ${to}: ${ev.text}`);
+          for (const r of ev.recipients as string[]) {
+            this.push(this.agents.get(r), { kind: "chat", text: `${this.name(ev.agent)}: ${ev.text}`, ts: ev.ts, task_id: null });
+          }
         }
+        if (ev.agent === "captain") break;   // the Captain's own posts arrive as captain_message
         if (live) this.chat.push({ id: ev.id ?? Date.now(), ts: ev.ts, channel: ev.channel, sender: ev.agent!,
           recipients: ev.recipients, text: ev.text, task_id: ev.task_id });
         break;
@@ -166,7 +172,7 @@ export class OfficeState {
         break;
       case "captain_message":
         if (live) this.chat.push({ id: ev.id ?? Date.now(), ts: ev.ts,
-          channel: ev.to === "office" ? "captain:office" : `dm:captain|${ev.to}`,
+          channel: ev.to === "office" ? "captain:office" : ev.to === "all" ? "group:stott" : `dm:captain|${ev.to}`,
           sender: "captain", recipients: [ev.agent!], text: ev.text, task_id: ev.task_id,
           original: ev.original ?? null });
         break;
@@ -225,6 +231,10 @@ export class OfficeState {
 const FEED_TYPES = new Set(["task_created", "task_started", "task_done", "delegated", "chat",
   "captain_report", "task_paused", "task_error", "incident", "office_status", "meeting",
   "captain_message", "approval_requested", "approval_decided"]);
+
+export function groupName(channel: string, state: OfficeState): string {
+  return channel === "group:juno" ? `${state.name("chief_of_staff")} → All` : `${state.captain.nickname} → All`;
+}
 
 export function short(s: string, n = 140): string {
   s = s.replace(/\s+/g, " ");

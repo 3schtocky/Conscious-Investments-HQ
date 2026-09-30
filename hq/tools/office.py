@@ -304,13 +304,44 @@ REQUEST_APPROVAL = Tool(
 )
 
 
+# post_to_group ------------------------------------------------------------------------------
+async def _post_to_group(ctx: ToolContext, inp: dict) -> str:
+    group = inp.get("group")
+    text = _str(inp, "text", max_len=2000)
+    ctx.agent.guard.check_group_post()
+    ctx.office.post_to_group(ctx.agent.id, group, text, task_id=ctx.task["id"])   # may refuse
+    ctx.agent.guard.record_group_post()
+    if ctx.agent.id == "chief_of_staff" and group == "juno":
+        return "Announced to the whole office. Replies will appear in the group."
+    return "Posted in the group."
+
+
+POST_TO_GROUP = Tool(
+    name="post_to_group",
+    description=(
+        "Post in an office-wide group chat. Group \"stott\" is {captain}'s announcement thread; "
+        "group \"juno\" is the Chief of Staff's. Use it to reply to an announcement (one short "
+        "line) or, for the Chief of Staff only, to announce something to everyone in group "
+        "\"juno\" (sparingly: every colleague replies)."),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "group": {"type": "string", "enum": ["stott", "juno"]},
+            "text": {"type": "string"},
+        },
+        "required": ["group", "text"],
+    },
+    handler=_post_to_group,
+)
+
+
 def tools_for(tier: str, agent_id: str) -> list[Tool]:
     """The fixed tool list for an agent. It never changes during a task (preserved thinking)."""
     if agent_id == "chief_of_staff":
-        return [SEND_MESSAGE, ASSIGN_TASK, REPORT_TO_CAPTAIN, REQUEST_APPROVAL]
+        return [SEND_MESSAGE, ASSIGN_TASK, REPORT_TO_CAPTAIN, REQUEST_APPROVAL, POST_TO_GROUP]
     if tier == "associate":
-        return [SEND_MESSAGE, SUBMIT_RESULT]
-    return [SEND_MESSAGE, DELEGATE, REPORT_TO_CAPTAIN, REQUEST_APPROVAL]
+        return [SEND_MESSAGE, SUBMIT_RESULT, POST_TO_GROUP]
+    return [SEND_MESSAGE, DELEGATE, REPORT_TO_CAPTAIN, REQUEST_APPROVAL, POST_TO_GROUP]
 
 
 def tool_map(tools: list[Tool]) -> dict[str, Tool]:

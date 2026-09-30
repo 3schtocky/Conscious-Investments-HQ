@@ -7,6 +7,7 @@ at its desk. Model calls share a concurrency limit. Idle agents cost nothing.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from pathlib import Path
@@ -22,6 +23,9 @@ from hq.store import Store
 log = logging.getLogger(__name__)
 
 CAPTAIN = "captain"
+GROUP_STOTT = "group:stott"   # Stott -> all: the Captain's announcements and the replies
+GROUP_JUNO = "group:juno"     # Juno -> all: the Chief of Staff's announcements and the replies
+GROUPS = {"stott": GROUP_STOTT, "juno": GROUP_JUNO}
 THREAD_CONTEXT = 6   # recent messages between two colleagues included when a reply starts
 
 
@@ -179,6 +183,14 @@ class Office:
         log for him, and never shown to agents.
         """
         kept = original if original and original.strip() != text.strip() else None
+        if to == "all":
+            self.store.add_chat(channel=GROUP_STOTT, sender=CAPTAIN,
+                                recipients=list(self.agents), text=text, original=kept)
+            self.bus.publish("captain_message", None, None, to="all", text=text, original=kept)
+            self.bus.publish("chat", CAPTAIN, None, channel=GROUP_STOTT,
+                             recipients=list(self.agents), text=text)
+            tasks = self._announce(CAPTAIN, "stott", text)
+            return {"routed_to": "all", "task_ids": tasks}
         if to == "office":
             juno = "chief_of_staff"
             body = (f"{self.captain_name} sent a message to the whole office:\n\n{text}\n\n"
@@ -224,7 +236,7 @@ class Office:
         """Rewrite a Captain message for the team and check nothing important changed."""
         from hq.engine.tone import LLMRewriter, RuleRewriter, check
 
-        recipient = "" if to == "office" else self.agents[self.resolve(to)].nickname
+        recipient = "" if to in ("office", "all") else self.agents[self.resolve(to)].nickname
         rewriter = LLMRewriter(self) if self.tone_engine == "llm" else RuleRewriter()
         from hq.engine.llm import ApiDisabled
 
@@ -237,6 +249,44 @@ class Office:
             rewrite, engine = await RuleRewriter().rewrite(text, recipient), "rules (API off)"
         return {"original": text, "rewrite": rewrite, "engine": engine,
                 "check": check(text, rewrite).as_dict()}
+
+    # group chats ------------------------------------------------------------------------
+    def _announce(self, sender: str, group: str, text: str) -> list[int]:
+        """Deliver an announcement to every agent except the sender. Each replies once in the
+        group; replies are posts, never new announcements, so nothing fans out twice."""
+        who = self.name(sender)
+        note = (f"[Announcement from {who} to the whole office]: {text}\n\nReply once in the "
+                f'group with post_to_group (group "{group}"): one short line on what it means for '
+                "your work, or a question. Then carry on.")
+        tasks = []
+        for agent in self.agents.values():
+            if agent.id == sender:
+                continue
+            if agent.current_task is not None or agent.desk.locked():
+                agent.inbox.append(note)
+                continue
+            task_id = self.store.create_task(assignee=agent.id, assigned_by=sender,
+                                             kind="message", title=f"Announcement from {who}",
+                                             body=note)
+            self._schedule(agent.id, task_id)
+            tasks.append(task_id)
+        return tasks
+
+    def post_to_group(self, sender: str, group: str, text: str,
+                      task_id: int | None = None) -> None:
+        """Post in a group chat. Juno posting in her own group is an announcement to everyone;
+        every other post is a reply that stays in the thread."""
+        if group not in GROUPS:
+            raise GuardBlock(f"Unknown group {group!r}. Groups: {', '.join(GROUPS)}.")
+        channel = GROUPS[group]
+        self.conversations.check_message(sender, [CAPTAIN], text)   # repeat guard
+        self.conversations.record_message(sender, [CAPTAIN], text)
+        everyone = [a for a in self.agents if a != sender]
+        self.store.add_chat(channel=channel, sender=sender, recipients=everyone, text=text,
+                            task_id=task_id)
+        self.bus.publish("chat", sender, task_id, channel=channel, recipients=everyone, text=text)
+        if sender == "chief_of_staff" and group == "juno":
+            self._announce(sender, "juno", text)
 
     def request_approval(self, agent_id: str, *, kind: str, title: str, summary: str,
                          payload: dict, task_id: int | None) -> int:
@@ -291,6 +341,36 @@ class Office:
         self.bus.publish("incident", agent, task_id, incident_id=incident_id, kind=kind,
                          detail=detail, **extra)
         return incident_id
+
+    def documents(self, agent_id: str) -> list[dict]:
+        """An agent's document history, newest first: what they put on the Captain's desk
+        (approval submissions with attachments), their reports, and the results they handed
+        back to a lead. Phase 4 adds real files (models, memos) to the same list."""
+        agent_id = self.resolve(agent_id)
+        docs: list[dict] = []
+        for a in self.store.approvals():
+            if a["agent"] == agent_id:
+                docs.append({"ts": a["ts"], "kind": a["kind"], "title": a["title"],
+                             "text": a["summary"], "status": a["status"], "note": a["note"],
+                             "attachments": a["payload"].get("attachments", []),
+                             "ticker": a["payload"].get("ticker"),
+                             "version": a["payload"].get("version"), "source": "approval"})
+        for m in self.store.chat(f"dm:{CAPTAIN}|{agent_id}", limit=500):
+            if m["sender"] == agent_id:
+                docs.append({"ts": m["ts"], "kind": "report", "title": _title(m["text"]),
+                             "text": m["text"], "source": "report"})
+        for t in self.store.tasks("done"):
+            if t["assignee"] == agent_id and t["kind"] == "delegation" and t["result"]:
+                try:
+                    result = json.loads(t["result"])
+                except ValueError:
+                    result = None
+                if not isinstance(result, dict):   # plain text (or odd JSON) from the associate
+                    result = {"findings": t["result"]}
+                docs.append({"ts": t["updated"], "kind": "result", "title": t["title"],
+                             "text": result.get("findings", ""), "source": "delegation",
+                             "for": t["assigned_by"]})
+        return sorted(docs, key=lambda d: d["ts"], reverse=True)
 
     def resolve_incident(self, incident_id: int) -> None:
         self.store.resolve_incident(incident_id)

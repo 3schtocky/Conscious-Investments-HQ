@@ -2,7 +2,7 @@
 import { ID_PRESET, imageOf, portrait, resolveParts, type AvatarSpec } from "../office/avatar";
 import { WING_ACCENT } from "../office/map";
 import type { AgentView, Block, OfficeEvent, OfficeState } from "../state";
-import { short } from "../state";
+import { groupName, short } from "../state";
 import { clear, h, money, plain, timeAgo } from "./dom";
 
 export const WING_ORDER = ["executive", "equity_research", "screening", "quant", "audit", "client_relations"];
@@ -110,14 +110,17 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
     case "task_started": return ev.kind === "assignment" ? s("▶️ ", who(ev.agent), ` started "${ev.title}"`) : null;
     case "task_done": return s("✅ ", who(ev.agent), " finished a task");
     case "delegated": return s("🤝 ", who(ev.agent), " → ", who(ev.to), `: ${short(ev.job, 110)}`);
-    case "chat": return s("💬 ", who(ev.agent), " → ", ...(ev.recipients as string[]).flatMap((r, i) => (i ? [", ", who(r)] : [who(r)])), `: ${short(ev.text, 140)}`);
+    case "chat":
+      if (String(ev.channel).startsWith("group:")) return s("📢 ", who(ev.agent), ` in ${groupName(ev.channel, state)}: ${short(ev.text, 140)}`);
+      return s("💬 ", who(ev.agent), " → ", ...(ev.recipients as string[]).flatMap((r, i) => (i ? [", ", who(r)] : [who(r)])), `: ${short(ev.text, 140)}`);
     case "captain_report": return s("📣 ", who(ev.agent), ` → ${state.captain.nickname}: ${short(ev.text, 160)}`);
     case "meeting": return s("🪑 Lobby gathering: ", (ev.participants as string[]).map((p) => state.name(p)).join(", "));
     case "task_paused": return s("⛔ ", who(ev.agent), ` paused (${ev.reason})`);
     case "task_error": return s("⚠️ ", who(ev.agent), ` hit an error: ${short(ev.error, 120)}`);
     case "incident": return s("🚨 Incident · ", who(ev.agent), ` · ${ev.kind}: ${short(String(ev.detail), 120)}`);
     case "office_status": return s(ev.status === "clocked_out" ? "🌙 Daily budget reached: the office clocked out" : "☀️ Office open");
-    case "captain_message": return s("⭐ ", who("captain"), " → ", ev.to === "office" ? h("strong", {}, "the office") : who(ev.to), `: ${short(ev.text, 140)}`);
+    case "captain_message": return s(ev.to === "all" ? "📢 " : "⭐ ", who("captain"), " → ",
+      ev.to === "office" ? h("strong", {}, "the office") : ev.to === "all" ? h("strong", {}, "everyone") : who(ev.to), `: ${short(ev.text, 140)}`);
     case "approval_requested": return s("📝 ", who(ev.agent), ` asks ${state.captain.nickname} to decide: ${ev.title}`);
     case "approval_decided": return s("⚖️ ", who("captain"), ` ${ev.decision === "approved" ? "approved" : ev.decision === "changes" ? "asked for changes on" : "declined"} "${ev.title}"`);
   }
@@ -125,15 +128,56 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
 }
 
 // ---- agent zoom view ------------------------------------------------------------------------
+interface Doc { ts: number; kind: string; title: string; text: string; source: string; status?: string;
+  note?: string | null; attachments?: string[]; ticker?: string | null; version?: number | null }
+
+const DOC_KIND: Record<string, string> = { brief: "📄 Brief", model: "📊 Model", conflict: "⚖️ Conflict",
+  portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", other: "📝 Decision request", report: "📣 Report", result: "📦 Hand-back" };
+
 export class AgentPanel {
   private shownId: string | null = null;
+  private view: "log" | "docs" = "log";
+  private docs: Doc[] = [];
+  private docsFor: string | null = null;
+  private docsRoot: HTMLElement | null = null;
+  private sub: HTMLElement | null = null;
   private stream: HTMLElement | null = null;
   private liveEl: HTMLElement | null = null;
   private count = -1;
   private header: HTMLElement | null = null;
 
   constructor(private root: HTMLElement, private state: OfficeState,
-              private actions: { pause: (id: string) => void; resume: (id: string) => void }) {}
+              private actions: { pause: (id: string) => void; resume: (id: string) => void; chat: (id: string) => void }) {}
+
+  /** Re-fetch the document history (call when this agent files something new). */
+  async loadDocs(id: string) {
+    this.docsRequest = id;
+    const res = await fetch(`/api/agents/${id}/documents`);
+    if (!res.ok || this.docsRequest !== id) return;   // a newer request (another agent) won
+    const docs: Doc[] = await res.json();
+    const changed = this.docsFor !== id || JSON.stringify(docs) !== JSON.stringify(this.docs);
+    this.docs = docs;
+    this.docsFor = id;
+    if (changed && this.shownId === id) this.renderDocs();
+  }
+  private docsRequest: string | null = null;
+
+  private renderDocs() {
+    if (!this.docsRoot) return;
+    clear(this.docsRoot);
+    if (this.docsFor !== this.shownId) return;   // never show another agent's documents
+    if (!this.docs.length) { this.docsRoot.append(h("p", { class: "empty" }, "No documents yet. Reports, approval requests and hand-backs will appear here; real files (models, memos) arrive in Phase 4.")); return; }
+    for (const d of this.docs) {
+      const meta = [d.ticker, d.version ? `v${d.version}` : null].filter(Boolean).join(" ");
+      this.docsRoot.append(h("div", { class: `doc k-${d.kind}` },
+        h("div", { class: "block-label" }, h("span", {}, DOC_KIND[d.kind] ?? d.kind, meta ? ` · ${meta}` : "",
+          d.status ? ` · ${d.status}` : ""), h("span", { class: "feed-time" }, timeAgo(d.ts))),
+        h("div", { class: "doc-title" }, d.title),
+        h("div", { class: "block-text" }, short(d.text, 400)),
+        d.attachments?.length ? h("div", { class: "attachments" }, "📎 ", d.attachments.join(", ")) : null,
+        d.note ? h("div", { class: "muted small" }, `${this.state.captain.nickname}'s note: ${d.note}`) : null));
+    }
+  }
 
   render(id: string | null) {
     const a = id ? this.state.agents.get(id) : undefined;
@@ -150,11 +194,21 @@ export class AgentPanel {
       this.shownId = a.id;
       this.count = -1;
       this.header = h("div", { class: "agent-head" });
+      this.sub = h("div", { class: "agent-sub" });
       this.stream = h("div", { class: "stream" });
+      this.docsRoot = h("div", { class: "stream docs" });
       this.liveEl = h("div", { class: "block live" });
-      this.root.append(this.header, this.stream);
+      this.root.append(this.header, this.sub, this.stream, this.docsRoot);
+      if (this.docsFor !== a.id) { this.docs = []; this.loadDocs(a.id); }
     }
     this.renderHeader(a);
+    this.renderSub(a);
+    this.stream!.classList.toggle("hidden", this.view !== "log");
+    this.docsRoot!.classList.toggle("hidden", this.view !== "docs");
+    if (this.view === "docs") {   // redrawn only when its contents change (see loadDocs)
+      if (this.docsFor !== a.id && this.docsRoot!.childElementCount) clear(this.docsRoot!);
+      return;
+    }
     const nearBottom = this.stream!.scrollHeight - this.stream!.scrollTop - this.stream!.clientHeight < 60;
     if (a.blocks.length !== this.count) {
       clear(this.stream!);
@@ -165,6 +219,20 @@ export class AgentPanel {
     this.liveEl!.textContent = a.live ? a.live.text : "";
     this.liveEl!.className = `block live ${a.live ? `b-${a.live.kind}` : "hidden"}`;
     if (nearBottom) this.stream!.scrollTop = this.stream!.scrollHeight;
+  }
+
+  private renderSub(a: AgentView) {
+    const sub = this.sub!;
+    clear(sub);
+    const seg = (v: "log" | "docs", label: string) => h("button", { class: `seg${this.view === v ? " active" : ""}`,
+      onclick: () => {
+        this.view = v; this.count = -1;
+        if (v === "docs") { this.renderDocs(); this.loadDocs(a.id); }
+        this.render(a.id);
+      } }, label);
+    sub.append(
+      h("button", { class: "btn start-chat", onclick: () => this.actions.chat(a.id) }, `💬 Start a chat with ${a.nickname}`),
+      h("div", { class: "segs" }, seg("log", "Log history"), seg("docs", `Document history${this.docsFor === a.id && this.docs.length ? ` (${this.docs.length})` : ""}`)));
   }
 
   private renderHeader(a: AgentView) {
@@ -202,9 +270,25 @@ function blockEl(b: Block): HTMLElement {
 // ---- chat -----------------------------------------------------------------------------------
 export class ChatPanel {
   channel: string | null = null;
+  /** Called with the chat bar recipient that matches the open channel ("all", an agent id…). */
+  onChannel: (recipient: string | null) => void = () => {};
   constructor(private root: HTMLElement, private state: OfficeState) {}
 
+  /** Open a channel even if it has no messages yet (e.g. a new 1-1 with an agent). */
+  open(channel: string) { this.channel = channel; this.pinned = channel; }
+  private pinned: string | null = null;
+  private notified: string | null = null;
+
+  static recipientFor(channel: string | null): string | null {
+    if (!channel) return null;
+    if (channel === "group:stott") return "all";
+    if (channel === "captain:office") return "office";
+    const m = channel.match(/^dm:captain\|(.+)$/);
+    return m ? m[1] : null;
+  }
+
   channelName(ch: string): string {
+    if (ch.startsWith("group:")) return `📢 ${groupName(ch, this.state)}`;
     if (ch === "lobby") return "🪑 Lobby";
     if (ch === "captain:office") return `⭐ ${this.state.captain.nickname} → Office`;
     if (ch.startsWith("wing:")) return `🏢 ${this.state.wings[ch.slice(5)] ?? ch.slice(5)} wing`;
@@ -225,13 +309,24 @@ export class ChatPanel {
     clear(this.root);
     const latest = new Map<string, number>();
     for (const m of this.state.chat) latest.set(m.channel, Math.max(latest.get(m.channel) ?? 0, m.ts));
-    let channels = [...latest.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+    let channels = [...latest.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
+      .filter((c) => !c.startsWith("group:"));
     if (agentFilter) channels = channels.filter((c) => c.includes(agentFilter) || c === "lobby");
-    if (!this.channel || !channels.includes(this.channel)) this.channel = channels[0] ?? null;
+    if (this.pinned && !channels.includes(this.pinned) && !this.pinned.startsWith("group:")) channels.unshift(this.pinned);
+    channels = ["group:stott", "group:juno", ...channels];   // the two group texts, always on top
+    if (!this.channel || !channels.includes(this.channel)) this.channel = channels[2] ?? channels[0];
+    if (this.channel !== this.notified) {   // only when the open thread actually changes
+      this.notified = this.channel;
+      this.onChannel(ChatPanel.recipientFor(this.channel));
+    }
     const list = h("div", { class: "channels" }, ...channels.map((c) =>
       h("button", { class: `channel${c === this.channel ? " active" : ""}`, onclick: () => { this.channel = c; this.render(agentFilter); } }, this.channelName(c))));
     const msgs = h("div", { class: "messages" });
-    if (!this.channel) msgs.append(h("p", { class: "empty" }, "No conversations yet."));
+    const thread = this.state.chat.filter((x) => x.channel === this.channel);
+    if (!thread.length) msgs.append(h("p", { class: "empty" }, this.channel?.startsWith("group:")
+      ? "No announcements yet. Pick “Everyone” in the chat bar to post one; every colleague replies here."
+      : this.channel?.startsWith("dm:captain|") ? `Start your 1-1 with ${this.state.name(this.channel.split("|")[1])} in the chat bar below.`
+      : "No conversations yet."));
     for (const m of this.state.chat.filter((x) => x.channel === this.channel).slice(-120)) {
       const mine = m.sender === "captain";
       msgs.append(h("div", { class: `msg${mine ? " mine" : ""}` },

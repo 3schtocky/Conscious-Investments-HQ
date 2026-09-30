@@ -86,6 +86,17 @@ class DemoLLM:
         title = first.strip().splitlines()[0][:80] if first.strip() else "the task"
         office = self.office
         if len(msgs) == 1:
+            if first.startswith("[Announcement from") or "[Announcement from" in first:
+                group = "juno" if 'group "juno"' in first else "stott"
+                role = office.agents[who].role if office and who in office.agents else "my work"
+                replies = ["I'll fold it into today's work.", "noted, adjusting my plan now.",
+                           "clear, I'll flag anything that conflicts.", "on it, no blockers.",
+                           "understood, will confirm when it's in place."]
+                pick = replies[next(_ids) % len(replies)]
+                return think("An announcement: one short reply in the group.", None,
+                             ("post_to_group", {"group": group,
+                                                "text": f"Got it (demo #{next(_ids)}). For "
+                                                        f"{role}: {pick}"}))(params)
             if who == "chief_of_staff" and "to the whole office:" in first:
                 ask = first.split("to the whole office:", 1)[1].split("\n\nRoute it:", 1)[0].strip()
                 lead = _route(ask)

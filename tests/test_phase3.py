@@ -191,10 +191,12 @@ def test_tool_lists_by_role(make_office):
 
     names = lambda tier, aid: [t.name for t in tools_for(tier, aid)]
     assert names("associate", "chief_of_staff") == ["send_message", "assign_task",
-                                                    "report_to_captain", "request_approval"]
+                                                    "report_to_captain", "request_approval",
+                                                    "post_to_group"]
     assert names("lead", "er_lead") == ["send_message", "delegate", "report_to_captain",
-                                        "request_approval"]
-    assert names("associate", "er_associate") == ["send_message", "submit_result"]
+                                        "request_approval", "post_to_group"]
+    assert names("associate", "er_associate") == ["send_message", "submit_result",
+                                                  "post_to_group"]
 
 
 # endpoints ----------------------------------------------------------------------------------

@@ -67,12 +67,23 @@ const api = async (path: string, init?: RequestInit) => fetch(path, init);
 const agentPanel = new AgentPanel(agentRoot, state, {
   pause: async (id) => { await api(`/api/agents/${id}/pause`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Paused by the Captain" }) }); },
   resume: async (id) => { await api(`/api/agents/${id}/resume`, { method: "POST" }); },
+  chat: (id) => startChat(id),
 });
 const chatPanel = new ChatPanel(chatRoot, state);
 const settings = new SettingsPanel(settingsRoot, state);
 const approvalsRoot = h("div", { class: "approvals" });
 const approvals = new ApprovalsPanel(approvalsRoot, state, () => render());
 const boss = new BossChannel(bossBar, state);
+// Picking a thread addresses the chat bar to it (never over a draft in progress).
+chatPanel.onChannel = (to) => { if (to && tab === "chat") boss.setDefaultRecipient(to); };
+
+/** Open the Captain's 1-1 thread with an agent and address the chat bar to them. */
+function startChat(id: string) {
+  chatPanel.open(`dm:captain|${id}`);
+  tab = "chat";
+  boss.setRecipient(id, true);
+  render();
+}
 const cards = new DeskCards(cardsRoot, state, (id) => pickAgent(id));
 
 function pickAgent(id: string) {
@@ -199,6 +210,10 @@ function connect() {
     const ev: OfficeEvent = JSON.parse(m.data);
     if (ev.type === "roster_updated") { loadState(); }
     if (ev.type === "approval_requested" || ev.type === "approval_decided") { approvals.refresh(); }
+    if (tab === "agent" && focus.kind === "agent" && ev.agent === focus.id &&
+        ["approval_requested", "approval_decided", "captain_report", "task_done"].includes(ev.type)) {
+      agentPanel.loadDocs(focus.id);
+    }
     state.apply(ev);
     scene?.handle(ev);
     dirty = true;
@@ -243,6 +258,8 @@ async function boot() {
     },
   });
   boss.render();
+  // A deep link opened in an already-open page (bookmark, pasted URL) re-applies the view.
+  window.addEventListener("hashchange", () => { readHash(); scene?.setFocus(focus); render(); });
   connect();
   requestAnimationFrame(frame);
 }

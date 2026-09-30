@@ -178,7 +178,7 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         return text
 
     def _check_to(to: str) -> str:
-        if to == "office":
+        if to in ("office", "all"):
             return to
         try:
             return office().resolve(to)
@@ -200,6 +200,13 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         original = req.original.strip()[:MAX_MESSAGE] if req.original else None
         return JSONResponse(office().captain_send(_check_to(req.to), _check_text(req.text),
                                                   original=original))
+
+    @app.get("/api/agents/{agent_id}/documents")
+    async def documents(agent_id: str) -> JSONResponse:
+        try:
+            return JSONResponse(office().documents(agent_id))
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
 
     @app.get("/api/approvals")
     async def approvals(status: str | None = None) -> JSONResponse:

@@ -44,6 +44,7 @@ class TaskGuard:
         self.max_delegations = max_delegations or limits["max_delegations_per_task"]
         self.turns = 0
         self.delegations = 0
+        self.group_posts = 0
         self._tool_calls: Counter[str] = Counter()
 
     def before_turn(self, spent_on_task: float) -> None:
@@ -66,6 +67,18 @@ class TaskGuard:
         if self._tool_calls[key] >= self.repeat_tool_calls:
             raise GuardTripped("tool_loop",
                                f"Called {name} with identical input {self._tool_calls[key]} times.")
+
+    GROUP_POST_LIMIT = 2
+
+    def check_group_post(self) -> None:
+        """Group chats are loud: at most GROUP_POST_LIMIT posts per task, so replies can't
+        snowball. Checked before posting; counted only once a post goes through."""
+        if self.group_posts >= self.GROUP_POST_LIMIT:
+            raise GuardBlock(f"You've already posted {self.GROUP_POST_LIMIT} times in the group "
+                             "for this task. Carry on with your work.")
+
+    def record_group_post(self) -> None:
+        self.group_posts += 1
 
     def on_delegate(self) -> None:
         if self.delegations >= self.max_delegations:
