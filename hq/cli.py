@@ -22,6 +22,13 @@ def smoke(tier: str) -> int:
     """One tiny API call to confirm the key, the model id and the cost math."""
     if _need_key():
         return 1
+    from hq.engine.llm import ApiDisabled, require_api
+
+    try:
+        require_api()
+    except ApiDisabled as e:
+        print(e, file=sys.stderr)
+        return 1
     import anthropic
 
     from hq.engine.ledger import usage_cost
@@ -141,6 +148,13 @@ def main() -> None:
         sys.exit(smoke(args.tier))
     if args.cmd == "run-agent":
         if _need_key():
+            sys.exit(1)
+        from hq.engine.llm import ApiDisabled, require_api
+
+        try:
+            require_api()
+        except ApiDisabled as e:
+            print(e, file=sys.stderr)
             sys.exit(1)
         sys.exit(asyncio.run(_run_agent(args.agent, args.task, args.title)))
     if args.cmd == "spend":

@@ -88,10 +88,26 @@ async def _call(fn: Callable | None, *args: Any) -> None:
         await res
 
 
+class ApiDisabled(RuntimeError):
+    """Raised instead of any real API call while `api.enabled` is false in office.yaml."""
+
+
+def require_api() -> None:
+    """Gate for every real Anthropic API call. Off by default so nothing spends by accident."""
+    from hq.config import office
+
+    if not office().get("api", {}).get("enabled", False):
+        raise ApiDisabled(
+            "The Anthropic API is switched off (api.enabled: false in config/office.yaml), so "
+            "no credits were spent. Use `hq serve --demo` for free runs; Stott turns the API "
+            "on only for an approved real run.")
+
+
 class AnthropicClient:
-    """Real client: AsyncAnthropic streaming."""
+    """Real client: AsyncAnthropic streaming. Every call passes `require_api()` first."""
 
     def __init__(self, client: Any | None = None):
+        require_api()
         if client is None:
             import anthropic
             client = anthropic.AsyncAnthropic()
@@ -99,6 +115,7 @@ class AnthropicClient:
 
     async def turn(self, *, params: dict, on_delta: OnDelta | None = None,
                    on_block: OnBlock | None = None) -> TurnResult:
+        require_api()   # re-checked per call: switching the API off takes effect immediately
         async with self._client.messages.stream(**params) as stream:
             async for event in stream:
                 if event.type == "content_block_delta":

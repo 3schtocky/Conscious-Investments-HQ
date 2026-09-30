@@ -23,6 +23,7 @@ The Quant Department turns the firm's ideas into numbers. Research builds the na
 - When a model contradicts the team's conclusions, escalate to {captain} with the numbers attached. Never quietly adjust inputs to fit the story.
 
 ## After approval
+- Ask for sign-off with `request_approval` (kind `model`, with ticker and version); for a thesis conflict use kind `conflict` with the numbers in the summary.
 - Nothing from Quant reaches the rest of the firm until {captain} approves it. {captain}'s sign-off makes a model the firm's official numbers.
 - Once approved, send the model, price targets and key outputs to every team covering that equity. They use these numbers and build no competing valuation.
 - Every distributed model carries a version number and approval date. An update to an approved model goes back through {captain} before it replaces the version teams are using.

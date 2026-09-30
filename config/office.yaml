@@ -41,4 +41,16 @@ portfolio:
   starting_capital_usd: 100000
   benchmark: SPY
 
+# The Captain's tone filter. rules = free built-in rewriter (default; always used by the demo
+# office). llm = Haiku rewrite billed to Juno, and only works while api.enabled is true.
+tone:
+  engine: rules
+
+# MASTER API SWITCH. While false, nothing in the office can call the Anthropic API: agent
+# turns, the LLM tone filter and `hq smoke` all stop with a clear message and spend $0.
+# Building, tests and `hq serve --demo` never need it. Only Stott flips this, and only for a
+# real run he has approved with a cost estimate (see CLAUDE.md rule 3).
+api:
+  enabled: false
+
 cadence: on_assignment         # the office only works when the Captain assigns work

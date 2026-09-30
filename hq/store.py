@@ -75,6 +75,19 @@ CREATE TABLE IF NOT EXISTS incidents (
     detail TEXT NOT NULL,
     resolved INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS approvals (
+    id INTEGER PRIMARY KEY,
+    ts REAL NOT NULL,
+    kind TEXT NOT NULL,              -- brief | model | conflict | portfolio | newsletter | other
+    agent TEXT NOT NULL,             -- who asked
+    task_id INTEGER,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    payload TEXT NOT NULL,           -- JSON: ticker, version, attachments, ...
+    status TEXT NOT NULL,            -- pending | approved | changes | rejected
+    decided_ts REAL,
+    note TEXT
+);
 CREATE INDEX IF NOT EXISTS spend_day ON spend(day);
 CREATE INDEX IF NOT EXISTS spend_root ON spend(root_id);
 CREATE INDEX IF NOT EXISTS events_task ON events(task_id);
@@ -91,6 +104,10 @@ class Store:
         with self._lock:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(SCHEMA)
+            # Migrations for databases created before a column existed.
+            cols = {r[1] for r in self._db.execute("PRAGMA table_info(chat)")}
+            if "original" not in cols:   # the Captain's words before the tone rewrite
+                self._db.execute("ALTER TABLE chat ADD COLUMN original TEXT")
 
     def _exec(self, sql: str, args: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
@@ -149,10 +166,11 @@ class Store:
 
     # chat --------------------------------------------------------------------------------
     def add_chat(self, *, channel: str, sender: str, recipients: list[str], text: str,
-                 task_id: int | None = None) -> int:
+                 task_id: int | None = None, original: str | None = None) -> int:
         cur = self._exec(
-            "INSERT INTO chat (ts, channel, sender, recipients, text, task_id) VALUES (?,?,?,?,?,?)",
-            (time.time(), channel, sender, json.dumps(recipients), text, task_id),
+            "INSERT INTO chat (ts, channel, sender, recipients, text, task_id, original)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (time.time(), channel, sender, json.dumps(recipients), text, task_id, original),
         )
         return cur.lastrowid
 
@@ -237,3 +255,37 @@ class Store:
     def incidents(self, unresolved_only: bool = True) -> list[dict]:
         sql = "SELECT * FROM incidents" + (" WHERE resolved=0" if unresolved_only else "")
         return self._all(sql + " ORDER BY id")
+
+    def resolve_incident(self, incident_id: int) -> None:
+        self._exec("UPDATE incidents SET resolved=1 WHERE id=?", (incident_id,))
+
+    # approvals ---------------------------------------------------------------------------
+    def add_approval(self, *, kind: str, agent: str, task_id: int | None, title: str,
+                     summary: str, payload: dict) -> int:
+        cur = self._exec(
+            "INSERT INTO approvals (ts, kind, agent, task_id, title, summary, payload, status)"
+            " VALUES (?,?,?,?,?,?,?, 'pending')",
+            (time.time(), kind, agent, task_id, title, summary, json.dumps(payload)),
+        )
+        return cur.lastrowid
+
+    def approval(self, approval_id: int) -> dict:
+        rows = self.approvals(approval_id=approval_id)
+        if not rows:
+            raise KeyError(f"no approval {approval_id}")
+        return rows[0]
+
+    def approvals(self, status: str | None = None, approval_id: int | None = None) -> list[dict]:
+        sql, args = "SELECT * FROM approvals", ()
+        if approval_id is not None:
+            sql, args = sql + " WHERE id=?", (approval_id,)
+        elif status:
+            sql, args = sql + " WHERE status=?", (status,)
+        rows = self._all(sql + " ORDER BY id", args)
+        for r in rows:
+            r["payload"] = json.loads(r["payload"])
+        return rows
+
+    def decide_approval(self, approval_id: int, status: str, note: str | None) -> None:
+        self._exec("UPDATE approvals SET status=?, note=?, decided_ts=? WHERE id=?",
+                   (status, note, time.time(), approval_id))

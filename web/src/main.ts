@@ -7,8 +7,11 @@ import { h, money } from "./ui/dom";
 import { Overlay } from "./ui/overlay";
 import { AgentPanel, ChatPanel, DeskCards, renderActivity, WING_ORDER } from "./ui/panels";
 import { SettingsPanel } from "./ui/settings";
+import { ApprovalsPanel } from "./ui/approvals";
+import { BossChannel } from "./ui/boss";
 
-type Tab = "activity" | "agent" | "chat" | "settings";
+type Tab = "activity" | "agent" | "chat" | "approvals" | "settings";
+const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "settings"];
 
 const state = new OfficeState();
 let focus: Focus = { kind: "floor" };
@@ -21,6 +24,7 @@ const spendText = h("span", { class: "meter-text" });
 const statusPill = h("span", { class: "pill office-status" });
 const demoBadge = h("span", { class: "pill demo hidden", title: "Scripted demo office: no API calls, no real spend" }, "DEMO");
 const crumbs = h("div", { class: "crumbs" });
+const awaiting = h("button", { class: "pill awaiting hidden", onclick: () => { tab = "approvals"; render(); } });
 // Theme: follows the system unless the Captain picks one (remembered per browser).
 const THEME_KEY = "hq-theme";
 function applyTheme(theme: string | null) {
@@ -37,7 +41,7 @@ const themeBtn = h("button", { class: "icon-btn", title: "Switch light / dark", 
 } }, "◐");
 const header = h("header", {},
   h("div", { class: "brand" }, h("span", { class: "brand-mark" }), h("span", {}, "Conscious Investments ", h("b", {}, "HQ"))),
-  statusPill, demoBadge, crumbs,
+  statusPill, demoBadge, awaiting, crumbs,
   h("div", { class: "meter", title: "Today's API spend vs. the daily cap" }, h("div", { class: "meter-bar" }, spendFill), spendText),
   themeBtn);
 
@@ -47,9 +51,7 @@ const viewButtons = h("div", { class: "views" });
 const cardsRoot = h("div", { class: "cards" });
 const tabsBar = h("nav", { class: "tabs" });
 const panelRoot = h("div", { class: "panel" });
-const bossBar = h("div", { class: "boss" },
-  h("input", { placeholder: "Captain's chat arrives in Phase 3: assign work, tone preview, DMs…", disabled: true }),
-  h("button", { class: "btn", disabled: true }, "Send"));
+const bossBar = h("div", { class: "boss" });
 
 document.getElementById("app")!.append(header,
   h("main", {},
@@ -68,6 +70,9 @@ const agentPanel = new AgentPanel(agentRoot, state, {
 });
 const chatPanel = new ChatPanel(chatRoot, state);
 const settings = new SettingsPanel(settingsRoot, state);
+const approvalsRoot = h("div", { class: "approvals" });
+const approvals = new ApprovalsPanel(approvalsRoot, state, () => render());
+const boss = new BossChannel(bossBar, state);
 const cards = new DeskCards(cardsRoot, state, (id) => pickAgent(id));
 
 function pickAgent(id: string) {
@@ -79,6 +84,7 @@ function pickAgent(id: string) {
 
 function setFocus(f: Focus) {
   focus = f;
+  boss.setDefaultRecipient(f.kind === "agent" ? f.id : null);
   scene?.setFocus(f);
   writeHash();
   render();
@@ -92,7 +98,7 @@ function setFocus(f: Focus) {
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const t = p.get("tab");
-  if (t && ["activity", "agent", "chat", "settings"].includes(t)) tab = t as Tab;
+  if (t && (TABS as string[]).includes(t)) tab = t as Tab;
   const agent = p.get("agent"), wing = p.get("wing");
   if (agent && state.agents.has(agent)) {
     focus = { kind: "agent", id: agent };
@@ -111,14 +117,15 @@ function writeHash() {
 }
 
 function renderTabs() {
-  tabsBar.replaceChildren(...(["activity", "agent", "chat", "settings"] as Tab[]).map((t) =>
+  tabsBar.replaceChildren(...TABS.map((t) =>
     h("button", { class: `tab${t === tab ? " active" : ""}`, onclick: () => {
       if (t === "settings" && focus.kind === "agent") settings.select(focus.id);
       tab = t; render();
     } },
-      { activity: "Activity", agent: "Agent", chat: "Chat", settings: "Settings" }[t])));
+      { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", settings: "Settings" }[t],
+      t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null)));
   writeHash();
-  panelRoot.replaceChildren({ activity: actRoot, agent: agentRoot, chat: chatRoot, settings: settingsRoot }[tab]);
+  panelRoot.replaceChildren({ activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, settings: settingsRoot }[tab]);
 }
 
 function renderViews() {
@@ -146,6 +153,9 @@ function renderHeader() {
   statusPill.textContent = state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
   statusPill.dataset.state = state.clockedOut ? "closed" : working ? "busy" : "open";
   demoBadge.classList.toggle("hidden", !state.demo);
+  const n = approvals.pending;
+  awaiting.textContent = `${n} awaiting you`;
+  awaiting.classList.toggle("hidden", n === 0);
 }
 
 let dirty = true;
@@ -166,6 +176,7 @@ function frame() {
       if (tab === "activity") renderActivity(actRoot, state, wing, pickAgent);
       if (tab === "chat") chatPanel.render(selected);
       if (tab === "settings") settings.render();
+      if (tab === "approvals") approvals.render();
     }
   }
   requestAnimationFrame(frame);
@@ -175,6 +186,7 @@ function frame() {
 async function loadState() {
   const snap: Snapshot = await (await fetch("/api/state")).json();
   state.load(snap);
+  approvals.items = (snap as any).approvals ?? [];
   scene?.sync();
   render();
 }
@@ -184,6 +196,7 @@ function connect() {
   ws.onmessage = (m) => {
     const ev: OfficeEvent = JSON.parse(m.data);
     if (ev.type === "roster_updated") { loadState(); }
+    if (ev.type === "approval_requested" || ev.type === "approval_decided") { approvals.refresh(); }
     state.apply(ev);
     scene?.handle(ev);
     dirty = true;
@@ -227,6 +240,7 @@ async function boot() {
       },
     },
   });
+  boss.render();
   connect();
   requestAnimationFrame(frame);
 }

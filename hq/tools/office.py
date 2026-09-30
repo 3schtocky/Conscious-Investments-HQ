@@ -209,14 +209,108 @@ REPORT_TO_CAPTAIN = Tool(
 )
 
 
+# assign_task (Chief of Staff) -------------------------------------------------------------
+async def _assign_task(ctx: ToolContext, inp: dict) -> str:
+    to = ctx.office.resolve(_str(inp, "to", max_len=100))
+    title = _str(inp, "title", max_len=120)
+    brief = _str(inp, "brief", max_len=8000)
+    target = ctx.office.agents[to]
+    if target.tier != "lead":
+        raise GuardBlock(f"{target.nickname} is an associate. Assign work to department leads; "
+                         "they delegate to their associates.")
+    ctx.agent.guard.on_delegate()   # fan-out counts against the same per-task limit
+    task_id = ctx.office.assign(to, brief, title=title, by=ctx.agent.id, parent=ctx.task)
+    ctx.office.bus.publish("move", ctx.agent.id, ctx.task["id"], to=f"desk:{to}")
+    ctx.office.bus.publish("move", ctx.agent.id, ctx.task["id"], to=f"desk:{ctx.agent.id}")
+    return f"Assigned to {target.nickname} (task #{task_id})."
+
+
+ASSIGN_TASK = Tool(
+    name="assign_task",
+    description=(
+        "Give a department lead a new assignment on {captain}'s behalf. State the goal, the "
+        "deliverable, and any deadline or constraint {captain} gave, without dropping or "
+        "changing any of it. One lead per call; call again for other wings."),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "to": {"type": "string", "description": "Lead id or nickname."},
+            "title": {"type": "string", "description": "Short task title."},
+            "brief": {"type": "string", "description": "The assignment, complete and specific."},
+        },
+        "required": ["to", "title", "brief"],
+    },
+    handler=_assign_task,
+)
+
+
+# request_approval ---------------------------------------------------------------------------
+APPROVAL_KINDS = ("brief", "model", "conflict", "portfolio", "newsletter", "other")
+
+
+async def _request_approval(ctx: ToolContext, inp: dict) -> str:
+    kind = inp.get("kind")
+    if kind not in APPROVAL_KINDS:
+        raise GuardBlock(f"`kind` must be one of: {', '.join(APPROVAL_KINDS)}.")
+    title = _str(inp, "title", max_len=120)
+    summary = _str(inp, "summary", max_len=6000)
+    payload: dict[str, Any] = {}
+    ticker = inp.get("ticker")
+    if ticker is not None:
+        if not isinstance(ticker, str) or not ticker.strip() or len(ticker) > 10:
+            raise GuardBlock("`ticker` must be a short symbol like RMBS.")
+        payload["ticker"] = ticker.strip().upper()
+    version = inp.get("version")
+    if version is not None:
+        if not isinstance(version, int) or version < 1:
+            raise GuardBlock("`version` must be a whole number starting at 1.")
+        payload["version"] = version
+    if kind == "model" and ("ticker" not in payload or "version" not in payload):
+        raise GuardBlock("A model approval needs `ticker` and `version`.")
+    attachments = inp.get("attachments") or []
+    if not isinstance(attachments, list) or not all(isinstance(a, str) for a in attachments):
+        raise GuardBlock("`attachments` must be a list of file paths.")
+    payload["attachments"] = attachments[:10]
+    approval_id = ctx.office.request_approval(ctx.agent.id, kind=kind, title=title,
+                                              summary=summary, payload=payload,
+                                              task_id=ctx.task["id"])
+    return (f"Approval #{approval_id} is on {ctx.office.captain_name}'s desk. The decision will "
+            "arrive as a message; don't wait for it. Wrap up this task.")
+
+
+REQUEST_APPROVAL = Tool(
+    name="request_approval",
+    description=(
+        "Put a decision on {captain}'s desk as an approval card: a research brief to review "
+        "(kind brief), a model version to make official (kind model, with ticker and version), "
+        "a model that contradicts the thesis (kind conflict, numbers attached), a portfolio "
+        "entry, a newsletter, or other. Lead the summary with what you need decided and why. "
+        "The decision comes back to you as a message later."),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string", "enum": list(APPROVAL_KINDS)},
+            "title": {"type": "string"},
+            "summary": {"type": "string",
+                        "description": "What needs deciding, the key numbers, and risks."},
+            "ticker": {"type": "string"},
+            "version": {"type": "integer", "description": "Model version (kind model)."},
+            "attachments": {"type": "array", "items": {"type": "string"},
+                            "description": "Paths of files to review (workbook, brief...)."},
+        },
+        "required": ["kind", "title", "summary"],
+    },
+    handler=_request_approval,
+)
+
+
 def tools_for(tier: str, agent_id: str) -> list[Tool]:
     """The fixed tool list for an agent. It never changes during a task (preserved thinking)."""
-    if tier == "associate" and agent_id != "chief_of_staff":
+    if agent_id == "chief_of_staff":
+        return [SEND_MESSAGE, ASSIGN_TASK, REPORT_TO_CAPTAIN, REQUEST_APPROVAL]
+    if tier == "associate":
         return [SEND_MESSAGE, SUBMIT_RESULT]
-    tools = [SEND_MESSAGE, REPORT_TO_CAPTAIN]
-    if tier == "lead":
-        tools.insert(1, DELEGATE)
-    return tools
+    return [SEND_MESSAGE, DELEGATE, REPORT_TO_CAPTAIN, REQUEST_APPROVAL]
 
 
 def tool_map(tools: list[Tool]) -> dict[str, Tool]:

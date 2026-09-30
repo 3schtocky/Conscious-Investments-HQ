@@ -16,7 +16,7 @@ from collections.abc import Callable
 
 from hq.engine.guards import ConversationGuard
 from hq.engine.llm import TurnResult
-from hq.engine.runtime import Office
+from hq.engine.runtime import Office, _title
 
 _ids = itertools.count(1)
 _WHO = re.compile(r"You are \*\*.+?\*\* \(`(\w+)`\)")
@@ -45,12 +45,86 @@ def think(thinking: str, text: str | None = None, *tools: tuple[str, dict]) -> C
     return build
 
 
-class DemoLLM:
-    """Streams scripted turns word by word, so the office looks alive."""
+_ROUTES = [
+    (("model", "valuation", "dcf", "price target", "monte carlo", "lbo", "wacc", "sensitivity"),
+     "quant_lead"),
+    (("screen", "gem", "small cap", "small-cap", "idea", "find"), "screen_lead"),
+    (("newsletter", "substack", "client", "post", "social"), "cr_lead"),
+    (("audit", "ethic", "compliance", "risk check", "sourcing"), "audit_lead"),
+]
 
-    def __init__(self, speed: float = 1.0):
+
+def _route(text: str) -> str:
+    low = text.lower()
+    for words, lead in _ROUTES:
+        if any(w in low for w in words):
+            return lead
+    return "er_lead"
+
+
+def _text_of(content) -> str:
+    if isinstance(content, str):
+        return content
+    return "\n".join(b.get("text", "") or str(b.get("content", "")) for b in content)
+
+
+class DemoLLM:
+    """Streams scripted turns word by word, so the office looks alive.
+
+    With no script for an agent, it improvises plausible office behaviour from the task itself
+    (routing, delegating, reporting), so the Captain can talk to the demo office for free.
+    """
+
+    def __init__(self, speed: float = 1.0, office: Office | None = None):
         self.scripts: dict[str, deque] = defaultdict(deque)
         self.speed = speed
+        self.office = office
+
+    def improvise(self, who: str, params: dict) -> TurnResult:
+        msgs = params["messages"]
+        first = _text_of(msgs[0]["content"])
+        title = first.strip().splitlines()[0][:80] if first.strip() else "the task"
+        office = self.office
+        if len(msgs) == 1:
+            if who == "chief_of_staff" and "to the whole office:" in first:
+                ask = first.split("to the whole office:", 1)[1].split("\n\nRoute it:", 1)[0].strip()
+                lead = _route(ask)
+                return think(f"This is for {office.agents[lead].nickname if office else lead}'s "
+                             "wing. I'll assign it with every detail kept.", None,
+                             ("assign_task", {"to": lead, "title": _title(ask, 60),
+                                              "brief": ask}))(params)
+            if first.startswith("Delegated job from"):
+                job = first.split("\n\n")[1] if "\n\n" in first else first
+                return think("Working through the job step by step.", None,
+                             ("submit_result", {"findings": f"(demo) First pass done: {job[:200]}",
+                                                "figures": [], "open_questions": [],
+                                                "confidence": "medium"}))(params)
+            agent = office.agents.get(who) if office else None
+            associate = next((a.id for a in (office.agents.values() if office else [])
+                              if agent and a.wing == agent.wing and a.tier == "associate"), None)
+            if first.startswith("New assignment from") and agent and agent.tier == "lead" \
+                    and associate:
+                return think("I'll frame the approach and hand the legwork to my associate.",
+                             "On it.",
+                             ("delegate", {"to": associate, "job": f"(demo) Legwork for: {title}"})
+                             )(params)
+            if "your request" in first and "approval #" in first:
+                return think("Noted the decision.", "Thanks, understood. Acting on it (demo).")(
+                    params)
+            return think("Reading the message.", "Noted (demo).")(params)
+        # After tool results: finish the loop sensibly.
+        prev = msgs[-2]["content"] if len(msgs) >= 2 else []
+        used = [b.get("name") for b in prev if isinstance(b, dict) and b.get("type") == "tool_use"]
+        if "assign_task" in used:
+            return think("Assigned. A one-line heads-up to the Captain.", None,
+                         ("report_to_captain", {"text": "(demo) Routed your message to the right "
+                                                "lead. They're on it."}))(params)
+        if "delegate" in used:
+            return think("The associate's first pass is back. Reporting.", None,
+                         ("report_to_captain", {"text": f"(demo) First pass on \"{title[:60]}\" "
+                                                "is done. Real research tools arrive with the "
+                                                "live office in Phase 4."}))(params)
+        return think("That's everything.", "Done (demo).")(params)
 
     def script(self, agent_id: str, *turns: Callable) -> None:
         self.scripts[agent_id].extend(turns)
@@ -62,7 +136,7 @@ class DemoLLM:
         if self.scripts[who]:
             result = self.scripts[who].popleft()(params)
         else:
-            result = think("Nothing left on my list for this one.", "All set on my end.")(params)
+            result = self.improvise(who, params)
         for block in result.content:
             kind = block["type"]
             if kind in ("thinking", "text") and on_delta:
@@ -128,9 +202,11 @@ def scene_memo(office: Office, llm: DemoLLM) -> None:
                      ("send_message", {"to": ["Vera"], "text": "Could you spot-check the "
                                        "sourcing on the Northwind memo draft (demo)?"})),
                think("Vera's on it. I'll report the draft.", None,
-                     ("report_to_captain", {"text": "Northwind Storage memo (demo) drafted. "
-                                            "Thesis: contract pipeline converts in 12 to 18 "
-                                            "months. Audit is spot-checking sources."})),
+                     ("request_approval", {"kind": "brief", "title": "Northwind Storage memo "
+                                           "(demo)", "ticker": "NWST",
+                                           "summary": "Thesis: the contract pipeline converts in "
+                                           "12 to 18 months. Audit is spot-checking sources. "
+                                           "Please review the draft before it goes to Quant."})),
                think("Wrapped.", "Memo drafted and sent for audit."))
     llm.script("er_associate",
                think("Pulling the 10-K, the latest 10-Q and the XBRL facts. Then the draft model "
@@ -180,8 +256,11 @@ def scene_newsletter(office: Office, llm: DemoLLM) -> None:
                                    "teasers."})),
                think("Wren's draft reads well. Disclosure added. Ready for the Captain's "
                      "approval.", None,
-                     ("report_to_captain", {"text": "Newsletter draft (demo) is ready for your "
-                                            "approval in the Outbox."})),
+                     ("request_approval", {"kind": "newsletter", "title": "This week's newsletter "
+                                           "(demo)", "summary": "Gem hunt recap and memo "
+                                           "pipeline, 400 words, plus two social teasers. "
+                                           "Disclosure included. Ready for Substack on your "
+                                           "OK."})),
                think("Done.", "Newsletter ready for approval."))
     llm.script("cr_associate",
                think("Plain, human tone. No hype. Hook with the gem hunt.", None,
@@ -212,12 +291,14 @@ def scene_quant_model(office: Office, llm: DemoLLM) -> None:
                      "margins reach the Street path, and the bear case lands below today's price. "
                      "That's a conflict with the research view, so it goes to the Captain with the "
                      "numbers attached.", None,
-                     ("report_to_captain", {"text": "Northwind model v1 (demo) is ready for your "
-                                            "approval. Base case supports the thesis; top value "
-                                            "driver is the margin path; the bear case falls below "
-                                            "the current price. That conflicts with Research's "
-                                            "view, so I'm flagging it rather than adjusting "
-                                            "inputs. Sensitivity table attached."})),
+                     ("request_approval", {"kind": "model", "ticker": "NWST", "version": 1,
+                                           "title": "Northwind model v1 (demo)",
+                                           "summary": "Base case supports the thesis; the top "
+                                           "value driver is the margin path. The bear case falls "
+                                           "below the current price, which conflicts with "
+                                           "Research's view, so I'm flagging it rather than "
+                                           "adjusting inputs. Sensitivity table attached.",
+                                           "attachments": ["NWST_model_v1_demo.xlsx"]})),
                think("Quill should know the model is with the Captain and why.", None,
                      ("send_message", {"to": ["Quill"], "text": "Model v1 is with the Captain. "
                                        "Heads-up: the bear case breaks the thesis on margins. Hold "

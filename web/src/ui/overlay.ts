@@ -62,6 +62,12 @@ export class Overlay {
         }
         t.root.dataset.status = a ? (a.paused ? "paused" : a.status) : "captain";
         if (t.bubbleUntil && now > t.bubbleUntil) { t.bubble.classList.remove("show"); t.bubbleUntil = 0; }
+        if (t.bubbleUntil) {   // keep the bubble inside the office view
+          const w = t.bubble.offsetWidth, max = this.layer.clientWidth;
+          const shift = Math.max(6 - (pos.x - w / 2), Math.min(0, max - 6 - (pos.x + w / 2)));
+          t.bubble.style.setProperty("--shift", `${Math.round(shift)}px`);
+          t.bubble.classList.toggle("below", pos.y - t.bubble.offsetHeight - 24 < 4);
+        }
       }
       for (const r of scene.roomLabelPositions()) {
         let el = this.rooms.get(r.id);

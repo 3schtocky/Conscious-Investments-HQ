@@ -102,7 +102,7 @@ export function renderActivity(root: HTMLElement, state: OfficeState, wing: stri
 function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) => HTMLElement): HTMLElement | null {
   const s = (...kids: (Node | string)[]) => h("span", { class: "feed-text" }, ...kids);
   switch (ev.type) {
-    case "task_created": return s("📋 ", who(ev.assigned_by === "captain" ? "captain" : ev.assigned_by), " assigned ", who(ev.agent), `: ${ev.title}`);
+    case "task_created": return ev.assigned_by === "captain" ? null : s("📋 ", who(ev.assigned_by), " assigned ", who(ev.agent), `: ${ev.title}`);
     case "task_started": return ev.kind === "assignment" ? s("▶️ ", who(ev.agent), ` started "${ev.title}"`) : null;
     case "task_done": return s("✅ ", who(ev.agent), " finished a task");
     case "delegated": return s("🤝 ", who(ev.agent), " → ", who(ev.to), `: ${short(ev.job, 110)}`);
@@ -113,6 +113,9 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
     case "task_error": return s("⚠️ ", who(ev.agent), ` hit an error: ${short(ev.error, 120)}`);
     case "incident": return s("🚨 Incident · ", who(ev.agent), ` · ${ev.kind}: ${short(String(ev.detail), 120)}`);
     case "office_status": return s(ev.status === "clocked_out" ? "🌙 Daily budget reached: the office clocked out" : "☀️ Office open");
+    case "captain_message": return s("⭐ ", who("captain"), " → ", ev.to === "office" ? h("strong", {}, "the office") : who(ev.to), `: ${short(ev.text, 140)}`);
+    case "approval_requested": return s("📝 ", who(ev.agent), ` asks ${state.captain.nickname} to decide: ${ev.title}`);
+    case "approval_decided": return s("⚖️ ", who("captain"), ` ${ev.decision === "approved" ? "approved" : ev.decision === "changes" ? "asked for changes on" : "declined"} "${ev.title}"`);
   }
   return null;
 }
@@ -199,6 +202,7 @@ export class ChatPanel {
 
   channelName(ch: string): string {
     if (ch === "lobby") return "🪑 Lobby";
+    if (ch === "captain:office") return `⭐ ${this.state.captain.nickname} → Office`;
     if (ch.startsWith("wing:")) return `🏢 ${this.state.wings[ch.slice(5)] ?? ch.slice(5)} wing`;
     if (ch.startsWith("dm:")) {
       const [a, b] = ch.slice(3).split("|");
@@ -223,7 +227,9 @@ export class ChatPanel {
       const mine = m.sender === "captain";
       msgs.append(h("div", { class: `msg${mine ? " mine" : ""}` },
         h("div", { class: "msg-meta" }, h("strong", {}, this.state.name(m.sender)), h("span", { class: "feed-time" }, timeAgo(m.ts))),
-        h("div", { class: "msg-text" }, m.text)));
+        h("div", { class: "msg-text" }, m.text),
+        m.original ? h("details", { class: "original" }, h("summary", {}, "Your original words (only you see this)"),
+          h("div", { class: "msg-text" }, m.original)) : null));
     }
     this.root.append(list, msgs);
     msgs.scrollTop = msgs.scrollHeight;

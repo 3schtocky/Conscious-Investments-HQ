@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from hq.config import ROOT, mission, model_config, office
 from hq.engine.guards import GuardBlock, GuardTripped, TaskGuard
 from hq.engine.ledger import BudgetExhausted
-from hq.engine.llm import TurnResult, request_params
+from hq.engine.llm import ApiDisabled, TurnResult, request_params
 from hq.tools.office import ToolContext, definitions, tool_map, tools_for
 
 if TYPE_CHECKING:
@@ -186,9 +186,8 @@ class Agent:
 
                 if result.stop_reason == "refusal":
                     detail = (result.stop_details or {}).get("category") or "unspecified"
-                    store.add_incident(agent=self.id, task_id=task_id, kind="refusal",
-                                       detail=f"Model declined (category: {detail}).")
-                    bus.publish("incident", self.id, task_id, kind="refusal", detail=detail)
+                    office_.raise_incident(self.id, task_id, "refusal",
+                                           f"Model declined (category: {detail}).")
                     store.set_task_status(task_id, "declined", reason=f"refusal: {detail}")
                     return {"status": "declined", "reason": detail}
                 guard.after_turn(result.context_tokens)
@@ -198,10 +197,14 @@ class Agent:
             bus.publish("task_paused", self.id, task_id, reason="budget", detail=str(e))
             office_.on_budget_exhausted(str(e))
             return {"status": "paused_budget", "reason": str(e)}
+        except ApiDisabled as e:
+            # The master API switch is off: pause (not an error) so the task can resume later.
+            store.set_task_status(task_id, "paused", reason=f"api_off: {e}")
+            bus.publish("task_paused", self.id, task_id, reason="api_off", detail=str(e))
+            return {"status": "paused", "reason": "api_off", "detail": str(e)}
         except GuardTripped as g:
             store.set_task_status(task_id, "paused", reason=f"{g.kind}: {g.detail}")
-            store.add_incident(agent=self.id, task_id=task_id, kind=g.kind, detail=g.detail)
-            bus.publish("incident", self.id, task_id, kind=g.kind, detail=g.detail)
+            office_.raise_incident(self.id, task_id, g.kind, g.detail)
             bus.publish("task_paused", self.id, task_id, reason=g.kind, detail=g.detail)
             return {"status": "paused", "reason": g.kind, "detail": g.detail}
         except asyncio.CancelledError:

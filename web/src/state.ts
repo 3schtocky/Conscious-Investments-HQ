@@ -44,6 +44,7 @@ export interface ChatMsg {
   recipients: string[];
   text: string;
   task_id: number | null;
+  original?: string | null;
 }
 
 export interface Snapshot {
@@ -163,8 +164,14 @@ export class OfficeState {
         if (live) this.chat.push({ id: ev.id ?? Date.now(), ts: ev.ts, channel: `dm:captain|${ev.agent}`,
           sender: ev.agent!, recipients: ["captain"], text: ev.text, task_id: ev.task_id });
         break;
+      case "captain_message":
+        if (live) this.chat.push({ id: ev.id ?? Date.now(), ts: ev.ts,
+          channel: ev.to === "office" ? "captain:office" : `dm:captain|${ev.to}`,
+          sender: "captain", recipients: [ev.agent!], text: ev.text, task_id: ev.task_id,
+          original: ev.original ?? null });
+        break;
       case "task_created":
-        if (live && ev.assigned_by === "captain") {
+        if (live && ev.assigned_by === "captain" && !this.chat.some((m) => m.task_id === ev.task_id && m.sender === "captain")) {
           this.chat.push({ id: ev.id ?? Date.now(), ts: ev.ts, channel: `dm:captain|${ev.agent}`,
             sender: "captain", recipients: [ev.agent!], text: ev.title, task_id: ev.task_id });
         }
@@ -199,8 +206,11 @@ export class OfficeState {
       case "office_status":
         if (live) this.clockedOut = ev.status === "clocked_out";
         break;
+      case "incident_resolved":
+        this.incidents = this.incidents.filter((i) => i.id !== ev.incident);
+        break;
       case "incident":
-        if (live) this.incidents.push(ev);
+        if (live) this.incidents.push({ ...ev, id: ev.incident_id });
         b("alert", `Incident: ${ev.kind}: ${ev.detail}`, true);
         break;
     }
@@ -213,7 +223,8 @@ export class OfficeState {
 }
 
 const FEED_TYPES = new Set(["task_created", "task_started", "task_done", "delegated", "chat",
-  "captain_report", "task_paused", "task_error", "incident", "office_status", "meeting"]);
+  "captain_report", "task_paused", "task_error", "incident", "office_status", "meeting",
+  "captain_message", "approval_requested", "approval_decided"]);
 
 export function short(s: string, n = 140): string {
   s = s.replace(/\s+/g, " ");

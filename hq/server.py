@@ -41,6 +41,29 @@ class PauseRequest(BaseModel):
     reason: str = "Paused by the Captain"
 
 
+class CaptainPreview(BaseModel):
+    to: str = "office"
+    text: str
+
+
+class CaptainSend(BaseModel):
+    to: str = "office"
+    text: str                     # what the team will read
+    original: str | None = None   # the Captain's own words, if he sent the rewrite
+
+
+class CaptainCheck(BaseModel):
+    original: str
+    rewrite: str
+
+
+class Decision(BaseModel):
+    decision: str                 # approved | changes | rejected
+    note: str | None = None
+
+MAX_MESSAGE = 8000
+
+
 def create_app(*, demo: bool = False, demo_speed: float = 1.0,
                office_factory=None) -> FastAPI:
     state: dict = {}
@@ -54,7 +77,8 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
             for suffix in ("", "-wal", "-shm"):
                 Path(f"{db}{suffix}").unlink(missing_ok=True)
             llm = DemoLLM(speed=demo_speed)
-            office = Office(db_path=db, llm=llm)
+            office = Office(db_path=db, llm=llm, tone="rules")
+            llm.office = office
 
             async def loop() -> None:
                 while True:
@@ -143,6 +167,57 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
             office().resume(agent_id, by="captain")
         except KeyError as e:
             raise HTTPException(404, str(e.args[0])) from e
+        return JSONResponse({"ok": True})
+
+    def _check_text(text: str) -> str:
+        text = text.strip()
+        if not text:
+            raise HTTPException(400, "Write a message first.")
+        if len(text) > MAX_MESSAGE:
+            raise HTTPException(400, f"Messages are limited to {MAX_MESSAGE} characters.")
+        return text
+
+    def _check_to(to: str) -> str:
+        if to == "office":
+            return to
+        try:
+            return office().resolve(to)
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
+
+    @app.post("/api/captain/preview")
+    async def captain_preview(req: CaptainPreview) -> JSONResponse:
+        return JSONResponse(await office().tone_preview(_check_to(req.to), _check_text(req.text)))
+
+    @app.post("/api/captain/check")
+    async def captain_check(req: CaptainCheck) -> JSONResponse:
+        from hq.engine.tone import check
+
+        return JSONResponse(check(req.original[:MAX_MESSAGE], req.rewrite[:MAX_MESSAGE]).as_dict())
+
+    @app.post("/api/captain/send")
+    async def captain_send(req: CaptainSend) -> JSONResponse:
+        original = req.original.strip()[:MAX_MESSAGE] if req.original else None
+        return JSONResponse(office().captain_send(_check_to(req.to), _check_text(req.text),
+                                                  original=original))
+
+    @app.get("/api/approvals")
+    async def approvals(status: str | None = None) -> JSONResponse:
+        return JSONResponse(office().store.approvals(status=status))
+
+    @app.post("/api/approvals/{approval_id}/decide")
+    async def decide(approval_id: int, req: Decision) -> JSONResponse:
+        try:
+            card = office().decide(approval_id, req.decision, (req.note or "").strip() or None)
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        return JSONResponse(card)
+
+    @app.post("/api/incidents/{incident_id}/resolve")
+    async def resolve_incident(incident_id: int) -> JSONResponse:
+        office().resolve_incident(incident_id)
         return JSONResponse({"ok": True})
 
     @app.websocket("/ws")

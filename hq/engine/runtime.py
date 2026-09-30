@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 
 from hq.config import DATA_DIR, office, roster
@@ -26,7 +27,8 @@ THREAD_CONTEXT = 6   # recent messages between two colleagues included when a re
 
 class Office:
     def __init__(self, *, store: Store | None = None, llm: ModelClient | None = None,
-                 ledger: Ledger | None = None, db_path: Path | str | None = None):
+                 ledger: Ledger | None = None, db_path: Path | str | None = None,
+                 tone: str | None = None):
         self.store = store or Store(db_path or DATA_DIR / "office.db")
         self.bus = EventBus(self.store)
         self.ledger = ledger or Ledger(self.store)
@@ -35,6 +37,8 @@ class Office:
         self.conversations = ConversationGuard()
         self.clocked_out = False
         self._running: set[asyncio.Task] = set()
+        # The Captain's tone filter: "llm" (Haiku, billed to Juno) or "rules" (free, demo).
+        self.tone_engine = tone or office().get("tone", {}).get("engine", "llm")
         cast = roster()
         self._wings: dict[str, str] = {k: v["name"] for k, v in cast["wings"].items()}
         self.captain_name: str = cast.get("captain", {}).get("nickname") or "the Captain"
@@ -74,15 +78,27 @@ class Office:
 
     # scheduling -------------------------------------------------------------------------
     def assign(self, agent_id: str, body: str, *, title: str | None = None,
-               by: str = CAPTAIN) -> int:
+               by: str = CAPTAIN, parent: dict | None = None) -> int:
+        """Create and schedule an assignment. `parent` (the assigning agent's task) makes the
+        new task part of the same piece of work, so it shares that work's $ cap."""
         agent_id = self.resolve(agent_id)
         title = title or _title(body)
-        task_id = self.store.create_task(assignee=agent_id, assigned_by=by, kind="assignment",
-                                         title=title, body=body)
+        task_id = self.store.create_task(
+            assignee=agent_id, assigned_by=by, kind="assignment", title=title, body=body,
+            parent_id=parent["id"] if parent else None,
+            root_id=parent["root_id"] if parent else None)
         if by == CAPTAIN:
             self.conversations.record_message(CAPTAIN, [agent_id], body)
             self.store.add_chat(channel=f"dm:{CAPTAIN}|{agent_id}", sender=CAPTAIN,
                                 recipients=[agent_id], text=body, task_id=task_id)
+            self.bus.publish("captain_message", agent_id, task_id, to=agent_id, text=body,
+                             delivered="task")
+        elif by in self.agents:   # e.g. Juno assigning on the Captain's behalf
+            channel = _channel(by, [agent_id], self.agents)
+            text = f"New assignment: {title}\n\n{body}"
+            self.store.add_chat(channel=channel, sender=by, recipients=[agent_id], text=text,
+                                task_id=task_id)
+            self.bus.publish("chat", by, task_id, channel=channel, recipients=[agent_id], text=text)
         self.bus.publish("task_created", agent_id, task_id, title=title, kind="assignment",
                          assigned_by=by)
         self._schedule(agent_id, task_id)
@@ -155,6 +171,131 @@ class Office:
                             recipients=[CAPTAIN], text=text, task_id=task_id)
         self.bus.publish("captain_report", sender, task_id, text=text)
 
+    # the Captain's channel ---------------------------------------------------------------
+    def captain_send(self, to: str, text: str, *, original: str | None = None) -> dict:
+        """Deliver a message from the Captain. `to` is "office" (Juno routes it) or an agent.
+
+        `original` is the Captain's own wording when he sent the tone rewrite: it is kept in the
+        log for him, and never shown to agents.
+        """
+        kept = original if original and original.strip() != text.strip() else None
+        if to == "office":
+            juno = "chief_of_staff"
+            body = (f"{self.captain_name} sent a message to the whole office:\n\n{text}\n\n"
+                    "Route it: use assign_task to give the right lead(s) a clear assignment (goal, "
+                    "deliverable, any deadline), or answer it yourself if it's a question for you. "
+                    f"Then tell {self.captain_name} in one line who is on it.")
+            task_id = self.store.create_task(assignee=juno, assigned_by=CAPTAIN, kind="assignment",
+                                             title=_title(text), body=body)
+            self.conversations.record_message(CAPTAIN, [juno], text)
+            self.store.add_chat(channel="captain:office", sender=CAPTAIN, recipients=[juno],
+                                text=text, task_id=task_id, original=kept)
+            self.bus.publish("captain_message", juno, task_id, to="office", text=text,
+                             original=kept)   # UI only (the Captain's log); agents never see it
+            self.bus.publish("task_created", juno, task_id, title=_title(text), kind="assignment",
+                             assigned_by=CAPTAIN)
+            self._schedule(juno, task_id)
+            return {"routed_to": juno, "task_id": task_id}
+
+        agent_id = self.resolve(to)
+        agent = self.agents[agent_id]
+        self.conversations.record_message(CAPTAIN, [agent_id], text)
+        if agent.current_task is not None or agent.desk.locked():
+            # Busy: the message lands in their next turn instead of starting a new task.
+            agent.inbox.append(f"[Message from {self.captain_name} (the Captain)]: {text}")
+            self.store.add_chat(channel=f"dm:{CAPTAIN}|{agent_id}", sender=CAPTAIN,
+                                recipients=[agent_id], text=text, task_id=agent.current_task,
+                                original=kept)
+            self.bus.publish("captain_message", agent_id, agent.current_task, to=agent_id,
+                             text=text, delivered="inbox", original=kept)
+            return {"routed_to": agent_id, "task_id": agent.current_task, "delivered": "inbox"}
+        task_id = self.store.create_task(assignee=agent_id, assigned_by=CAPTAIN,
+                                         kind="assignment", title=_title(text), body=text)
+        self.store.add_chat(channel=f"dm:{CAPTAIN}|{agent_id}", sender=CAPTAIN,
+                            recipients=[agent_id], text=text, task_id=task_id, original=kept)
+        self.bus.publish("captain_message", agent_id, task_id, to=agent_id, text=text,
+                         delivered="task", original=kept)
+        self.bus.publish("task_created", agent_id, task_id, title=_title(text), kind="assignment",
+                         assigned_by=CAPTAIN)
+        self._schedule(agent_id, task_id)
+        return {"routed_to": agent_id, "task_id": task_id, "delivered": "task"}
+
+    async def tone_preview(self, to: str, text: str) -> dict:
+        """Rewrite a Captain message for the team and check nothing important changed."""
+        from hq.engine.tone import LLMRewriter, RuleRewriter, check
+
+        recipient = "" if to == "office" else self.agents[self.resolve(to)].nickname
+        rewriter = LLMRewriter(self) if self.tone_engine == "llm" else RuleRewriter()
+        from hq.engine.llm import ApiDisabled
+
+        try:
+            rewrite = await rewriter.rewrite(text, recipient)
+            engine = rewriter.engine
+        except BudgetExhausted:
+            rewrite, engine = await RuleRewriter().rewrite(text, recipient), "rules (budget)"
+        except ApiDisabled:
+            rewrite, engine = await RuleRewriter().rewrite(text, recipient), "rules (API off)"
+        return {"original": text, "rewrite": rewrite, "engine": engine,
+                "check": check(text, rewrite).as_dict()}
+
+    def request_approval(self, agent_id: str, *, kind: str, title: str, summary: str,
+                         payload: dict, task_id: int | None) -> int:
+        approval_id = self.store.add_approval(kind=kind, agent=agent_id, task_id=task_id,
+                                              title=title, summary=summary, payload=payload)
+        self.bus.publish("approval_requested", agent_id, task_id, approval=approval_id, kind=kind,
+                         title=title)
+        return approval_id
+
+    def decide(self, approval_id: int, decision: str, note: str | None = None) -> dict:
+        """The Captain's decision on an approval card, sent back to the agent who asked."""
+        if decision not in ("approved", "changes", "rejected"):
+            raise ValueError("decision must be approved, changes or rejected")
+        card = self.store.approval(approval_id)
+        if card["status"] != "pending":
+            raise ValueError(f"approval {approval_id} is already {card['status']}")
+        self.store.decide_approval(approval_id, decision, note)
+        verb = {"approved": "approved", "changes": "asked for changes on",
+                "rejected": "declined"}[decision]
+        text = f'{self.captain_name} {verb} your request "{card["title"]}" (approval #{approval_id}).'
+        if note:
+            text += f" Note: {note}"
+        if decision == "approved" and card["kind"] == "model":
+            text += (" This version is now the firm's official numbers; distribute it to the "
+                     "teams covering this equity.")
+        self.bus.publish("approval_decided", card["agent"], card["task_id"], approval=approval_id,
+                         decision=decision, note=note, title=card["title"])
+        agent = self.agents.get(card["agent"])
+        if agent is not None:
+            self.store.add_chat(channel=f"dm:{CAPTAIN}|{agent.id}", sender=CAPTAIN,
+                                recipients=[agent.id], text=text, task_id=card["task_id"])
+            self.bus.publish("captain_message", agent.id, card["task_id"], to=agent.id, text=text,
+                             delivered="decision")
+            if agent.current_task is not None or agent.desk.locked():
+                agent.inbox.append(f"[Message from {self.captain_name} (the Captain)]: {text}")
+            else:
+                task_id = self.store.create_task(
+                    assignee=agent.id, assigned_by=CAPTAIN, kind="message",
+                    title=f"Decision on: {card['title']}"[:70],
+                    body=f"[Message from {self.captain_name} (the Captain)]: {text}\n\n"
+                         "Act on the decision (finish, revise, or distribute), then end with a "
+                         "one-line recap.")
+                self._schedule(agent.id, task_id)
+        return self.store.approval(approval_id)
+
+    def raise_incident(self, agent: str | None, task_id: int | None, kind: str, detail: str,
+                       **extra) -> int:
+        """Record an incident for the Captain and announce it (with its id, so the UI can
+        acknowledge exactly this one)."""
+        incident_id = self.store.add_incident(agent=agent, task_id=task_id, kind=kind,
+                                              detail=detail)
+        self.bus.publish("incident", agent, task_id, incident_id=incident_id, kind=kind,
+                         detail=detail, **extra)
+        return incident_id
+
+    def resolve_incident(self, incident_id: int) -> None:
+        self.store.resolve_incident(incident_id)
+        self.bus.publish("incident_resolved", None, None, incident=incident_id)
+
     # delegation -------------------------------------------------------------------------
     async def delegate(self, lead: str, associate: str, job: str, *, parent_task: dict) -> dict:
         task_id = self.store.create_task(
@@ -182,10 +323,8 @@ class Office:
         agent.gate.clear()
         agent.set_status("paused", by=by, reason=reason)
         if by != CAPTAIN:
-            self.store.add_incident(agent=agent.id, task_id=agent.current_task, kind="paused",
-                                    detail=f"Paused by {self.name(by)}: {reason}")
-            self.bus.publish("incident", agent.id, agent.current_task, kind="paused",
-                             detail=reason, by=by)
+            self.raise_incident(agent.id, agent.current_task, "paused",
+                                f"Paused by {self.name(by)}: {reason}", by=by)
 
     def resume(self, agent_id: str, *, by: str) -> None:
         if by != CAPTAIN:
@@ -255,6 +394,8 @@ class Office:
                        for e in self.store.events(limit=events)],
             "chat": self.store.chat(limit=chat),
             "incidents": self.store.incidents(),
+            "approvals": self.store.approvals(),
+            "captain_name": self.captain_name,
         }
 
     def reload_roster(self) -> None:
@@ -270,8 +411,15 @@ class Office:
                 self.agents[e["id"]] = Agent(self, e)
 
 
+_GREETING = re.compile(r"^(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b", re.IGNORECASE)
+
+
 def _title(text: str, n: int = 70) -> str:
-    line = text.strip().splitlines()[0] if text.strip() else "Untitled"
+    """A task title from a message: its first real line, skipping a greeting paragraph."""
+    paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
+    if len(paragraphs) > 1 and _GREETING.match(paragraphs[0]) and len(paragraphs[0]) < 120:
+        paragraphs = paragraphs[1:]
+    line = paragraphs[0].splitlines()[0] if paragraphs else "Untitled"
     return line if len(line) <= n else line[: n - 1] + "…"
 
 
