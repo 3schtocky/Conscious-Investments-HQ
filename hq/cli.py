@@ -131,6 +131,11 @@ def main() -> None:
     p_run.add_argument("task", help="what you want done")
     p_run.add_argument("--title")
     sub.add_parser("spend", help="today's spend by agent and model")
+    p_serve = sub.add_parser("serve", help="open the office in your browser")
+    p_serve.add_argument("--demo", action="store_true",
+                         help="scripted demo office: zero API cost, separate database")
+    p_serve.add_argument("--port", type=int, default=8750)
+    p_serve.add_argument("--speed", type=float, default=1.0, help="demo playback speed")
     args = parser.parse_args()
     if args.cmd == "smoke":
         sys.exit(smoke(args.tier))
@@ -140,3 +145,9 @@ def main() -> None:
         sys.exit(asyncio.run(_run_agent(args.agent, args.task, args.title)))
     if args.cmd == "spend":
         sys.exit(spend())
+    if args.cmd == "serve":
+        from hq.server import serve
+
+        print(f"Conscious Investments HQ{' (demo)' if args.demo else ''}: "
+              f"http://127.0.0.1:{args.port}")
+        serve(demo=args.demo, port=args.port, speed=args.speed)

@@ -5,7 +5,7 @@ You are building (and later maintaining) an AI-run stock-picking office for **Co
 ## Build rules
 1. **Phase gates.** Work in the plan's phases. At the end of each phase run `uv run pytest`, `uv run ruff check hq tests`, `/code-review`, report API spend for the phase, demo it, then **stop for Ethan's approval** before starting the next phase. Ethan asked for these pauses explicitly.
 2. **Ask with prompts.** Put decisions for Ethan in AskUserQuestion prompts (multiple choice, recommended option first), not in prose lists.
-3. **Spend is real money.** Any command that calls the API needs a cost estimate first. Tests mock the client. Real calls stay small and are reported.
+3. **Subscription first, API key last.** Ethan wants the build done on his Claude Pro subscription (Claude Code: coding, tests, reviews, erb runs) as much as possible. The office agents only call the API when a phase truly needs real agents. Until Phase 4 (ER wing live): no real API calls. Verify with mocked tests (`tests/conftest.py` FakeLLM) and `hq serve --demo`, and skip the small real check at each phase gate. From Phase 4 on, build and test every wing in demo mode before its first real run. Any real run needs a cost estimate first and Ethan's OK, and the spend goes in the gate report.
 4. **Public repo.** Never commit `.env`, `data/`, `memory/`, `outbox/`, chat logs, or anything under `Equity Research/coverage` or `reference/`.
 5. **erb lives in the submodule.** Change erb in `Equity Research/` with its own tests and commits, push to its repo, then bump the submodule pointer here. erb keeps its own CLAUDE.md and guardrails (sourcing, the model makes the numbers, style lint).
 

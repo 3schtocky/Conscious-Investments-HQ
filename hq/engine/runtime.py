@@ -108,11 +108,14 @@ class Office:
                             task_id=task_id)
         s = self.agents[sender]
         away = [r for r in recipients if self.agents[r].wing != s.wing]
-        if away:
+        if channel == "lobby":
+            # A cross-wing group message gathers everyone at the Lobby table.
+            self.bus.publish("meeting", sender, task_id, participants=[sender, *recipients])
+        elif away:
             self.bus.publish("move", sender, task_id, to=f"desk:{away[0]}")
         self.bus.publish("chat", sender, task_id, channel=channel, recipients=recipients,
                          text=text)
-        if away:
+        if away and channel != "lobby":
             self.bus.publish("move", sender, task_id, to=f"desk:{sender}")
         for r in recipients:
             self._deliver(sender, r, text, channel)
@@ -214,6 +217,44 @@ class Office:
         if restarted:
             self.bus.publish("office_status", None, None, status="open", resumed=restarted)
         return restarted
+
+    def snapshot(self, events: int = 300, chat: int = 200) -> dict:
+        """Everything the office UI needs on connect."""
+        cast = roster()
+        entries = {e["id"]: e for e in cast["agents"]}
+        day = self.ledger.today()
+        breakdown = self.store.spend_breakdown(day)
+        by_agent: dict[str, float] = {}
+        by_model: dict[str, float] = {}
+        for row in breakdown:
+            by_agent[row["agent"]] = by_agent.get(row["agent"], 0) + row["cost"]
+            by_model[row["model"]] = by_model.get(row["model"], 0) + row["cost"]
+        agents = []
+        for a in self.agents.values():
+            task = self.store.task(a.current_task) if a.current_task else None
+            agents.append({
+                "id": a.id, "nickname": a.nickname, "wing": a.wing, "role": a.role,
+                "persona": a.persona, "model": a.model_key, "model_id": a.model_cfg["id"],
+                "tier": a.tier, "avatar": entries.get(a.id, {}).get("avatar"),
+                "status": a.status, "paused": a.paused,
+                "task": {"id": task["id"], "title": task["title"]} if task else None,
+            })
+        return {
+            "office": {"clocked_out": self.clocked_out, "day": day,
+                       "max_concurrent": office()["limits"]["max_concurrent_agents"]},
+            "wings": self._wings,
+            "captain": cast.get("captain", {"nickname": "Captain"}),
+            "models": {k: v["id"] for k, v in office()["models"].items()},
+            "agents": agents,
+            "spend": {"today": round(self.ledger.spent_today(), 6),
+                      "cap": self.ledger.daily_cap, "by_agent": by_agent,
+                      "by_model": by_model},
+            "events": [{"id": e["id"], "ts": e["ts"], "type": e["type"], "agent": e["agent"],
+                        "task_id": e["task_id"], **e["payload"]}
+                       for e in self.store.events(limit=events)],
+            "chat": self.store.chat(limit=chat),
+            "incidents": self.store.incidents(),
+        }
 
     def reload_roster(self) -> None:
         """Apply roster.yaml edits (nicknames, personas, models). Running tasks keep the prompt

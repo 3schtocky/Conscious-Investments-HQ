@@ -221,6 +221,10 @@ class Store:
             (day,),
         )
 
+    def clear_spend(self) -> None:
+        """Demo only: wipe recorded spend (the demo database is separate and disposable)."""
+        self._exec("DELETE FROM spend")
+
     # incidents ---------------------------------------------------------------------------
     def add_incident(self, *, agent: str | None, task_id: int | None, kind: str,
                      detail: str) -> int:

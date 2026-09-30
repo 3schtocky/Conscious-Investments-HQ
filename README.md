@@ -23,8 +23,17 @@ cd Conscious-Investments-HQ
 cp .env.example .env                       # add ANTHROPIC_API_KEY
 cp "Equity Research/.env.example" "Equity Research/.env"
 uv sync
-uv run hq smoke                            # one tiny call to check the key
+(cd web && npm install && npm run build)   # build the office UI once
 ```
+
+## Open the office
+```bash
+uv run hq serve --demo     # scripted demo office: zero API cost, separate database
+uv run hq serve            # the real office (spends only when you assign work)
+```
+Then open http://127.0.0.1:8750. Deep links work too: `#wing=screening`, `#agent=er_lead`, `#tab=settings`.
+
+Other commands: `uv run hq smoke` (tiny key check), `uv run hq run-agent Quill "..."` (one task in the terminal), `uv run hq spend` (today's spend). For UI work, run `npm run dev` in `web/` alongside `hq serve` and open http://localhost:5173.
 
 The office uses the Anthropic API, which is billed separately from a Claude subscription. Set a monthly spend limit in the Anthropic Console as a backstop to the office's own daily cap.
 

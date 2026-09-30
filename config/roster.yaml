@@ -101,3 +101,8 @@ agents:
     persona: >-
       Clear, lively writer. Drafts the Substack newsletter and short X and LinkedIn teasers
       in plain, human language with no hype.
+
+# You, in your own office. Editable in Settings too.
+captain:
+  nickname: Captain Ethan
+  avatar: captain

@@ -127,6 +127,7 @@ class Agent:
             system = self.system_prompt()
             messages = [{"role": "user", "content": office_.render_task(task)}]
             store.save_conversation(task_id, system, messages)
+        model_cfg = self.model_cfg   # frozen for this run, like the prompt and tools
         tools = tools_for(self.tier, self.id)
         by_name = tool_map(tools)
         tool_defs = definitions(tools)
@@ -166,7 +167,7 @@ class Agent:
                     self.set_status("working", title=task["title"])
                 office_.ledger.check(is_audit=self.is_audit)
                 guard.before_turn(self._task_spend(task))
-                params = request_params(self.model_cfg, system=system, messages=messages,
+                params = request_params(model_cfg, system=system, messages=messages,
                                         tools=tool_defs)
                 async with office_.slots:
                     result = await office_.llm.turn(
