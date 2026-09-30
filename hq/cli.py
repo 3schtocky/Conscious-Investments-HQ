@@ -36,7 +36,7 @@ def smoke(tier: str) -> int:
     text = next((b.text for b in msg.content if b.type == "text"), "")
     print(f"{model}: {text.strip()}")
     print(f"usage: in={msg.usage.input_tokens} out={msg.usage.output_tokens} "
-          f"cost=${usage_cost(model, msg.usage):.5f}  request_id={msg._request_id}")
+          f"cost=${usage_cost(model, msg.usage):.2f}  request_id={msg._request_id}")
     return 0
 
 
@@ -65,9 +65,9 @@ def _fmt(office, ev) -> str | None:
             return f"  📣 {who} → Captain:\n{wrap(p['text'])}"
         case "spend":
             u = p["usage"]
-            return (f"  $ {who} {p['model']}: ${p['cost']:.4f} (in {u['input_tokens']}, "
+            return (f"  $ {who} {p['model']}: ${p['cost']:.2f} (in {u['input_tokens']}, "
                     f"cached {u['cache_read_input_tokens']}, out {u['output_tokens']}) · "
-                    f"today ${p['spent_today']:.4f} / ${p['cap']:.2f}")
+                    f"today ${p['spent_today']:.2f} / ${p['cap']:.2f}")
         case "task_done":
             return f"✔ {who} finished task #{ev.task_id}"
         case "task_paused" | "incident" | "task_error" | "guard_block" | "office_status":
@@ -101,8 +101,8 @@ async def _run_agent(agent: str, body: str, title: str | None) -> int:
     printer_task.cancel()
     t = office.store.task(task_id)
     print(f"\nTask #{task_id}: {t['status']}  ·  this run cost "
-          f"${office.ledger.spent_today() - start:.4f}  ·  "
-          f"today ${office.ledger.spent_today():.4f} of ${office.ledger.daily_cap:.2f}")
+          f"${office.ledger.spent_today() - start:.2f}  ·  "
+          f"today ${office.ledger.spent_today():.2f} of ${office.ledger.daily_cap:.2f}")
     return 0 if t["status"] == "done" else 2
 
 
@@ -114,10 +114,10 @@ def spend() -> int:
     store = Store(DATA_DIR / "office.db")
     ledger = Ledger(store)
     day = ledger.today()
-    print(f"{day}: ${ledger.spent_today():.4f} of ${ledger.daily_cap:.2f}")
+    print(f"{day}: ${ledger.spent_today():.2f} of ${ledger.daily_cap:.2f}")
     for r in store.spend_breakdown(day):
         print(f"  {r['agent']:<18} {r['model']:<20} {r['calls']:>3} calls  in {r['input_tokens']:>8}"
-              f"  cached {r['cache_read_tokens']:>8}  out {r['output_tokens']:>7}  ${r['cost']:.4f}")
+              f"  cached {r['cache_read_tokens']:>8}  out {r['output_tokens']:>7}  ${r['cost']:.2f}")
     return 0
 
 

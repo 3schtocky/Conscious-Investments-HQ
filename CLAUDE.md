@@ -18,5 +18,6 @@ You are building (and later maintaining) an AI-run stock-picking office for **Co
 
 ## Conventions
 - Python 3.12 via `uv`; run everything with `uv run ...`.
+- Show every cost to Ethan rounded to the cent ($0.00), in the UI, the CLI and gate reports. The ledger stores full precision so the daily cap stays exact.
 - Costs come from `hq.engine.ledger.usage_cost` and the pricing table in `office.yaml`. Update the table when prices change.
 - Use the exact model ids from `office.yaml`. Haiku 4.5 takes `thinking: {type: "enabled", budget_tokens: N}` and has no `effort`. Sonnet 5.5 takes `thinking: {type: "adaptive", display: "summarized"}` and `output_config.effort`.

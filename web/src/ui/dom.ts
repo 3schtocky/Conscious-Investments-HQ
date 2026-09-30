@@ -27,6 +27,7 @@ export function timeAgo(ts: number): string {
   return new Date(ts * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+/** Costs are shown to the cent; the ledger itself keeps full precision for the cap. */
 export function money(n: number): string {
-  return n < 1 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
+  return `$${n.toFixed(2)}`;
 }
