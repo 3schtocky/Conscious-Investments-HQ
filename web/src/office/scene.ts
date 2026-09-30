@@ -381,7 +381,7 @@ export class OfficeScene extends Phaser.Scene {
     };
     for (let x = 0; x < COLS; x++) { wallTile(x, 0); wallTile(x, 11); wallTile(x, 21); wallTile(x, ROWS - 1); }
     for (let y = 0; y < ROWS; y++) {
-      const cols = y < 11 ? [0, 12, 24, 36, 48] : y > 21 ? [0, 24, 48] : [0, 48];
+      const cols = y < 11 ? [0, 12, 24, 36, 48] : y > 21 ? [0, 16, 32, 48] : [0, 48];
       for (const x of cols) {
         g.fillStyle(0x6f675b).fillRect(x * TILE, y * TILE, TILE, TILE);
         g.fillStyle(0x7d7466).fillRect(x * TILE + 3, y * TILE, TILE - 6, TILE);
@@ -483,6 +483,23 @@ export class OfficeScene extends Phaser.Scene {
           g.fillStyle(0xe8eef2).fillRect(px + 3, py - 2, w * TILE - 6, TILE + 1);
           g.fillStyle(0xf6f5f0).fillRect(px + 8, py - 6, w * TILE - 16, 5);
           g.fillStyle(0x3a9a7a).fillRect(px + w * TILE - 9, py + 2, 3, 2);
+          break;
+        case "chalkboard": {   // the Quant Lab's board: a bell curve and a DCF sketch
+          g.fillStyle(0x6b4a2e).fillRect(px, py - 12, w * TILE, TILE + 4);
+          g.fillStyle(0x2f4a3a).fillRect(px + 2, py - 10, w * TILE - 4, TILE);
+          g.lineStyle(1, 0xf6f5f0).beginPath();
+          for (let i = 0; i <= 30; i++) {
+            const xx = px + 6 + i, yy = py + 3 - 11 * Math.exp(-((i - 15) ** 2) / 40);
+            if (i === 0) g.moveTo(xx, yy); else g.lineTo(xx, yy);
+          }
+          g.strokePath();
+          g.fillStyle(0xc9a227).fillRect(px + 44, py - 6, 2, 8).fillRect(px + 50, py - 4, 2, 6).fillRect(px + 56, py - 8, 2, 10).fillRect(px + 62, py - 2, 2, 4);
+          break;
+        }
+        case "server":
+          g.fillStyle(0x2E2C29).fillRect(px + 1, py - 14, w * TILE - 2, TILE + 14);
+          g.fillStyle(0x46505e).fillRect(px + 2, py - 13, w * TILE - 4, TILE + 12);
+          for (let i = 0; i < 5; i++) g.fillStyle(i % 2 ? 0x3a9a7a : 0x7fd6ff).fillRect(px + 5, py - 10 + i * 5, 2, 2).fillRect(px + 9, py - 10 + i * 5, w * TILE - 14, 1);
           break;
         case "rug":
           g.fillStyle(0x8e2a2a).fillRect(px, py, w * TILE, h * TILE);

@@ -86,7 +86,7 @@ def client(make_office, roster_copy):
 
 def test_state_endpoint(client):
     snap = client.get("/api/state").json()
-    assert len(snap["agents"]) == 9 and snap["office"]["demo"] is False
+    assert len(snap["agents"]) == 11 and snap["office"]["demo"] is False
     assert snap["spend"]["cap"] == 10.0 and snap["captain"]["nickname"]
     assert {a["tier"] for a in snap["agents"]} == {"lead", "associate"}
 
@@ -200,3 +200,34 @@ async def test_demo_keeps_its_pretend_budget_in_range(make_office):
     task.cancel()
     statuses = {t["status"] for t in office.store.tasks()}
     assert "paused_budget" not in statuses
+
+
+# Quant Department ---------------------------------------------------------------------------
+def test_quant_wing_in_roster_and_prompts(make_office):
+    office, _ = make_office()
+    sigma, delta = office.agents["quant_lead"], office.agents["quant_associate"]
+    assert (sigma.wing, sigma.tier, delta.wing, delta.tier) == ("quant", "lead", "quant", "associate")
+    assert office.wing_name("quant") == "Quant"
+    prompt = sigma.system_prompt()
+    assert "# Your department: Quant" in prompt and "An honest model beats a flattering one" in prompt
+    assert "Excel model (.xlsx)" in delta.system_prompt()
+    # other wings don't get the Quant charter; everyone sees Sigma and Delta as colleagues
+    quill = office.agents["er_lead"].system_prompt()
+    assert "Your department: Quant" not in quill and "Sigma (`quant_lead`)" in quill
+    # Sigma can delegate to Delta (same wing) but not to Ledger
+    from hq.tools.office import tools_for
+    assert "delegate" in [t.name for t in tools_for(sigma.tier, sigma.id)]
+
+
+def test_agents_call_the_captain_by_his_settings_name(make_office):
+    office, _ = make_office()
+    assert office.captain_name == "Stott"
+    prompt = office.agents["quant_lead"].system_prompt()
+    assert "{captain}" not in prompt and "escalate to Stott with the numbers" in prompt
+    assert "Stott (Ethan Stott) is the Captain of the fund" in prompt
+    from hq.tools.office import definitions, tools_for
+    defs = definitions(tools_for("lead", "er_lead"), captain=office.captain_name)
+    report = next(d for d in defs if d["name"] == "report_to_captain")
+    assert report["description"].startswith("Send a message to Stott, the Captain")
+    office.captain_name = "Boss"   # a Settings rename flows into new tasks' prompts
+    assert "Boss (Ethan Stott) is the Captain" in office.agents["er_lead"].system_prompt()

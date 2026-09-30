@@ -192,14 +192,14 @@ SUBMIT_RESULT = Tool(
 async def _report_to_captain(ctx: ToolContext, inp: dict) -> str:
     text = _str(inp, "text", max_len=8000)
     await ctx.office.report_to_captain(ctx.agent.id, text, task_id=ctx.task["id"])
-    return "Sent to the Captain."
+    return f"Sent to {ctx.office.captain_name}."
 
 
 REPORT_TO_CAPTAIN = Tool(
     name="report_to_captain",
     description=(
-        "Send a message to the Captain (Ethan): a finished deliverable summary, a decision you "
-        "need from him, or an important risk. Be concise and lead with the answer."),
+        "Send a message to {captain}, the Captain: a finished deliverable summary, a decision "
+        "you need from {captain}, or an important risk. Be concise and lead with the answer."),
     input_schema={
         "type": "object",
         "properties": {"text": {"type": "string"}},
@@ -223,5 +223,8 @@ def tool_map(tools: list[Tool]) -> dict[str, Tool]:
     return {t.name: t for t in tools}
 
 
-def definitions(tools: list[Tool]) -> list[dict[str, Any]]:
-    return [t.definition() for t in tools]
+def definitions(tools: list[Tool], captain: str = "the Captain") -> list[dict[str, Any]]:
+    defs = [t.definition() for t in tools]
+    for d in defs:
+        d["description"] = d["description"].replace("{captain}", captain)
+    return defs

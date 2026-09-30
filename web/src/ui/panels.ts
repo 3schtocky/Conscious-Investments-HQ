@@ -5,7 +5,7 @@ import type { AgentView, Block, OfficeEvent, OfficeState } from "../state";
 import { short } from "../state";
 import { clear, h, money, timeAgo } from "./dom";
 
-export const WING_ORDER = ["executive", "equity_research", "screening", "audit", "client_relations"];
+export const WING_ORDER = ["executive", "equity_research", "screening", "quant", "audit", "client_relations"];
 
 export function avatarImage(id: string, spec: AvatarSpec, scale = 3): HTMLElement {
   const img = imageOf(spec);
@@ -33,6 +33,12 @@ interface CardRefs { root: HTMLElement; status: HTMLElement; task: HTMLElement; 
 
 export class DeskCards {
   private cards = new Map<string, CardRefs>();
+
+  /** Scroll the strip so the given agents' cards are in view (e.g. on wing focus). */
+  reveal(ids: string[]) {
+    const first = ids.map((id) => this.cards.get(id)?.root).find(Boolean);
+    first?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+  }
   constructor(private root: HTMLElement, private state: OfficeState, private onPick: (id: string) => void) {}
 
   render(selected: string | null, wingFilter: string | null) {

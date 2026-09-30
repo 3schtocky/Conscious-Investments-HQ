@@ -82,6 +82,10 @@ function setFocus(f: Focus) {
   scene?.setFocus(f);
   writeHash();
   render();
+  requestAnimationFrame(() => {
+    if (f.kind === "agent") cards.reveal([f.id]);
+    if (f.kind === "wing") cards.reveal([...state.agents.values()].filter((a) => a.wing === f.id).map((a) => a.id));
+  });
 }
 
 // Deep links: #wing=screening, #agent=er_lead&tab=chat, #tab=settings

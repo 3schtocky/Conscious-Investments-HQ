@@ -10,7 +10,9 @@ You are building (and later maintaining) an AI-run stock-picking office for **Co
 5. **erb lives in the submodule.** Change erb in `Equity Research/` with its own tests and commits, push to its repo, then bump the submodule pointer here. erb keeps its own CLAUDE.md and guardrails (sourcing, the model makes the numbers, style lint).
 
 ## Office design (summary)
-- Engine: Anthropic Python SDK, our own streaming tool-use loop. Leads (Quill, Scout, Vera, Harbor) on `claude-sonnet-5-5`, effort high, summarized thinking. Associates (Ledger, Pip, Tally, Wren) and Juno on `claude-haiku-4-5`. Leads hand narrow jobs to associates with `delegate` and get a compact structured summary back.
+- Engine: Anthropic Python SDK, our own streaming tool-use loop. Leads (Quill, Scout, Sigma, Vera, Harbor) on `claude-sonnet-5-5`, effort high, summarized thinking. Associates (Ledger, Pip, Delta, Tally, Wren) and Juno on `claude-haiku-4-5`. Leads hand narrow jobs to associates with `delegate` and get a compact structured summary back.
+- Quant Department (Sigma, Delta) owns every price target. Its charter is `prompts/departments/quant.md`; per-wing charters in `prompts/departments/<wing>.md` load automatically. Only Stott-approved, versioned models are the firm's numbers.
+- Agent-facing text says `{captain}`, filled from the roster's captain nickname (Stott).
 - Budget: `config/office.yaml`. The daily cap is checked before every model call. At the cap, in-flight steps finish and the office clocks out.
 - The office only works when the Captain assigns work. Captain messages go through a tone preview (original kept in the log; instructions, numbers and tickers must survive the rewrite).
 - Audit can pause a single agent and alert the Captain. Only the Captain unpauses.

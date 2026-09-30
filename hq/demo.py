@@ -192,7 +192,52 @@ def scene_newsletter(office: Office, llm: DemoLLM) -> None:
     office.assign("Harbor", "Prepare this week's newsletter (demo).", title="Newsletter (demo)")
 
 
-SCENES = [scene_gem_hunt, scene_memo, scene_lobby_sync, scene_newsletter]
+def scene_quant_model(office: Office, llm: DemoLLM) -> None:
+    llm.script("er_lead",
+               think("The thesis and assumptions for Northwind are settled on our side. Quant owns "
+                     "the model, so I'll hand the assumptions over instead of building one.", None,
+                     ("send_message", {"to": ["Sigma"], "text": "Northwind (demo) assumptions are "
+                                       "ready: revenue growth, margin path, capex and peer set are "
+                                       "in the brief. Please build the model."})),
+               think("Handed off.", "Assumptions sent to Quant."))
+    llm.script("quant_lead",
+               think("I'll design a DCF with a CAPM cost of capital, a comps cross-check and a "
+                     "Monte Carlo on growth and margins. Delta builds it out; I review and sign "
+                     "off.", None,
+                     ("delegate", {"to": "Delta", "job": "Build the Northwind (demo) workbook: "
+                                   "Inputs, Calculations and Outputs tabs; DCF with CAPM WACC; "
+                                   "comps; bull/base/bear; a growth x margin sensitivity table. "
+                                   "Inputs blue, formulas black, nothing hard-coded."})),
+               think("Delta's build checks out. The base case supports the thesis, but only if "
+                     "margins reach the Street path, and the bear case lands below today's price. "
+                     "That's a conflict with the research view, so it goes to the Captain with the "
+                     "numbers attached.", None,
+                     ("report_to_captain", {"text": "Northwind model v1 (demo) is ready for your "
+                                            "approval. Base case supports the thesis; top value "
+                                            "driver is the margin path; the bear case falls below "
+                                            "the current price. That conflicts with Research's "
+                                            "view, so I'm flagging it rather than adjusting "
+                                            "inputs. Sensitivity table attached."})),
+               think("Quill should know the model is with the Captain and why.", None,
+                     ("send_message", {"to": ["Quill"], "text": "Model v1 is with the Captain. "
+                                       "Heads-up: the bear case breaks the thesis on margins. Hold "
+                                       "any figures until it's approved."})),
+               think("Done.", "Model v1 sent for approval; conflict flagged."))
+    llm.script("quant_associate",
+               think("Setting up Inputs, Calculations and Outputs tabs. WACC from CAPM, "
+                     "three-stage DCF, comps table, scenario switch, then the sensitivity grid. "
+                     "Running formula checks before I return it.", None,
+                     ("submit_result", {"findings": "Workbook built (demo): 3 tabs, DCF + comps + "
+                                        "scenarios + 5x5 sensitivity. Formula checks pass; no "
+                                        "hard-coded values in calculations.",
+                                        "figures": [], "open_questions": [
+                                            "Peer set includes one recent IPO (demo)"],
+                                        "confidence": "high"})))
+    office.assign("Quill", "Hand the Northwind (demo) assumptions to Quant for the model.",
+                  title="Northwind to Quant (demo)")
+
+
+SCENES = [scene_gem_hunt, scene_memo, scene_quant_model, scene_lobby_sync, scene_newsletter]
 
 
 async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0) -> None:

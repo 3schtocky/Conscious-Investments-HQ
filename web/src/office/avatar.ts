@@ -43,6 +43,8 @@ export const PRESETS: Record<string, AvatarParts> = {
   tally:  { skin: SKINS[5], hair: HAIRS[0], hairStyle: "bald",  shirt: "#46505e", pants: "#2E2C29", accessory: "tie" },
   harbor: { skin: SKINS[1], hair: HAIRS[3], hairStyle: "long",  shirt: "#3a9a7a", pants: "#46505e", accessory: "earrings" },
   wren:   { skin: SKINS[0], hair: HAIRS[2], hairStyle: "bun",   shirt: "#e8a0a8", pants: "#46505e", accessory: "none" },
+  sigma:  { skin: SKINS[3], hair: HAIRS[0], hairStyle: "short", shirt: "#3f4f8a", pants: "#2E2C29", accessory: "glasses" },
+  delta:  { skin: SKINS[0], hair: HAIRS[7], hairStyle: "curly", shirt: "#7fa8d0", pants: "#46505e", accessory: "headset" },
   captain:{ skin: SKINS[1], hair: HAIRS[1], hairStyle: "short", shirt: "#f6f5f0", pants: "#2E2C29", accessory: "bowtie" },
 };
 
@@ -50,7 +52,7 @@ export const PRESETS: Record<string, AvatarParts> = {
 export const ID_PRESET: Record<string, string> = {
   chief_of_staff: "juno", er_lead: "quill", er_associate: "ledger", screen_lead: "scout",
   screen_associate: "pip", audit_lead: "vera", audit_associate: "tally", cr_lead: "harbor",
-  cr_associate: "wren", captain: "captain",
+  cr_associate: "wren", quant_lead: "sigma", quant_associate: "delta", captain: "captain",
 };
 
 export function resolveParts(spec: AvatarSpec, fallbackKey?: string): AvatarParts {

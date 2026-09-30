@@ -37,6 +37,7 @@ class Office:
         self._running: set[asyncio.Task] = set()
         cast = roster()
         self._wings: dict[str, str] = {k: v["name"] for k, v in cast["wings"].items()}
+        self.captain_name: str = cast.get("captain", {}).get("nickname") or "the Captain"
         self.agents: dict[str, Agent] = {e["id"]: Agent(self, e) for e in cast["agents"]}
 
     @property
@@ -59,7 +60,7 @@ class Office:
                        + ", ".join(f"{a.nickname} ({a.id})" for a in self.agents.values()))
 
     def name(self, who: str) -> str:
-        return "the Captain" if who == CAPTAIN else self.agents[who].nickname
+        return self.captain_name if who == CAPTAIN else self.agents[who].nickname
 
     def render_task(self, task: dict) -> str:
         by = task["assigned_by"]
@@ -261,6 +262,7 @@ class Office:
         they started with; new tasks use the new profile."""
         cast = roster()
         self._wings = {k: v["name"] for k, v in cast["wings"].items()}
+        self.captain_name = cast.get("captain", {}).get("nickname") or "the Captain"
         for e in cast["agents"]:
             if e["id"] in self.agents:
                 self.agents[e["id"]].update_profile(e)

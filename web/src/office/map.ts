@@ -5,9 +5,9 @@
 //   │ Research │          │          │Relations │
 //   ├───door───┴───door───┴───door───┴───door───┤
 //   │                 L O B B Y                 │   meeting table + seats
-//   ├────────door─────────┬────────door─────────┤
-//   │  Executive Suite    │  Captain's Office   │
-//   └─────────────────────┴─────────────────────┘
+//   ├─────door─────┬─────door─────┬─────door─────┤
+//   │  Quant Lab   │  Executive   │  Captain's   │
+//   └──────────────┴──────────────┴──────────────┘
 
 export const TILE = 16;
 export const COLS = 49;
@@ -36,6 +36,7 @@ export const WING_ACCENT: Record<string, string> = {
   screening: "#d27030",
   audit: "#8a6db8",
   client_relations: "#3a9a7a",
+  quant: "#3f4f8a",
   executive: "#2E2C29",
   lobby: "#B9B5AD",
   captain: "#b8892f",
@@ -52,9 +53,11 @@ export const ROOMS: Room[] = [
     floor: ["#dcefe7", "#cfe6dc"], accent: WING_ACCENT.client_relations },
   { id: "lobby", label: "Lobby", rect: { x: 1, y: 12, w: 47, h: 9 },
     floor: ["#efe9dc", "#e6dfcf"], accent: WING_ACCENT.lobby },
-  { id: "executive", label: "Executive Suite", rect: { x: 1, y: 22, w: 23, h: 7 },
+  { id: "quant", label: "Quant Lab", rect: { x: 1, y: 22, w: 15, h: 7 },
+    floor: ["#dde1ee", "#d1d6e7"], accent: WING_ACCENT.quant },
+  { id: "executive", label: "Executive Suite", rect: { x: 17, y: 22, w: 15, h: 7 },
     floor: ["#d9cbb5", "#cfc0a8"], accent: WING_ACCENT.executive },
-  { id: "captain", label: "Captain's Office", rect: { x: 25, y: 22, w: 23, h: 7 },
+  { id: "captain", label: "Captain's Office", rect: { x: 33, y: 22, w: 15, h: 7 },
     floor: ["#caa9a0", "#c09e94"], accent: WING_ACCENT.captain },
 ];
 
@@ -62,7 +65,8 @@ export const ROOMS: Room[] = [
 export const DOORS: Pt[] = [
   { x: 6, y: 11 }, { x: 7, y: 11 }, { x: 18, y: 11 }, { x: 19, y: 11 },
   { x: 30, y: 11 }, { x: 31, y: 11 }, { x: 42, y: 11 }, { x: 43, y: 11 },
-  { x: 12, y: 21 }, { x: 13, y: 21 }, { x: 36, y: 21 }, { x: 37, y: 21 },
+  { x: 8, y: 21 }, { x: 9, y: 21 }, { x: 24, y: 21 }, { x: 25, y: 21 },
+  { x: 40, y: 21 }, { x: 41, y: 21 },
 ];
 
 const WING_ORDER = ["equity_research", "screening", "audit", "client_relations"];
@@ -72,7 +76,12 @@ export function buildDesks(agents: { id: string; wing: string; tier: string }[])
   const desks: Desk[] = [];
   for (const a of agents) {
     if (a.wing === "executive") {
-      desks.push({ owner: a.id, chair: { x: 8, y: 24 }, visitor: { x: 8, y: 27 }, room: "executive" });
+      desks.push({ owner: a.id, chair: { x: 24, y: 24 }, visitor: { x: 24, y: 27 }, room: "executive" });
+      continue;
+    }
+    if (a.wing === "quant") {
+      const cx = a.tier === "lead" ? 5 : 11;
+      desks.push({ owner: a.id, chair: { x: cx, y: 24 }, visitor: { x: cx, y: 27 }, room: "quant" });
       continue;
     }
     const i = WING_ORDER.indexOf(a.wing);
@@ -81,7 +90,7 @@ export function buildDesks(agents: { id: string; wing: string; tier: string }[])
     const cx = room.x + (a.tier === "lead" ? 3 : 7);
     desks.push({ owner: a.id, chair: { x: cx, y: room.y + 3 }, visitor: { x: cx, y: room.y + 6 }, room: a.wing });
   }
-  desks.push({ owner: "captain", chair: { x: 36, y: 24 }, visitor: { x: 36, y: 27 }, room: "captain" });
+  desks.push({ owner: "captain", chair: { x: 40, y: 24 }, visitor: { x: 40, y: 27 }, room: "captain" });
   return desks;
 }
 
@@ -110,11 +119,14 @@ export const PROPS: { kind: string; rect: Rect }[] = [
   { kind: "cabinet", rect: { x: 34, y: 1, w: 2, h: 1 } },
   { kind: "printer", rect: { x: 46, y: 1, w: 2, h: 1 } },
   { kind: "plant", rect: { x: 37, y: 1, w: 1, h: 1 } },
-  { kind: "bookshelf", rect: { x: 1, y: 22, w: 3, h: 1 } },
-  { kind: "plant", rect: { x: 23, y: 22, w: 1, h: 1 } },
+  { kind: "chalkboard", rect: { x: 2, y: 22, w: 5, h: 1 } },
+  { kind: "server", rect: { x: 14, y: 22, w: 2, h: 1 } },
+  { kind: "plant", rect: { x: 1, y: 28, w: 1, h: 1 } },
+  { kind: "bookshelf", rect: { x: 17, y: 22, w: 3, h: 1 } },
+  { kind: "plant", rect: { x: 31, y: 22, w: 1, h: 1 } },
   { kind: "bookshelf", rect: { x: 44, y: 22, w: 4, h: 1 } },
-  { kind: "rug", rect: { x: 32, y: 26, w: 9, h: 2 } },
-  { kind: "plant", rect: { x: 25, y: 28, w: 1, h: 1 } },
+  { kind: "rug", rect: { x: 36, y: 26, w: 9, h: 2 } },
+  { kind: "plant", rect: { x: 33, y: 28, w: 1, h: 1 } },
 ];
 
 /** Walkable grid: true = walkable. */

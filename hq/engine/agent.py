@@ -67,14 +67,17 @@ class Agent:
         team = "\n".join(
             f"- {a.nickname} (`{a.id}`): {a.role}, {self.office.wing_name(a.wing)}"
             for a in self.office.agents.values() if a.id != self.id)
-        return "\n\n".join([
+        charter = PROMPTS / "departments" / f"{self.wing}.md"   # optional department charter
+        parts = ["\n\n".join([
             mission().strip(),
             (PROMPTS / "common.md").read_text().strip(),
             (PROMPTS / role_file).read_text().strip(),
+            *([charter.read_text().strip()] if charter.is_file() else []),
             (f"# Who you are\nYou are **{self.nickname}** (`{self.id}`), {self.role} in the "
              f"{self.office.wing_name(self.wing)} wing.\n\n{self.persona}"),
             f"# Your colleagues\n{team}",
-        ])
+        ])]
+        return parts[0].replace("{captain}", self.office.captain_name)
 
     # status -----------------------------------------------------------------------------
     def set_status(self, status: str, **extra: Any) -> None:
@@ -130,7 +133,7 @@ class Agent:
         model_cfg = self.model_cfg   # frozen for this run, like the prompt and tools
         tools = tools_for(self.tier, self.id)
         by_name = tool_map(tools)
-        tool_defs = definitions(tools)
+        tool_defs = definitions(tools, captain=office_.captain_name)
         self.guard = guard = self._task_guard(task, messages)
 
         store.set_task_status(task_id, "running")
