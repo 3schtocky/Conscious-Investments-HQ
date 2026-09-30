@@ -2,7 +2,7 @@
 // DOM text stays crisp at any zoom, unlike canvas text in a pixel-art game.
 import type { OfficeScene } from "../office/scene";
 import type { OfficeState } from "../state";
-import { h } from "./dom";
+import { h, plain } from "./dom";
 
 interface Tag { root: HTMLElement; name: HTMLElement; icon: HTMLElement; bubble: HTMLElement; bubbleUntil: number }
 
@@ -16,7 +16,8 @@ export class Overlay {
 
   say(id: string, text: string, ms: number) {
     const t = this.tag(id);
-    t.bubble.textContent = text.length > 220 ? text.slice(0, 219) + "…" : text;
+    const clean = plain(text);
+    t.bubble.textContent = clean.length > 220 ? clean.slice(0, 219) + "…" : clean;
     t.bubble.classList.add("show");
     t.bubbleUntil = performance.now() + ms;
   }
@@ -50,9 +51,15 @@ export class Overlay {
         t.root.style.display = pos.visible ? "" : "none";
         t.name.textContent = this.state.name(id);
         const a = this.state.agents.get(id);
-        const icon = !a ? "★" : a.paused ? "⏸" : this.state.clockedOut && a.status !== "working" ? "💤"
-          : a.live?.kind === "thinking" ? "💭" : a.live?.kind === "text" ? "✍️" : a.status === "working" ? "⌨️" : "";
-        t.icon.textContent = icon;
+        // Drawn status indicators (no emojis on the floor): see .tag-icon[data-kind] in style.css
+        const kind = !a ? "captain" : a.paused ? "paused" : this.state.clockedOut && a.status !== "working" ? "away"
+          : a.live?.kind === "thinking" ? "thinking" : a.live?.kind === "text" ? "writing" : a.status === "working" ? "working" : "";
+        if (t.icon.dataset.kind !== kind) {
+          t.icon.dataset.kind = kind;
+          t.icon.textContent = kind === "away" ? "zz" : "";
+          t.icon.title = { captain: "The Captain", paused: "Paused", away: "Clocked out", thinking: "Thinking",
+            writing: "Writing", working: "Working", "": "" }[kind] ?? "";
+        }
         t.root.dataset.status = a ? (a.paused ? "paused" : a.status) : "captain";
         if (t.bubbleUntil && now > t.bubbleUntil) { t.bubble.classList.remove("show"); t.bubbleUntil = 0; }
       }

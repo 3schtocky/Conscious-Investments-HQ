@@ -171,10 +171,10 @@ export class OfficeScene extends Phaser.Scene {
         if (w) w.queue.push({ type: "say", text: ev.text });
         break;
       case "captain_report":
-        if (w) w.queue.push({ type: "say", text: "📣 " + ev.text });
+        if (w) w.queue.push({ type: "say", text: `To ${this.state.captain.nickname}: ${ev.text}` });
         break;
       case "delegated":
-        if (w) w.queue.push({ type: "say", text: `🤝 Over to you, ${this.state.name(ev.to)}.` });
+        if (w) w.queue.push({ type: "say", text: `Over to you, ${this.state.name(ev.to)}.` });
         break;
       case "task_started": {
         // A new task pulls an agent back to their desk, unless they're mid-errand.

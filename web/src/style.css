@@ -85,7 +85,20 @@ aside { display: flex; flex-direction: column; min-height: 0; border-left: 1px s
 .tag[data-status="working"] .tag-name { background: var(--slate); }
 .tag[data-status="paused"] .tag-name { background: var(--gold); }
 .tag[data-status="captain"] .tag-name { background: var(--gold); }
-.tag-icon { font-size: 13px; filter: drop-shadow(0 1px 0 rgba(255,255,255,.8)); }
+/* status indicators, drawn in CSS (emojis are kept to the sidebar) */
+.tag-icon { display: none; align-items: center; gap: 2px; height: 14px; padding: 0 4px; border-radius: 5px; background: rgba(46,44,41,.82); }
+.tag-icon[data-kind]:not([data-kind=""]) { display: inline-flex; }
+.tag-icon[data-kind="thinking"]::before, .tag-icon[data-kind="thinking"]::after,
+.tag-icon[data-kind="thinking"] { --dot: radial-gradient(circle, #cdbef0 0 1.6px, transparent 2px); }
+.tag-icon[data-kind="thinking"] { width: 22px; background: rgba(46,44,41,.82) var(--dot) 3px 50% / 6px 6px repeat-x; animation: think 1.1s steps(3) infinite; }
+@keyframes think { from { background-size: 6px 6px; } to { background-size: 6px 6px; background-position-x: 9px; } }
+.tag-icon[data-kind="writing"]::before { content: ""; width: 12px; height: 3px; background: #7fd6ff; border-radius: 2px; animation: write .8s ease-in-out infinite alternate; }
+@keyframes write { from { width: 4px; } to { width: 14px; } }
+.tag-icon[data-kind="working"]::before { content: ""; width: 6px; height: 6px; background: #7fd6ff; animation: blink 1s steps(2) infinite; }
+.tag-icon[data-kind="paused"]::before, .tag-icon[data-kind="paused"]::after { content: ""; width: 3px; height: 8px; background: #e0a030; }
+.tag-icon[data-kind="away"] { font: 700 9px/1 var(--pixel); color: #cdbef0; }
+.tag-icon[data-kind="captain"] { background: none; padding: 0; }
+.tag-icon[data-kind="captain"]::before { content: ""; width: 7px; height: 7px; background: var(--gold); transform: rotate(45deg); box-shadow: 0 0 0 1.5px #fff; }
 .bubble { position: absolute; bottom: 20px; transform: translateX(-50%) scale(.9); max-width: 240px; width: max-content; padding: 7px 10px; background: #fff; color: #2E2C29; border: 2px solid #2E2C29; border-radius: 10px; font: 500 12px/1.35 var(--sans); box-shadow: 0 3px 0 rgba(46,44,41,.25); opacity: 0; transition: opacity .2s, transform .2s; }
 .bubble::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -6px; border: 6px solid transparent; border-top-color: #2E2C29; border-bottom: 0; }
 .bubble.show { opacity: 1; transform: translateX(-50%) scale(1); }

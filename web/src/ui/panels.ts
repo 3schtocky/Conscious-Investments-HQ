@@ -3,7 +3,7 @@ import { ID_PRESET, imageOf, portrait, resolveParts, type AvatarSpec } from "../
 import { WING_ACCENT } from "../office/map";
 import type { AgentView, Block, OfficeEvent, OfficeState } from "../state";
 import { short } from "../state";
-import { clear, h, money, timeAgo } from "./dom";
+import { clear, h, money, plain, timeAgo } from "./dom";
 
 export const WING_ORDER = ["executive", "equity_research", "screening", "quant", "audit", "client_relations"];
 
@@ -71,7 +71,8 @@ export class DeskCards {
       c.root.classList.toggle("dim", !!wingFilter && a.wing !== wingFilter);
       c.task.textContent = a.task ? a.task.title : "No task";
       const text = a.live ? a.live.text : lastWords(a.blocks);
-      c.live.textContent = text ? "…" + text.slice(-240) : "";
+      const clean = plain(text);
+      c.live.textContent = clean ? "…" + clean.slice(-240) : "";
       c.live.classList.toggle("thinking", a.live?.kind === "thinking");
     }
   }

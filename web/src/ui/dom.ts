@@ -28,6 +28,12 @@ export function timeAgo(ts: number): string {
 }
 
 /** Costs are shown to the cent; the ledger itself keeps full precision for the cap. */
+/** Emojis stay in the sidebar only; text boxes on the floor (bubbles, desk cards) are plain. */
+const EMOJI = /[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F\u200D\u20E3]/gu;
+export function plain(s: string): string {
+  return s.replace(EMOJI, "").replace(/[ \t]{2,}/g, " ").trim();
+}
+
 export function money(n: number): string {
   return `$${n.toFixed(2)}`;
 }
