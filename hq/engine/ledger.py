@@ -31,6 +31,10 @@ def usage_dict(usage: Any) -> dict[str, Any]:
         for k in ("input_tokens", "output_tokens", "cache_read_input_tokens",
                   "cache_creation_input_tokens")
     }
+    stu = usage.get("server_tool_use") if isinstance(usage, dict) else getattr(
+        usage, "server_tool_use", None)
+    if stu:   # server tools billed per use (web search)
+        out["web_search_requests"] = _get(stu, "web_search_requests")
     creation = usage.get("cache_creation") if isinstance(usage, dict) else getattr(
         usage, "cache_creation", None)
     if creation:
@@ -61,7 +65,10 @@ def usage_cost(model: str, usage: Any) -> float:
         cost += creation["ephemeral_1h_input_tokens"] * p["cache_write_1h"]
     else:
         cost += u["cache_creation_input_tokens"] * p["cache_write_5m"]
-    return cost / PER_MTOK
+    token_cost = cost / PER_MTOK
+    # Web search is billed per search on top of tokens.
+    per_1k = office().get("pricing_server_tools", {}).get("web_search_per_1k", 10.0)
+    return token_cost + u.get("web_search_requests", 0) * per_1k / 1000
 
 
 class BudgetExhausted(Exception):

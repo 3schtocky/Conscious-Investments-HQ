@@ -1,7 +1,7 @@
 // Approvals: decisions waiting on the Captain, plus open incidents.
 import type { OfficeState } from "../state";
 import { avatarImage } from "./panels";
-import { clear, h, timeAgo } from "./dom";
+import { clear, fileHref, h, timeAgo } from "./dom";
 
 export interface Approval {
   id: number; ts: number; kind: string; agent: string; task_id: number | null; title: string;
@@ -59,7 +59,11 @@ export class ApprovalsPanel {
       h("div", { class: "approval-from" }, agent ? avatarImage(agent.id, agent.avatar, 2) : null,
         h("span", {}, `From ${this.state.name(a.agent)}${agent ? ` · ${agent.role}` : ""}`)),
       h("p", { class: "approval-summary" }, a.summary),
-      a.payload.attachments?.length ? h("div", { class: "attachments" }, "📎 ", a.payload.attachments.join(", ")) : null,
+      a.payload.attachments?.length ? h("div", { class: "attachments" }, "📎 ", ...a.payload.attachments.flatMap((f, i) => {
+        const href = fileHref(f, a.payload.ticker);
+        const el = href ? h("a", { href, download: "" }, f.split("/").pop()!) : h("span", {}, f);
+        return i ? [", ", el] : [el];
+      })) : null,
       a.status === "pending"
         ? h("div", { class: "approval-actions" }, note, h("div", { class: "row" },
             h("button", { class: "btn", onclick: act("approved") }, "Approve"),

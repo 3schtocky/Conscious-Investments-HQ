@@ -73,7 +73,7 @@ class FakeLLM:
 
 
 @pytest.fixture
-def make_office(monkeypatch):
+def make_office(monkeypatch, tmp_path):
     # Price the fake model like Sonnet so spend is non-zero and predictable.
     from hq import config
 
@@ -93,7 +93,8 @@ def make_office(monkeypatch):
         ref: dict = {}
         llm = FakeLLM(ref)
         ledger = Ledger(store, daily_cap=daily_cap, audit_reserve=audit_reserve)
-        office_ = Office(store=store, llm=llm, ledger=ledger)
+        office_ = Office(store=store, llm=llm, ledger=ledger, quant_dir=tmp_path / "quant",
+                         memory_dir=tmp_path / "memory")
         ref["office"] = office_
         return office_, llm
 
@@ -102,3 +103,13 @@ def make_office(monkeypatch):
 
 # cost of one USAGE turn at the fake (Sonnet) price: 1000*2 + 200*10 per MTok = $0.004
 TURN_COST = 0.004
+
+
+def register_model(office, ticker: str = "RMBS", version: int = 1, ok: bool = True) -> None:
+    """Put a checked model version in the registry, as build_model would."""
+    office.store.add_model(ticker=ticker, version=version, path=f"/tmp/{ticker}_v{version}.xlsx",
+                           created_by="quant_lead",
+                           summary={"price_targets": {"bear": 1, "base": 2, "bull": 3},
+                                    "total_returns": {}, "rating": "Neutral", "price": 2.0,
+                                    "warnings": [], "as_of": "2026-09-30",
+                                    "target_date": "2027-12-30", "check": {"ok": ok}})

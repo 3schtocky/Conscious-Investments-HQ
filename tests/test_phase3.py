@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from conftest import text_turn, tool_turn
+from conftest import register_model, text_turn, tool_turn
 
 from hq.engine.llm import TurnResult
 from hq.engine.tone import RuleRewriter, check, key_facts
@@ -152,6 +152,7 @@ async def test_dm_to_idle_agent_starts_a_task_and_to_busy_agent_lands_in_inbox(m
 # approvals ----------------------------------------------------------------------------------
 async def test_model_approval_round_trip(make_office):
     office, llm = make_office()
+    register_model(office, "RMBS", 1)
     llm.script("Sigma",
                tool_turn(("request_approval", {"kind": "model", "ticker": "rmbs", "version": 1,
                                                "title": "RMBS model v1", "summary": "Base $X.",
@@ -170,6 +171,8 @@ async def test_model_approval_round_trip(make_office):
     assert follow_up and "official numbers" in follow_up[0]["body"]
     with pytest.raises(ValueError, match="already approved"):
         office.decide(card["id"], "rejected")
+    # the registry followed the approval: v1 is now the firm's official model
+    assert office.store.approved_model("RMBS")["version"] == 1
 
 
 async def test_request_approval_validation(make_office):

@@ -267,6 +267,15 @@ async def _request_approval(ctx: ToolContext, inp: dict) -> str:
         payload["version"] = version
     if kind == "model" and ("ticker" not in payload or "version" not in payload):
         raise GuardBlock("A model approval needs `ticker` and `version`.")
+    if kind == "model":
+        m = ctx.office.store.model(payload["ticker"], payload["version"])
+        if m is None:
+            raise GuardBlock(f"No model v{payload['version']} for {payload['ticker']}. Build it first.")
+        if not m["summary"].get("check", {}).get("ok"):
+            raise GuardBlock("That version failed its formula check; fix it before it goes to "
+                             "the Captain.")
+        if m["status"] not in ("draft", "changes"):
+            raise GuardBlock(f"v{payload['version']} is already {m['status']}.")
     attachments = inp.get("attachments") or []
     if not isinstance(attachments, list) or not all(isinstance(a, str) for a in attachments):
         raise GuardBlock("`attachments` must be a list of file paths.")
@@ -335,8 +344,41 @@ POST_TO_GROUP = Tool(
 )
 
 
-def tools_for(tier: str, agent_id: str) -> list[Tool]:
-    """The fixed tool list for an agent. It never changes during a task (preserved thinking)."""
+# note_to_self --------------------------------------------------------------------------------
+async def _note_to_self(ctx: ToolContext, inp: dict) -> str:
+    from hq.memory import NOTE_CHARS, add_desk_note
+
+    note = _str(inp, "note", max_len=NOTE_CHARS)
+    ctx.agent.guard.check_note()
+    add_desk_note(ctx.agent.id, note, ctx.office.memory_dir)
+    ctx.agent.guard.record_note()
+    return "Saved to your desk notes; you'll see it at the start of future tasks."
+
+
+NOTE_TO_SELF = Tool(
+    name="note_to_self",
+    description=(
+        "Save a short note to your desk for future tasks: a lesson, a preference {captain} "
+        "expressed, where something lives. Keep it to one or two sentences; don't store figures "
+        "that belong in the model or the brief."),
+    input_schema={"type": "object", "properties": {"note": {"type": "string"}},
+                  "required": ["note"]},
+    handler=_note_to_self,
+)
+
+
+def tools_for(tier: str, agent_id: str, wing: str | None = None) -> list[Tool]:
+    """The fixed tool list for an agent. It never changes during a task (preserved thinking).
+    With `wing`, the wing's desk tools (research, quant) are added after the office tools."""
+    base = _office_tools(tier, agent_id)
+    if wing is None:
+        return base
+    base = base + [NOTE_TO_SELF]
+    from hq.tools.desk import desk_tools
+    return base + [t for t in desk_tools(wing, tier) if t.name not in {b.name for b in base}]
+
+
+def _office_tools(tier: str, agent_id: str) -> list[Tool]:
     if agent_id == "chief_of_staff":
         return [SEND_MESSAGE, ASSIGN_TASK, REPORT_TO_CAPTAIN, REQUEST_APPROVAL, POST_TO_GROUP]
     if tier == "associate":

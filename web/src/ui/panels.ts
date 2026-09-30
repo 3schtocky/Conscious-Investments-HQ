@@ -3,7 +3,7 @@ import { ID_PRESET, imageOf, portrait, resolveParts, type AvatarSpec } from "../
 import { WING_ACCENT } from "../office/map";
 import type { AgentView, Block, OfficeEvent, OfficeState } from "../state";
 import { groupName, short } from "../state";
-import { clear, h, money, plain, timeAgo } from "./dom";
+import { clear, fileHref, h, money, plain, timeAgo } from "./dom";
 
 export const WING_ORDER = ["executive", "equity_research", "screening", "quant", "audit", "client_relations"];
 
@@ -129,10 +129,11 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
 
 // ---- agent zoom view ------------------------------------------------------------------------
 interface Doc { ts: number; kind: string; title: string; text: string; source: string; status?: string;
-  note?: string | null; attachments?: string[]; ticker?: string | null; version?: number | null }
+  note?: string | null; attachments?: string[]; ticker?: string | null; version?: number | null; file?: string }
 
 const DOC_KIND: Record<string, string> = { brief: "📄 Brief", model: "📊 Model", conflict: "⚖️ Conflict",
-  portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", other: "📝 Decision request", report: "📣 Report", result: "📦 Hand-back" };
+  portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", other: "📝 Decision request", report: "📣 Report", result: "📦 Hand-back",
+  workbook: "📗 Excel model" };
 
 export class AgentPanel {
   private shownId: string | null = null;
@@ -174,7 +175,12 @@ export class AgentPanel {
           d.status ? ` · ${d.status}` : ""), h("span", { class: "feed-time" }, timeAgo(d.ts))),
         h("div", { class: "doc-title" }, d.title),
         h("div", { class: "block-text" }, short(d.text, 400)),
-        d.attachments?.length ? h("div", { class: "attachments" }, "📎 ", d.attachments.join(", ")) : null,
+        d.file ? h("a", { class: "btn ghost small-btn", href: d.file, download: "" }, "⬇ Download .xlsx") : null,
+        d.attachments?.length ? h("div", { class: "attachments" }, "📎 ", ...d.attachments.flatMap((f, i) => {
+          const href = fileHref(f, d.ticker);
+          const el = href ? h("a", { href, download: "" }, f.split("/").pop()!) : h("span", {}, f);
+          return i ? [", ", el] : [el];
+        })) : null,
         d.note ? h("div", { class: "muted small" }, `${this.state.captain.nickname}'s note: ${d.note}`) : null));
     }
   }

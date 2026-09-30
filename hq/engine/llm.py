@@ -80,6 +80,24 @@ def request_params(model_cfg: dict, *, system: str, messages: list[dict],
     return params
 
 
+WEB_WINGS = {"equity_research"}   # wings that research the open web
+WEB_SEARCH_MAX_USES = 5            # per request: web search is billed per search
+
+
+def web_tools(model_cfg: dict, wing: str) -> list[dict]:
+    """Anthropic's server-side web search and fetch for research wings (real office only; the
+    demo and tests never execute them). Newer models get the dynamic-filtering versions."""
+    if wing not in WEB_WINGS:
+        return []
+    new = not str(model_cfg.get("id", "")).startswith("claude-haiku-4-5")
+    return [
+        {"type": "web_search_20260209" if new else "web_search_20250305", "name": "web_search",
+         "max_uses": WEB_SEARCH_MAX_USES},
+        {"type": "web_fetch_20260209" if new else "web_fetch_20250910", "name": "web_fetch",
+         "max_uses": WEB_SEARCH_MAX_USES},
+    ]
+
+
 async def _call(fn: Callable | None, *args: Any) -> None:
     if fn is None:
         return

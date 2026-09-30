@@ -45,6 +45,7 @@ class TaskGuard:
         self.turns = 0
         self.delegations = 0
         self.group_posts = 0
+        self.notes = 0
         self._tool_calls: Counter[str] = Counter()
 
     def before_turn(self, spent_on_task: float) -> None:
@@ -79,6 +80,15 @@ class TaskGuard:
 
     def record_group_post(self) -> None:
         self.group_posts += 1
+
+    NOTE_LIMIT = 3
+
+    def check_note(self) -> None:
+        if self.notes >= self.NOTE_LIMIT:
+            raise GuardBlock(f"You've saved {self.NOTE_LIMIT} desk notes this task; that's plenty.")
+
+    def record_note(self) -> None:
+        self.notes += 1
 
     def on_delegate(self) -> None:
         if self.delegations >= self.max_delegations:

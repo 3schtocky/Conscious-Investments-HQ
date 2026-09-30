@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import json
 import random
 import re
 from collections import defaultdict, deque
@@ -17,6 +18,7 @@ from collections.abc import Callable
 from hq.engine.guards import ConversationGuard
 from hq.engine.llm import TurnResult
 from hq.engine.runtime import Office, _title
+from hq.tools.desk import coverage_dir
 
 _ids = itertools.count(1)
 _WHO = re.compile(r"You are \*\*.+?\*\* \(`(\w+)`\)")
@@ -282,51 +284,91 @@ def scene_newsletter(office: Office, llm: DemoLLM) -> None:
     office.assign("Harbor", "Prepare this week's newsletter (demo).", title="Newsletter (demo)")
 
 
+DRY_RUN_TICKER = "META"   # real coverage in the erb submodule: the dry run uses real tools on it
+
+
+def _last_tool_json(params: dict) -> dict:
+    """The JSON a tool returned in the previous turn (the demo reads real numbers from it)."""
+    for block in reversed(params["messages"][-1]["content"]):
+        if isinstance(block, dict) and block.get("type") == "tool_result":
+            try:
+                return json.loads(block["content"])
+            except (TypeError, ValueError):
+                return {}
+    return {}
+
+
 def scene_quant_model(office: Office, llm: DemoLLM) -> None:
+    """Free dry run of the Research -> Quant -> Captain chain with REAL tools on META: the
+    workbook, formula check, simulations, registry and approval card are all real; only the
+    agents' words are scripted."""
+    t = DRY_RUN_TICKER
+    if not (coverage_dir(t) / "assumptions.yaml").exists():
+        return   # no local coverage (e.g. a fresh clone): skip the dry run
     llm.script("er_lead",
-               think("The thesis and assumptions for Northwind are settled on our side. Quant owns "
-                     "the model, so I'll hand the assumptions over instead of building one.", None,
-                     ("send_message", {"to": ["Sigma"], "text": "Northwind (demo) assumptions are "
-                                       "ready: revenue growth, margin path, capex and peer set are "
-                                       "in the brief. Please build the model."})),
+               think("Our thesis and assumptions for META are in coverage/META. Quant owns the "
+                     "model, so I hand the assumptions over instead of building a valuation.", None,
+                     ("send_message", {"to": ["Sigma"], "text": f"{t} assumptions are ready in "
+                                       f"coverage/{t} (demo dry run, real tools). Please build the "
+                                       "model."})),
                think("Handed off.", "Assumptions sent to Quant."))
     llm.script("quant_lead",
-               think("I'll design a DCF with a CAPM cost of capital, a comps cross-check and a "
-                     "Monte Carlo on growth and margins. Delta builds it out; I review and sign "
-                     "off.", None,
-                     ("delegate", {"to": "Delta", "job": "Build the Northwind (demo) workbook: "
-                                   "Inputs, Calculations and Outputs tabs; DCF with CAPM WACC; "
-                                   "comps; bull/base/bear; a growth x margin sensitivity table. "
-                                   "Inputs blue, formulas black, nothing hard-coded."})),
-               think("Delta's build checks out. The base case supports the thesis, but only if "
-                     "margins reach the Street path, and the bear case lands below today's price. "
-                     "That's a conflict with the research view, so it goes to the Captain with the "
-                     "numbers attached.", None,
-                     ("request_approval", {"kind": "model", "ticker": "NWST", "version": 1,
-                                           "title": "Northwind model v1 (demo)",
-                                           "summary": "Base case supports the thesis; the top "
-                                           "value driver is the margin path. The bear case falls "
-                                           "below the current price, which conflicts with "
-                                           "Research's view, so I'm flagging it rather than "
-                                           "adjusting inputs. Sensitivity table attached.",
-                                           "attachments": ["NWST_model_v1_demo.xlsx"]})),
-               think("Quill should know the model is with the Captain and why.", None,
-                     ("send_message", {"to": ["Quill"], "text": "Model v1 is with the Captain. "
-                                       "Heads-up: the bear case breaks the thesis on margins. Hold "
-                                       "any figures until it's approved."})),
-               think("Done.", "Model v1 sent for approval; conflict flagged."))
+               think("DCF with a CAPM cost of capital, the multiples blend, bull/base/bear, then a "
+                     "Monte Carlo. Delta builds and checks; I review and sign off.", None,
+                     ("delegate", {"to": "Delta", "job": f"Build the {t} model with build_model, "
+                                   "then run_simulations. Return the version, price targets, the "
+                                   "formula-check result and the top value drivers."})),
+               lambda p: _sigma_files_for_approval(p, t),
+               think("Quill needs to know it's with the Captain.", None,
+                     ("send_message", {"to": ["Quill"], "text": f"{t} model is with Stott for "
+                                       "approval. Hold any figures until it's approved."})),
+               think("Done.", "Model sent for approval."))
     llm.script("quant_associate",
-               think("Setting up Inputs, Calculations and Outputs tabs. WACC from CAPM, "
-                     "three-stage DCF, comps table, scenario switch, then the sensitivity grid. "
-                     "Running formula checks before I return it.", None,
-                     ("submit_result", {"findings": "Workbook built (demo): 3 tabs, DCF + comps + "
-                                        "scenarios + 5x5 sensitivity. Formula checks pass; no "
-                                        "hard-coded values in calculations.",
-                                        "figures": [], "open_questions": [
-                                            "Peer set includes one recent IPO (demo)"],
-                                        "confidence": "high"})))
-    office.assign("Quill", "Hand the Northwind (demo) assumptions to Quant for the model.",
-                  title="Northwind to Quant (demo)")
+               think("Building the workbook from assumptions.yaml, then the formula check.", None,
+                     ("build_model", {"ticker": t})),
+               think("Built and checked. Now the Monte Carlo and the value drivers.", None,
+                     ("run_simulations", {"ticker": t, "runs": 1000})),
+               lambda p: _delta_reports(p, t))
+    office.assign("Quill", f"Hand the {t} assumptions to Quant for the model (demo dry run with "
+                  "real tools).", title=f"{t} to Quant (demo, real tools)")
+
+
+def _delta_reports(params: dict, t: str) -> TurnResult:
+    sims = _last_tool_json(params)
+    built = {}
+    for m in params["messages"]:
+        if m["role"] == "user" and isinstance(m["content"], list):
+            for b in m["content"]:
+                if isinstance(b, dict) and b.get("type") == "tool_result" and '"check"' in str(b.get("content")):
+                    try:
+                        built = json.loads(b["content"])
+                    except ValueError:
+                        pass
+    pts = built.get("price_targets", {})
+    drivers = ", ".join(d["driver"] for d in sims.get("top_value_drivers", [])[:3])
+    p10, p50, p90 = sims.get("price_target_p10_p50_p90", [0, 0, 0])
+    findings = (f"{t} model v{built.get('version')} built: bear ${pts.get('bear', 0):,.2f}, base "
+                f"${pts.get('base', 0):,.2f}, bull ${pts.get('bull', 0):,.2f} ({built.get('rating')}). "
+                f"{built.get('check', '')} Monte Carlo P10/P50/P90 ${p10:,.0f}/${p50:,.0f}/${p90:,.0f}. "
+                f"Top drivers: {drivers}.")
+    return think("Reporting the build, check and simulations.", None,
+                 ("submit_result", {"findings": findings, "figures": [
+                     {"label": "Base price target", "value": pts.get("base", 0), "unit": "USD",
+                      "source": f"Quant model v{built.get('version')} (workbook Outputs)"}],
+                  "open_questions": [], "confidence": "high"}))(params)
+
+
+def _sigma_files_for_approval(params: dict, t: str) -> TurnResult:
+    result = _last_tool_json(params)
+    text = result.get("findings", "")
+    m = re.search(r"model v(\d+)", text)
+    version = int(m.group(1)) if m else 1
+    return think("The build checks out against the engine. Filing it for the Captain's approval "
+                 "with the numbers attached.", None,
+                 ("request_approval", {"kind": "model", "ticker": t, "version": version,
+                                       "title": f"{t} model v{version} (demo dry run)",
+                                       "summary": text or f"{t} model v{version} is ready.",
+                                       "attachments": [f"quant/{t}_model_v{version}.xlsx"]}))(params)
 
 
 DEMO_PENDING_KEEP = 3

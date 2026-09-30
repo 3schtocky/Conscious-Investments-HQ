@@ -263,3 +263,6 @@ input[type="color"] { width: 32px; height: 26px; padding: 1px; }
 .doc.k-result { border-left-color: var(--clay); } .doc.k-brief { border-left-color: var(--slate); }
 .doc.k-newsletter { border-left-color: var(--sage); }
 .doc-title { font-weight: 600; }
+.small-btn { align-self: flex-start; padding: 4px 10px; font-size: 12px; text-decoration: none; margin-top: 4px; }
+.attachments a { color: var(--slate); font-weight: 600; }
+.doc.k-workbook { border-left-color: #1f7a4a; }

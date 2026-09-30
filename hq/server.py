@@ -77,7 +77,8 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
             for suffix in ("", "-wal", "-shm"):
                 Path(f"{db}{suffix}").unlink(missing_ok=True)
             llm = DemoLLM(speed=demo_speed)
-            office = Office(db_path=db, llm=llm, tone="rules")
+            office = Office(db_path=db, llm=llm, tone="rules", quant_dir=DATA_DIR / "demo-quant",
+                            memory_dir=DATA_DIR / "demo-memory")
             llm.office = office
 
             async def loop() -> None:
@@ -145,6 +146,23 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         office().reload_roster()
         office().bus.publish("roster_updated", None, None, member=member_id, entry=entry)
         return JSONResponse(entry)
+
+    @app.get("/files/{area}/{ticker}/{path:path}")
+    async def files(area: str, ticker: str, path: str) -> FileResponse:
+        """Download a model or research file, confined to one ticker's folder."""
+        from hq.tools.desk import TICKER, coverage_dir
+
+        if not TICKER.match(ticker) or area not in ("quant", "coverage"):
+            raise HTTPException(404)
+        root = (office().quant_dir if area == "quant" else coverage_dir(ticker).parent) / ticker
+        target = (root / path).resolve()
+        if not target.is_relative_to(root.resolve()) or not target.is_file():
+            raise HTTPException(404)
+        return FileResponse(target, filename=target.name)
+
+    @app.get("/api/models")
+    async def models(ticker: str | None = None) -> JSONResponse:
+        return JSONResponse(office().store.models(ticker))
 
     @app.get("/avatars/{name}")
     async def avatar(name: str) -> FileResponse:

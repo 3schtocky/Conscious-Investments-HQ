@@ -88,6 +88,19 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_ts REAL,
     note TEXT
 );
+CREATE TABLE IF NOT EXISTS models (
+    id INTEGER PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    status TEXT NOT NULL,            -- draft | awaiting | approved | changes | rejected | superseded
+    path TEXT NOT NULL,              -- the .xlsx
+    created REAL NOT NULL,
+    created_by TEXT NOT NULL,
+    summary TEXT NOT NULL,           -- JSON: price targets, rating, returns, check result
+    approval_id INTEGER,
+    approved_at REAL,
+    UNIQUE (ticker, version)
+);
 CREATE INDEX IF NOT EXISTS spend_day ON spend(day);
 CREATE INDEX IF NOT EXISTS spend_root ON spend(root_id);
 CREATE INDEX IF NOT EXISTS events_task ON events(task_id);
@@ -258,6 +271,49 @@ class Store:
 
     def resolve_incident(self, incident_id: int) -> None:
         self._exec("UPDATE incidents SET resolved=1 WHERE id=?", (incident_id,))
+
+    # model registry ----------------------------------------------------------------------
+    def next_model_version(self, ticker: str) -> int:
+        rows = self._all("SELECT COALESCE(MAX(version), 0) AS v FROM models WHERE ticker=?",
+                         (ticker,))
+        return int(rows[0]["v"]) + 1
+
+    def add_model(self, *, ticker: str, version: int, path: str, created_by: str,
+                  summary: dict) -> int:
+        cur = self._exec(
+            "INSERT INTO models (ticker, version, status, path, created, created_by, summary)"
+            " VALUES (?,?, 'draft', ?,?,?,?)",
+            (ticker, version, path, time.time(), created_by, json.dumps(summary, default=float)))
+        return cur.lastrowid
+
+    def models(self, ticker: str | None = None) -> list[dict]:
+        if ticker:
+            rows = self._all("SELECT * FROM models WHERE ticker=? ORDER BY version", (ticker,))
+        else:
+            rows = self._all("SELECT * FROM models ORDER BY ticker, version")
+        for r in rows:
+            r["summary"] = json.loads(r["summary"])
+        return rows
+
+    def model(self, ticker: str, version: int) -> dict | None:
+        rows = [m for m in self.models(ticker) if m["version"] == version]
+        return rows[0] if rows else None
+
+    def set_model_status(self, ticker: str, version: int, status: str, *,
+                         approval_id: int | None = None) -> None:
+        now = time.time()
+        if status == "approved":   # one official version per ticker
+            self._exec("UPDATE models SET status='superseded' WHERE ticker=? AND status='approved'",
+                       (ticker,))
+        self._exec(
+            "UPDATE models SET status=?, approval_id=COALESCE(?, approval_id),"
+            " approved_at=CASE WHEN ?='approved' THEN ? ELSE approved_at END"
+            " WHERE ticker=? AND version=?",
+            (status, approval_id, status, now, ticker, version))
+
+    def approved_model(self, ticker: str) -> dict | None:
+        rows = [m for m in self.models(ticker) if m["status"] == "approved"]
+        return rows[-1] if rows else None
 
     # approvals ---------------------------------------------------------------------------
     def add_approval(self, *, kind: str, agent: str, task_id: int | None, title: str,

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from hq.config import ROOT, mission, model_config, office
 from hq.engine.guards import GuardBlock, GuardTripped, TaskGuard
 from hq.engine.ledger import BudgetExhausted
-from hq.engine.llm import ApiDisabled, TurnResult, request_params
+from hq.engine.llm import ApiDisabled, TurnResult, request_params, web_tools
 from hq.tools.office import ToolContext, definitions, tool_map, tools_for
 
 if TYPE_CHECKING:
@@ -76,8 +76,21 @@ class Agent:
             (f"# Who you are\nYou are **{self.nickname}** (`{self.id}`), {self.role} in the "
              f"{self.office.wing_name(self.wing)} wing.\n\n{self.persona}"),
             f"# Your colleagues\n{team}",
+            *self._memory_sections(),
         ])]
         return parts[0].replace("{captain}", self.office.captain_name)
+
+    def _memory_sections(self) -> list[str]:
+        from hq.memory import desk_notes, wiki
+
+        out = []
+        w = wiki(self.office.memory_dir)
+        if w:
+            out.append(f"# Office wiki (standing guidance from {{captain}})\n{w}")
+        notes = desk_notes(self.id, self.office.memory_dir)
+        if notes:
+            out.append(f"# Your desk notes (from earlier tasks)\n{notes}")
+        return out
 
     # status -----------------------------------------------------------------------------
     def set_status(self, status: str, **extra: Any) -> None:
@@ -131,9 +144,9 @@ class Agent:
             messages = [{"role": "user", "content": office_.render_task(task)}]
             store.save_conversation(task_id, system, messages)
         model_cfg = self.model_cfg   # frozen for this run, like the prompt and tools
-        tools = tools_for(self.tier, self.id)
+        tools = tools_for(self.tier, self.id, self.wing)
         by_name = tool_map(tools)
-        tool_defs = definitions(tools, captain=office_.captain_name)
+        tool_defs = definitions(tools, captain=office_.captain_name) + web_tools(model_cfg, self.wing)
         self.guard = guard = self._task_guard(task, messages)
 
         store.set_task_status(task_id, "running")
@@ -261,6 +274,9 @@ class Agent:
                 bus.publish("guard_block", self.id, ctx.task["id"], tool=name, reason=text)
             except KeyError as e:
                 text = str(e.args[0]) if e.args else "Not found."
+            except Exception as e:  # noqa: BLE001 - any tool failure goes back to the agent to fix
+                log.warning("tool %s failed: %s", name, e)
+                text = f"The tool failed: {type(e).__name__}: {e}"[:1500]
         bus.publish("tool_result", self.id, ctx.task["id"], tool=name, is_error=is_error,
                     text=text[:2000])
         result = {"type": "tool_result", "tool_use_id": block["id"], "content": text}

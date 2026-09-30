@@ -14,6 +14,9 @@ data/
 memory/
 outbox/
 
+# The Quant Department's model files (work product)
+/Quant/
+
 # Web
 web/node_modules/
 web/dist/

@@ -18,6 +18,10 @@ pricing:
   claude-sonnet-5-5: { input: 2.00, output: 10.00, cache_read: 0.20, cache_write_5m: 2.50, cache_write_1h: 4.00 }
   claude-haiku-4-5:  { input: 1.00, output: 5.00,  cache_read: 0.10, cache_write_5m: 1.25, cache_write_1h: 2.00 }
 
+# Server tools billed per use, on top of tokens (web fetch has no per-use fee).
+pricing_server_tools:
+  web_search_per_1k: 10.00   # USD per 1,000 web searches
+
 delegation:                   # a lead hands a narrow job to its associate, who returns a compact summary
   per_delegation_cap_usd: 0.50
   max_turns: 25

@@ -35,3 +35,9 @@ def test_cache_write_without_breakdown_uses_5m_rate():
 def test_unknown_model_raises():
     with pytest.raises(KeyError, match="No pricing"):
         usage_cost("claude-unknown", {"input_tokens": 1})
+
+
+def test_web_searches_are_billed_per_search():
+    base = {"input_tokens": 0, "output_tokens": 0}
+    with_search = {**base, "server_tool_use": {"web_search_requests": 3}}
+    assert usage_cost("claude-sonnet-5-5", with_search) == pytest.approx(0.03)   # $10 per 1,000

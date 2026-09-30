@@ -12,7 +12,7 @@ import logging
 import re
 from pathlib import Path
 
-from hq.config import DATA_DIR, office, roster
+from hq.config import DATA_DIR, ROOT, office, roster
 from hq.engine.agent import Agent
 from hq.engine.events import EventBus
 from hq.engine.guards import ConversationGuard, GuardBlock
@@ -32,7 +32,8 @@ THREAD_CONTEXT = 6   # recent messages between two colleagues included when a re
 class Office:
     def __init__(self, *, store: Store | None = None, llm: ModelClient | None = None,
                  ledger: Ledger | None = None, db_path: Path | str | None = None,
-                 tone: str | None = None):
+                 tone: str | None = None, quant_dir: Path | None = None,
+                 memory_dir: Path | None = None):
         self.store = store or Store(db_path or DATA_DIR / "office.db")
         self.bus = EventBus(self.store)
         self.ledger = ledger or Ledger(self.store)
@@ -40,6 +41,10 @@ class Office:
         self.slots = asyncio.Semaphore(office()["limits"]["max_concurrent_agents"])
         self.conversations = ConversationGuard()
         self.clocked_out = False
+        self.quant_dir = quant_dir or ROOT / "Quant"   # the Quant Department's model files
+        self._model_locks: dict[str, asyncio.Lock] = {}
+        from hq.memory import MEMORY_DIR
+        self.memory_dir = memory_dir or MEMORY_DIR
         self._running: set[asyncio.Task] = set()
         # The Captain's tone filter: "llm" (Haiku, billed to Juno) or "rules" (free, demo).
         self.tone_engine = tone or office().get("tone", {}).get("engine", "llm")
@@ -292,6 +297,9 @@ class Office:
                          payload: dict, task_id: int | None) -> int:
         approval_id = self.store.add_approval(kind=kind, agent=agent_id, task_id=task_id,
                                               title=title, summary=summary, payload=payload)
+        if kind == "model":
+            self.store.set_model_status(payload["ticker"], payload["version"], "awaiting",
+                                        approval_id=approval_id)
         self.bus.publish("approval_requested", agent_id, task_id, approval=approval_id, kind=kind,
                          title=title)
         return approval_id
@@ -303,7 +311,22 @@ class Office:
         card = self.store.approval(approval_id)
         if card["status"] != "pending":
             raise ValueError(f"approval {approval_id} is already {card['status']}")
+        p = card["payload"]
+        if card["kind"] == "model" and decision == "approved":
+            m = self.store.model(p.get("ticker", ""), p.get("version", 0))
+            newest = self.store.approved_model(p.get("ticker", ""))
+            if m and m["approval_id"] != approval_id:
+                raise ValueError("This card is stale: that model version was re-filed since. "
+                                 "Decide the newer card instead.")
+            if newest and m and newest["version"] > m["version"]:
+                raise ValueError(f"v{newest['version']} is already the official model; approving "
+                                 f"v{m['version']} would roll it back. Decline this card instead.")
         self.store.decide_approval(approval_id, decision, note)
+        mdl = self.store.model(p.get("ticker", ""), p.get("version", 0)) if card["kind"] == "model" else None
+        if mdl and mdl["status"] == "awaiting" and mdl["approval_id"] == approval_id:
+            self.store.set_model_status(p["ticker"], p["version"], decision)
+            self.bus.publish("model_status", card["agent"], card["task_id"], ticker=p["ticker"],
+                             version=p["version"], status=decision)
         verb = {"approved": "approved", "changes": "asked for changes on",
                 "rejected": "declined"}[decision]
         text = f'{self.captain_name} {verb} your request "{card["title"]}" (approval #{approval_id}).'
@@ -331,6 +354,9 @@ class Office:
                          "one-line recap.")
                 self._schedule(agent.id, task_id)
         return self.store.approval(approval_id)
+
+    def model_lock(self, ticker: str) -> asyncio.Lock:
+        return self._model_locks.setdefault(ticker, asyncio.Lock())
 
     def raise_incident(self, agent: str | None, task_id: int | None, kind: str, detail: str,
                        **extra) -> int:
@@ -370,6 +396,17 @@ class Office:
                 docs.append({"ts": t["updated"], "kind": "result", "title": t["title"],
                              "text": result.get("findings", ""), "source": "delegation",
                              "for": t["assigned_by"]})
+        for mdl in self.store.models():
+            if mdl["created_by"] == agent_id:
+                s = mdl["summary"]
+                pts = s.get("price_targets", {})
+                docs.append({"ts": mdl["created"], "kind": "workbook", "source": "model",
+                             "title": f"{mdl['ticker']} model v{mdl['version']} ({mdl['status']})",
+                             "text": (f"Bear ${pts.get('bear', 0):,.2f} / base ${pts.get('base', 0):,.2f} / "
+                                      f"bull ${pts.get('bull', 0):,.2f} · {s.get('rating')} · formula "
+                                      f"check {'passed' if s.get('check', {}).get('ok') else 'FAILED'}"),
+                             "ticker": mdl["ticker"], "version": mdl["version"], "status": mdl["status"],
+                             "file": f"/files/quant/{mdl['ticker']}/{Path(mdl['path']).name}"})
         return sorted(docs, key=lambda d: d["ts"], reverse=True)
 
     def resolve_incident(self, incident_id: int) -> None:
@@ -475,6 +512,7 @@ class Office:
             "chat": self.store.chat(limit=chat),
             "incidents": self.store.incidents(),
             "approvals": self.store.approvals(),
+            "model_registry": self.store.models(),
             "captain_name": self.captain_name,
         }
 

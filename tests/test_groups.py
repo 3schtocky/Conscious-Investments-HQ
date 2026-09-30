@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from conftest import text_turn, tool_turn
+from conftest import register_model, text_turn, tool_turn
 
 
 async def test_stott_announcement_reaches_everyone_and_replies_stay_in_the_thread(make_office):
@@ -56,6 +56,7 @@ async def test_only_juno_broadcasts_and_posts_are_limited_per_task(make_office):
 
 async def test_document_history(make_office):
     office, llm = make_office()
+    register_model(office, "RMBS", 1)
     llm.script("Sigma",
                tool_turn(("delegate", {"to": "Delta", "job": "Build the sensitivity grid."})),
                tool_turn(("request_approval", {"kind": "model", "ticker": "RMBS", "version": 1,
@@ -68,7 +69,8 @@ async def test_document_history(make_office):
     office.assign("Sigma", "RMBS v1")
     await office.idle()
     sigma = office.documents("Sigma")
-    assert [d["source"] for d in sigma] == ["report", "approval"]
+    assert [d["source"] for d in sigma][:2] == ["report", "approval"]
+    assert "model" in [d["source"] for d in sigma]   # the registered workbook version
     assert sigma[1]["attachments"] == ["RMBS_v1.xlsx"] and sigma[1]["version"] == 1
     delta = office.documents("quant_associate")
     assert delta[0]["source"] == "delegation" and delta[0]["text"] == "Grid built, 5x5."
