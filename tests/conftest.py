@@ -72,13 +72,28 @@ class FakeLLM:
         return turn
 
 
+@pytest.fixture(autouse=True)
+def _never_spend(monkeypatch):
+    """Tests never reach the real API, whatever config/office.yaml says: the switch is forced
+    off, and the SDK is pointed at a dead local port as a second line of defence."""
+    from hq import config
+
+    real = config.office()
+    safe = copy.deepcopy(real)
+    safe.setdefault("api", {})["enabled"] = False
+    monkeypatch.setattr(config, "office", lambda: safe)
+    for mod in ("hq.engine.ledger", "hq.engine.agent", "hq.engine.runtime", "hq.engine.guards"):
+        monkeypatch.setattr(f"{mod}.office", lambda: safe)
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-valid")
+
+
 @pytest.fixture
 def make_office(monkeypatch, tmp_path):
     # Price the fake model like Sonnet so spend is non-zero and predictable.
     from hq import config
 
-    real = config.office()
-    patched = copy.deepcopy(real)
+    patched = copy.deepcopy(config.office())   # already the API-off copy from _never_spend
     patched["pricing"]["fake"] = {"input": 2.0, "output": 10.0, "cache_read": 0.2,
                                   "cache_write_5m": 2.5, "cache_write_1h": 4.0}
     for tier in patched["models"].values():

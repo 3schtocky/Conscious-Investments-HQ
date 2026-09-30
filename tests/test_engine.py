@@ -50,16 +50,22 @@ async def test_request_params_per_model_family():
     assert "thinking" not in no_think
 
 
-def test_block_to_param_keeps_only_replayable_keys():
+def test_block_to_param_keeps_everything_the_api_returned():
     from hq.engine.llm import block_to_param
 
     assert block_to_param({"type": "text", "text": "hi", "citations": None,
                            "parsed_output": {}}) == {"type": "text", "text": "hi"}
     assert block_to_param({"type": "thinking", "thinking": "t", "signature": "s"}) == \
         {"type": "thinking", "thinking": "t", "signature": "s"}
-    assert block_to_param({"type": "tool_use", "id": "1", "name": "n", "input": {},
-                           "caller": None}) == {"type": "tool_use", "id": "1", "name": "n",
-                                                "input": {}}
+    # Regression (first live run): a web search made from inside code execution is linked to
+    # that code run by `caller`; dropping it made the API reject the replayed turn.
+    nested = {"type": "server_tool_use", "id": "srvtoolu_2", "name": "web_search",
+              "input": {"query": "RMBS"}, "caller": {"type": "code_execution_20260120",
+                                                    "tool_id": "srvtoolu_1"}}
+    assert block_to_param(nested) == nested
+    result = {"type": "web_search_tool_result", "tool_use_id": "srvtoolu_2", "content": [],
+              "caller": {"type": "code_execution_20260120", "tool_id": "srvtoolu_1"}}
+    assert block_to_param(result) == result
 
 
 async def test_message_to_idle_colleague_becomes_their_task(make_office):

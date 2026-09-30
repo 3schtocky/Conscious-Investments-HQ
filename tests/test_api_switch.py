@@ -10,7 +10,8 @@ from hq import config
 from hq.engine import llm
 
 
-def test_api_is_off_by_default_and_tone_is_free():
+def test_tests_run_with_the_api_off_and_tone_is_free():
+    # Whatever Stott sets for a live run, tests always see the switch off (conftest _never_spend).
     cfg = config.office()
     assert cfg["api"]["enabled"] is False
     assert cfg["tone"]["engine"] == "rules"

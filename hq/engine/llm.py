@@ -13,16 +13,9 @@ from typing import Any, Protocol
 
 from hq.engine.ledger import usage_dict
 
-# Keys the API accepts back for each content block type. Anything else the SDK adds
-# (parsed output, None-valued extras) is dropped before replay.
-_REPLAY_KEYS = {
-    "text": ("type", "text", "citations"),
-    "thinking": ("type", "thinking", "signature"),
-    "redacted_thinking": ("type", "data"),
-    "tool_use": ("type", "id", "name", "input"),
-    "server_tool_use": ("type", "id", "name", "input"),
-}
-
+# Content blocks are replayed exactly as the API returned them (Sonnet 5.5 binds thinking to the
+# conversation, and server tools link blocks through fields like `caller`). Only SDK-side extras
+# are dropped: None values and parsed_* helpers.
 OnDelta = Callable[[str, str], Awaitable[None] | None]   # (kind, text) with kind thinking|text
 OnBlock = Callable[[dict], Awaitable[None] | None]        # a completed content block
 
@@ -46,10 +39,7 @@ class ModelClient(Protocol):
 def block_to_param(block: Any) -> dict:
     """SDK content block (or dict) -> a dict safe to send back to the API unchanged."""
     raw = block if isinstance(block, dict) else block.model_dump(mode="json", exclude_none=True)
-    keys = _REPLAY_KEYS.get(raw.get("type"))
-    if keys is None:   # server tool results and future block types: keep as dumped
-        return {k: v for k, v in raw.items() if v is not None and not k.startswith("parsed")}
-    return {k: raw[k] for k in keys if k in raw and raw[k] is not None}
+    return {k: v for k, v in raw.items() if v is not None and not k.startswith("parsed")}
 
 
 def request_params(model_cfg: dict, *, system: str, messages: list[dict],

@@ -55,6 +55,6 @@ tone:
 # Building, tests and `hq serve --demo` never need it. Only Stott flips this, and only for a
 # real run he has approved with a cost estimate (see CLAUDE.md rule 3).
 api:
-  enabled: false
+  enabled: TRUE
 
 cadence: on_assignment         # the office only works when the Captain assigns work

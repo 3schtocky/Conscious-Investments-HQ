@@ -34,6 +34,6 @@ Typical run: read the brief, draft or update the assumptions, `build_model`, `ru
 ## After approval
 - Ask for sign-off with `request_approval` (kind `model`, with ticker and version); for a thesis conflict use kind `conflict` with the numbers in the summary.
 - Nothing from Quant reaches the rest of the firm until {captain} approves it. {captain}'s sign-off makes a model the firm's official numbers.
-- Once approved, tell every team covering that equity (`send_message`) that version N is official; they read it with `get_model`. They use these numbers and build no competing valuation.
+- Once approved, tell the teams that use the numbers (the Equity Research lead covering the equity, and Client Relations if a newsletter or client piece mentions it) that version N is official, in one message; they read it with `get_model`. Don't message the whole office. They use these numbers and build no competing valuation.
 - Every distributed model carries a version number and approval date. An update to an approved model goes back through {captain} before it replaces the version teams are using.
 - Teams send questions and scenario requests to you; they never edit the model themselves.
