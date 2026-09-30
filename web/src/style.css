@@ -99,9 +99,9 @@ aside { display: flex; flex-direction: column; min-height: 0; border-left: 1px s
 .tag-icon[data-kind="away"] { font: 700 9px/1 var(--pixel); color: #cdbef0; }
 .tag-icon[data-kind="captain"] { background: none; padding: 0; }
 .tag-icon[data-kind="captain"]::before { content: ""; width: 7px; height: 7px; background: var(--gold); transform: rotate(45deg); box-shadow: 0 0 0 1.5px #fff; }
-.bubble { position: absolute; bottom: 20px; --shift: 0px; transform: translateX(calc(-50% + var(--shift))) scale(.9); max-width: 240px; width: max-content; padding: 7px 10px; background: #fff; color: #2E2C29; border: 2px solid #2E2C29; border-radius: 10px; font: 500 12px/1.35 var(--sans); box-shadow: 0 3px 0 rgba(46,44,41,.25); opacity: 0; transition: opacity .2s, transform .2s; }
+.bubble { position: absolute; left: 0; bottom: 20px; --shift: 0px; translate: calc(-50% + var(--shift)) 0; scale: .9; transform-origin: 50% 100%; max-width: 240px; width: max-content; padding: 7px 10px; background: #fff; color: #2E2C29; border: 2px solid #2E2C29; border-radius: 10px; font: 500 12px/1.35 var(--sans); box-shadow: 0 3px 0 rgba(46,44,41,.25); opacity: 0; transition: opacity .2s, scale .2s; }
 .bubble::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -6px; border: 6px solid transparent; border-top-color: #2E2C29; border-bottom: 0; }
-.bubble.show { opacity: 1; transform: translateX(calc(-50% + var(--shift))) scale(1); }
+.bubble.show { opacity: 1; scale: 1; }
 .bubble::after { translate: calc(-1 * var(--shift)) 0; }
 .room-sign { position: absolute; left: 0; top: 0; font: 400 11px/1 var(--pixel); letter-spacing: .4px; color: #fff; background: var(--accent); padding: 4px 8px; border-radius: 4px; transform-origin: 0 0; white-space: nowrap; box-shadow: 0 2px 0 rgba(0,0,0,.2); translate: -50% -50%; opacity: .95; }
 

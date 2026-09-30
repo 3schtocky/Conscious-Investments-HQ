@@ -20,6 +20,19 @@ export class Overlay {
     t.bubble.textContent = clean.length > 220 ? clean.slice(0, 219) + "…" : clean;
     t.bubble.classList.add("show");
     t.bubbleUntil = performance.now() + ms;
+    // Place it now, not on the next frame: speech is triggered by the game loop, which can run
+    // after this frame's layout pass, and a new bubble must never flash outside the view.
+    const pos = this.scene()?.headPosition(id);
+    if (pos) this.fit(t, pos);
+  }
+
+  /** Keep a shown bubble inside the office view: it slides left near the right edge, right near
+   *  the left edge (the tail keeps pointing at the speaker), and drops below near the top. */
+  private fit(t: Tag, pos: { x: number; y: number }) {
+    const w = t.bubble.offsetWidth, max = this.layer.clientWidth;
+    const shift = Math.max(6 - (pos.x - w / 2), Math.min(0, max - 6 - (pos.x + w / 2)));
+    t.bubble.style.setProperty("--shift", `${Math.round(shift)}px`);
+    t.bubble.classList.toggle("below", pos.y - t.bubble.offsetHeight - 24 < 4);
   }
 
   private tag(id: string): Tag {
@@ -62,12 +75,7 @@ export class Overlay {
         }
         t.root.dataset.status = a ? (a.paused ? "paused" : a.status) : "captain";
         if (t.bubbleUntil && now > t.bubbleUntil) { t.bubble.classList.remove("show"); t.bubbleUntil = 0; }
-        if (t.bubbleUntil) {   // keep the bubble inside the office view
-          const w = t.bubble.offsetWidth, max = this.layer.clientWidth;
-          const shift = Math.max(6 - (pos.x - w / 2), Math.min(0, max - 6 - (pos.x + w / 2)));
-          t.bubble.style.setProperty("--shift", `${Math.round(shift)}px`);
-          t.bubble.classList.toggle("below", pos.y - t.bubble.offsetHeight - 24 < 4);
-        }
+        if (t.bubbleUntil) this.fit(t, pos);   // re-fit every frame as the speaker walks
       }
       for (const r of scene.roomLabelPositions()) {
         let el = this.rooms.get(r.id);

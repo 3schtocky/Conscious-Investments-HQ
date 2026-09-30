@@ -11,7 +11,8 @@ export interface Approval {
 
 const KIND: Record<string, string> = { brief: "📄 Brief review", model: "📊 Model approval",
   conflict: "⚖️ Thesis conflict", portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", other: "📝 Decision" };
-const DECIDED: Record<string, string> = { approved: "✅ Approved", changes: "✏️ Changes requested", rejected: "✖️ Declined" };
+const DECIDED: Record<string, string> = { approved: "✅ Approved", changes: "✏️ Changes requested", rejected: "✖️ Declined",
+  expired: "⌛ Expired (demo tidy-up)" };
 
 export class ApprovalsPanel {
   items: Approval[] = [];

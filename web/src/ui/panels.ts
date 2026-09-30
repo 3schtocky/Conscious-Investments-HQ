@@ -88,6 +88,9 @@ function lastWords(blocks: Block[]): string {
 
 // ---- activity feed --------------------------------------------------------------------------
 export function renderActivity(root: HTMLElement, state: OfficeState, wing: string | null, onPick: (id: string) => void) {
+  // Newest items go on top. Keep the reader's place: if they've scrolled down, anchor the view
+  // to what they're reading (offset by whatever was added above); at the top, stay at the top.
+  const prevTop = root.scrollTop, prevHeight = root.scrollHeight;
   clear(root);
   const who = (id: string | null) =>
     id && state.agents.has(id) ? h("a", { class: "who", href: "#", onclick: (e: Event) => { e.preventDefault(); onPick(id); } }, state.name(id)) : h("strong", {}, state.name(id));
@@ -97,6 +100,7 @@ export function renderActivity(root: HTMLElement, state: OfficeState, wing: stri
     const line = feedLine(ev, state, who);
     if (line) root.append(h("div", { class: `feed-item t-${ev.type}` }, h("span", { class: "feed-time" }, timeAgo(ev.ts)), line));
   }
+  root.scrollTop = prevTop > 4 ? prevTop + (root.scrollHeight - prevHeight) : 0;
 }
 
 function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) => HTMLElement): HTMLElement | null {
@@ -213,6 +217,11 @@ export class ChatPanel {
   }
 
   render(agentFilter: string | null) {
+    // Follow new messages only if the reader is already at the bottom of the same channel.
+    const old = this.root.querySelector<HTMLElement>(".messages");
+    const oldChannel = this.channel;
+    const atBottom = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 40;
+    const oldTop = old?.scrollTop ?? 0;
     clear(this.root);
     const latest = new Map<string, number>();
     for (const m of this.state.chat) latest.set(m.channel, Math.max(latest.get(m.channel) ?? 0, m.ts));
@@ -232,6 +241,6 @@ export class ChatPanel {
           h("div", { class: "msg-text" }, m.original)) : null));
     }
     this.root.append(list, msgs);
-    msgs.scrollTop = msgs.scrollHeight;
+    msgs.scrollTop = atBottom || this.channel !== oldChannel ? msgs.scrollHeight : oldTop;
   }
 }

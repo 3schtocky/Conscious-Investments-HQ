@@ -318,6 +318,8 @@ def scene_quant_model(office: Office, llm: DemoLLM) -> None:
                   title="Northwind to Quant (demo)")
 
 
+DEMO_PENDING_KEEP = 3
+
 SCENES = [scene_gem_hunt, scene_memo, scene_quant_model, scene_lobby_sync, scene_newsletter]
 
 
@@ -328,6 +330,10 @@ async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0) -> None:
         # (correctly) block every scripted message from the second loop on.
         office.conversations = ConversationGuard()
         llm.scripts.clear()   # leftovers from an interrupted scene must not play later
+        # Nobody decides the demo's cards, so keep only the newest few instead of a pile.
+        pending = office.store.approvals("pending")
+        for card in pending[:-DEMO_PENDING_KEEP]:
+            office.store.decide_approval(card["id"], "expired", "Tidied up by the demo")
         usable = office.ledger.daily_cap - office.ledger.audit_reserve
         if office.ledger.spent_today() > usable * 0.5:
             office.store.clear_spend()   # demo spend is pretend; keep the meter in range

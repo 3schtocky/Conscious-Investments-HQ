@@ -125,7 +125,9 @@ function renderTabs() {
       { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", settings: "Settings" }[t],
       t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null)));
   writeHash();
-  panelRoot.replaceChildren({ activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, settings: settingsRoot }[tab]);
+  // Swap the panel only on a real tab change: re-attaching an element resets its scroll.
+  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, settings: settingsRoot }[tab];
+  if (panelRoot.firstElementChild !== panel) panelRoot.replaceChildren(panel);
 }
 
 function renderViews() {

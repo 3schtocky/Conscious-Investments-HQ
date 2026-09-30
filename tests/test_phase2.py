@@ -231,3 +231,18 @@ def test_agents_call_the_captain_by_his_settings_name(make_office):
     assert report["description"].startswith("Send a message to Stott, the Captain")
     office.captain_name = "Boss"   # a Settings rename flows into new tasks' prompts
     assert "Boss (Ethan Stott) is the Captain" in office.agents["er_lead"].system_prompt()
+
+
+async def test_demo_keeps_only_a_few_pending_cards(make_office):
+    from hq.demo import DEMO_PENDING_KEEP, DemoLLM, run_demo
+
+    office, _ = make_office()
+    llm = DemoLLM(speed=1000, office=office)
+    office._llm = llm
+    task = asyncio.create_task(run_demo(office, llm, pause=0))
+    while len(office.store.approvals()) < 8:
+        await asyncio.sleep(0.02)
+    await asyncio.sleep(0.2)
+    task.cancel()
+    assert len(office.store.approvals("pending")) <= DEMO_PENDING_KEEP + 3   # + one loop's worth
+    assert office.store.approvals("expired")
