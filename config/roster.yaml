@@ -3,11 +3,11 @@
 # model: lead (Sonnet 5.5) | associate (Haiku 4.5) | an explicit model id.
 
 wings:
-  executive: { name: Executive Suite }
-  equity_research: { name: Equity Research }
-  screening: { name: Screening }
-  audit: { name: Audit }
-  client_relations: { name: Client Relations }
+  executive: {name: Executive Suite}
+  equity_research: {name: Equity Research}
+  screening: {name: Screening}
+  audit: {name: Audit}
+  client_relations: {name: Client Relations}
 
 agents:
   - id: chief_of_staff
@@ -104,5 +104,5 @@ agents:
 
 # You, in your own office. Editable in Settings too.
 captain:
-  nickname: Captain Ethan
+  nickname: Stott
   avatar: captain
