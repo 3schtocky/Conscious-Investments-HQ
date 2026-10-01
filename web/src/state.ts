@@ -57,6 +57,7 @@ export interface Snapshot {
   events: OfficeEvent[];
   chat: ChatMsg[];
   incidents: any[];
+  audit?: { open_flags: number; memory_pending: number };
 }
 
 const MAX_BLOCKS = 200;
@@ -73,6 +74,7 @@ export class OfficeState {
   feed: OfficeEvent[] = [];   // notable events for the activity feed
   spend = { today: 0, cap: 10, byModel: {} as Record<string, number> };
   incidents: any[] = [];
+  audit = { open_flags: 0, memory_pending: 0 };   // until the Audit tab loads its own view
   private listeners = new Set<Listener>();
 
   load(s: Snapshot) {
@@ -83,6 +85,7 @@ export class OfficeState {
     this.models = s.models;
     this.spend = { today: s.spend.today, cap: s.spend.cap, byModel: { ...s.spend.by_model } };
     this.incidents = s.incidents;
+    this.audit = s.audit ?? this.audit;
     const prev = this.agents;
     this.agents = new Map();
     for (const a of s.agents) {
@@ -219,6 +222,15 @@ export class OfficeState {
         if (live) this.incidents.push({ ...ev, id: ev.incident_id });
         b("alert", `Incident: ${ev.kind}: ${ev.detail}`, true);
         break;
+      case "audit_flag":
+        b("alert", `Audit ${ev.severity}: ${ev.subject}: ${ev.detail}`, ev.severity === "flag");
+        break;
+      case "audit_resolved":
+        b("alert", `Audit ${ev.verdict} the finding on ${ev.subject}${ev.note ? `: ${ev.note}` : ""}`, ev.verdict === "upheld");
+        break;
+      case "memory_held":
+        b("alert", `Memory write held for review: ${ev.text}`);
+        break;
     }
     if (FEED_TYPES.has(ev.type)) {
       this.feed.push(ev);
@@ -230,7 +242,8 @@ export class OfficeState {
 
 const FEED_TYPES = new Set(["task_created", "task_started", "task_done", "delegated", "chat",
   "captain_report", "task_paused", "task_error", "incident", "office_status", "meeting",
-  "captain_message", "approval_requested", "approval_decided", "watchlist_added", "screen_run"]);
+  "captain_message", "approval_requested", "approval_decided", "watchlist_added", "screen_run",
+  "audit_flag", "audit_resolved", "memory_held", "audit_digest"]);
 
 export function groupName(channel: string, state: OfficeState): string {
   return channel === "group:juno" ? `${state.name("chief_of_staff")} → All` : `${state.captain.nickname} → All`;

@@ -5,7 +5,9 @@ import { clear, fileHref, h, timeAgo } from "./dom";
 
 export interface Approval {
   id: number; ts: number; kind: string; agent: string; task_id: number | null; title: string;
-  summary: string; payload: { ticker?: string; version?: number; attachments?: string[] };
+  summary: string;
+  payload: { ticker?: string; version?: number; attachments?: string[];
+    audit?: { rule: string; severity: string; subject: string; detail: string; status?: string }[] };
   status: string; decided_ts: number | null; note: string | null;
 }
 
@@ -59,6 +61,7 @@ export class ApprovalsPanel {
       h("div", { class: "approval-from" }, agent ? avatarImage(agent.id, agent.avatar, 2) : null,
         h("span", {}, `From ${this.state.name(a.agent)}${agent ? ` · ${agent.role}` : ""}`)),
       h("p", { class: "approval-summary" }, a.summary),
+      this.auditEl(a),
       a.payload.attachments?.length ? h("div", { class: "attachments" }, "📎 ", ...a.payload.attachments.flatMap((f, i) => {
         const href = fileHref(f, a.payload.ticker);
         const el = href ? h("a", { href, download: "" }, f.split("/").pop()!) : h("span", {}, f);
@@ -70,6 +73,21 @@ export class ApprovalsPanel {
             h("button", { class: "btn ghost", onclick: act("changes") }, "Request changes"),
             h("button", { class: "btn ghost danger", onclick: act("rejected") }, "Decline")))
         : h("div", { class: "decided" }, DECIDED[a.status] ?? a.status, a.note ? ` · "${a.note}"` : ""));
+  }
+
+  /** What Tally's free code checks made of this card (cards from before Phase 6 have none). */
+  private auditEl(a: Approval): HTMLElement | null {
+    const found = a.payload.audit;
+    if (!found) return null;
+    if (!found.length) return h("div", { class: "card-audit" }, h("span", { class: "chip good" }, "Audit check: clean"));
+    const settled = (f: { status?: string }) => f.status === "cleared" || f.status === "dismissed";
+    const all = found.filter((f) => f.severity === "flag");
+    const flags = all.filter((f) => !settled(f)).length;
+    const label = flags ? `Audit: ${flags} flag${flags === 1 ? "" : "s"}` : all.length ? "Audit: flags cleared" : "Audit: notes only";
+    const state: Record<string, string> = { open: "open", reviewing: "Vera is reviewing", cleared: "cleared", upheld: "upheld by Vera", dismissed: "dismissed by you" };
+    return h("div", { class: "card-audit" },
+      h("span", { class: `chip${flags ? " warn" : all.length ? " good" : ""}` }, label),
+      h("ul", {}, ...found.map((f) => h("li", {}, `${f.subject}: ${f.detail}${f.status ? ` (${state[f.status] ?? f.status})` : ""}`))));
   }
 
   private incidentEl(inc: any): HTMLElement {

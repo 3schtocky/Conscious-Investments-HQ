@@ -61,6 +61,10 @@ class Decision(BaseModel):
     decision: str                 # approved | changes | rejected
     note: str | None = None
 
+
+class MemoryDecision(BaseModel):
+    decision: str                 # approved | rejected
+
 MAX_MESSAGE = 8000
 
 
@@ -94,12 +98,17 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
             office = office_factory() if office_factory else Office()
         state["office"] = office
 
-        async def reminders() -> None:   # Juno's Monday nudge (plain code, no API call)
+        async def reminders() -> None:   # plain code, no API call
             while True:
                 try:
-                    office.weekly_reminder()
+                    office.weekly_reminder()      # Juno's Monday nudge
                 except Exception:
                     log.exception("weekly reminder failed")
+                try:
+                    if not demo:
+                        office.daily_digest()     # Tally's digest for each finished day
+                except Exception:
+                    log.exception("daily digest failed")
                 await asyncio.sleep(1800)
 
         state["reminder_task"] = asyncio.create_task(reminders())
@@ -272,6 +281,57 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         return JSONResponse(card)
+
+    @app.get("/api/audit")
+    async def audit_view() -> JSONResponse:
+        return JSONResponse(office().audit_view())
+
+    @app.get("/api/audit/digest")
+    async def audit_digest(day: str | None = None) -> JSONResponse:
+        from datetime import date
+
+        if day is not None:
+            try:
+                date.fromisoformat(day)
+            except ValueError as e:
+                raise HTTPException(400, "day must look like 2026-10-01") from e
+        return JSONResponse(office().digest(day))
+
+    @app.post("/api/audit/findings/{finding_id}/review")
+    async def finding_review(finding_id: int) -> JSONResponse:
+        try:
+            return JSONResponse({"task_id": office().review_finding(finding_id)})
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.post("/api/audit/findings/{finding_id}/dismiss")
+    async def finding_dismiss(finding_id: int) -> JSONResponse:
+        try:
+            return JSONResponse(office().resolve_finding(finding_id, "dismissed", by="captain"))
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.post("/api/memory/{write_id}/decide")
+    async def memory_decide(write_id: int, req: MemoryDecision) -> JSONResponse:
+        try:
+            return JSONResponse(office().decide_memory(write_id, req.decision))
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.post("/api/memory/{write_id}/remove")
+    async def memory_remove(write_id: int) -> JSONResponse:
+        try:
+            return JSONResponse(office().remove_memory(write_id))
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
 
     @app.post("/api/incidents/{incident_id}/resolve")
     async def resolve_incident(incident_id: int) -> JSONResponse:

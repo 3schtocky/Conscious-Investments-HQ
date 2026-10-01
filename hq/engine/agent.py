@@ -44,6 +44,7 @@ class Agent:
         self.current_task: int | None = None
         self.guard: TaskGuard | None = None
         self.status = "idle"
+        self.paused_by: str | None = None   # who paused this agent (the Captain or Audit)
 
     def update_profile(self, entry: dict) -> None:
         self.nickname: str = entry["nickname"]
@@ -107,6 +108,8 @@ class Agent:
             finally:
                 self.current_task = None
                 self.guard = None
+                if self.is_audit:   # a review that ended without a ruling must not hide its flags
+                    self.office.reopen_unreviewed(task_id)
                 if not self.paused:
                     self.set_status("idle")
                 if self.inbox:   # messages that arrived as the task ended get their own turn
@@ -308,6 +311,10 @@ class Agent:
         text = result if isinstance(result, str) else json.dumps(result)
         self.office.store.set_task_status(task["id"], "done", result=text)
         self.office.bus.publish("task_done", self.id, task["id"], result=result)
+        try:   # Tally's free code checks; a failed check must never cost the work itself
+            self.office.audit_task(task)
+        except Exception:
+            log.exception("audit check failed for task %s", task["id"])
         return {"status": "done", "result": result}
 
 

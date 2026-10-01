@@ -124,6 +124,10 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
     case "approval_requested": return s("📝 ", who(ev.agent), ` asks ${state.captain.nickname} to decide: ${ev.title}`);
     case "watchlist_added": return s("👀 ", who(ev.agent), ` added ${ev.ticker} to the watchlist (${ev.source})`);
     case "screen_run": return s("🔎 ", who(ev.agent), ` ran the ${ev.preset} screen (${ev.run})`);
+    case "audit_flag": return s(ev.severity === "flag" ? "🔍 Audit flag · " : "🗒️ Audit note · ", who(ev.agent), ` · ${short(`${ev.subject}: ${ev.detail}`, 150)}`);
+    case "audit_resolved": return s("🔏 ", ev.by === "captain" ? who("captain") : who(ev.by), ` ${ev.verdict} the finding on ${short(String(ev.subject), 80)}`);
+    case "memory_held": return s("🗂️ ", who(ev.agent), ev.kind === "wiki" ? " proposed a wiki entry for your approval" : " has a desk note held for your review");
+    case "audit_digest": return s("🧾 ", who(ev.agent), ` posted the audit digest for ${ev.day}`);
     case "approval_decided": return s("⚖️ ", who("captain"), ` ${ev.decision === "approved" ? "approved" : ev.decision === "changes" ? "asked for changes on" : "declined"} "${ev.title}"`);
   }
   return null;

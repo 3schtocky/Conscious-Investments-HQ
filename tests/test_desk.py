@@ -48,7 +48,11 @@ def test_tool_lists_by_wing():
     delta = names("associate", "quant_associate", "quant")
     assert {"build_model", "run_simulations", "draft_assumptions", "submit_result"} <= set(delta)
     assert "request_approval" not in delta          # only the lead signs off
-    assert names("lead", "audit_lead", "audit")[-2:] == ["note_to_self", "get_model"]
+    vera = names("lead", "audit_lead", "audit")
+    assert {"audit_log", "resolve_finding", "pause_agent", "file_incident", "read_file"} <= set(vera)
+    assert "write_file" not in vera                 # Audit reads everything and writes nothing
+    tally = names("associate", "audit_associate", "audit")
+    assert "audit_log" in tally and "pause_agent" not in tally and "resolve_finding" not in tally
 
 
 def test_web_search_only_for_research():

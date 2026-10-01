@@ -22,6 +22,7 @@ from hq.tools.desk import coverage_dir
 
 _ids = itertools.count(1)
 _WHO = re.compile(r"You are \*\*.+?\*\* \(`(\w+)`\)")
+_FINDING = re.compile(r"\[finding #(\d+)\]")
 
 
 def _usage(inp: int, out: int, cached: int = 0) -> dict:
@@ -87,6 +88,8 @@ class DemoLLM:
         first = _text_of(msgs[0]["content"])
         title = first.strip().splitlines()[0][:80] if first.strip() else "the task"
         office = self.office
+        if who == "audit_lead" and "code checks flagged" in first:
+            return self._improvise_review(first, msgs, params)
         if len(msgs) == 1:
             if first.startswith("[Announcement from") or "[Announcement from" in first:
                 group = "juno" if 'group "juno"' in first else "stott"
@@ -138,6 +141,20 @@ class DemoLLM:
                                                 "is done. Real research tools arrive with the "
                                                 "live office in Phase 4."}))(params)
         return think("That's everything.", "Done (demo).")(params)
+
+    def _improvise_review(self, first: str, msgs: list, params: dict) -> TurnResult:
+        """Vera reviewing flags nobody scripted (e.g. raised by the Captain's own demo chat)."""
+        ids = [int(n) for n in _FINDING.findall(first)]
+        if len(msgs) == 1:
+            return think("Tally's checks flagged something. Evidence first.", None,
+                         ("read_findings", {}))(params)
+        if len(msgs) == 3:
+            return think("The check stands on what I can see. Closing each with a reason.", None,
+                         *[("resolve_finding", {"finding": i, "verdict": "upheld",
+                                                "note": "(demo) Confirmed against the log; the "
+                                                        "colleague has been asked to fix it."})
+                           for i in ids])(params)
+        return think("Ruled.", "Review done (demo).")(params)
 
     def script(self, agent_id: str, *turns: Callable) -> None:
         self.scripts[agent_id].extend(turns)
@@ -311,6 +328,54 @@ def scene_newsletter(office: Office, llm: DemoLLM) -> None:
     office.assign("Harbor", "Prepare this week's newsletter (demo).", title="Newsletter (demo)")
 
 
+def scene_audit(office: Office, llm: DemoLLM) -> None:
+    """Audit end to end with the REAL checks: Scout files a card that states a price target for
+    a name with no approved model. Tally's code check flags it, Vera is called in, reads the
+    log, upholds the flag and asks for the fix. Scout's two desk notes show the memory screen:
+    one saves, one is held for the Captain. Only the agents' words are scripted."""
+    def vera_rules(params: dict) -> TurnResult:
+        ids = [int(n) for n in _FINDING.findall(_text_of(params["messages"][0]["content"]))]
+        return think("The card states a price target and there is no approved model for the "
+                     "name, so the check stands. Screening describes the setup; valuation waits "
+                     "for Quant. A message is enough here, nobody needs pausing.", None,
+                     *[("resolve_finding", {"finding": i, "verdict": "upheld",
+                                            "note": "The card states a $48.00 price target; NWST "
+                                                    "has no approved model (demo)."}) for i in ids],
+                     ("send_message", {"to": ["Scout"], "text": "Your Northwind card states a "
+                                       "$48.00 price target, and there is no approved model for "
+                                       "it. Please take the target out and describe the setup "
+                                       "only; Quant values it if Stott sends it to research "
+                                       "(demo)."}))(params)
+
+    llm.script("screen_lead",
+               think("A short card for the Captain on Northwind, and two notes for my desk.", None,
+                     ("note_to_self", {"note": "Lead a pitch with the catalyst, then the "
+                                       "acceleration evidence (demo)."}),
+                     ("note_to_self", {"note": "Northwind looks worth $48 a share, about 40% "
+                                       "upside (demo)."}),
+                     ("request_approval", {"kind": "other", "ticker": "NWST",
+                                           "title": "Northwind Storage pitch (demo)",
+                                           "summary": "The contract pipeline should convert "
+                                           "within 18 months. Our price target is $48.00. "
+                                           "Should this go to research?"})),
+               think("Sent.", "Northwind card is on the Captain's desk."),
+               think("Vera is right: valuation is Quant's call, not mine.",
+                     "Understood. I'll keep targets out of Screening cards."))
+    llm.script("audit_lead",
+               think("Tally's check flagged a Screening card. I read what Scout actually did "
+                     "before ruling.", None,
+                     ("audit_log", {"agent": "Scout", "limit": 12}),
+                     ("get_model", {"ticker": "NWST"})),
+               vera_rules,
+               think("One more thing worth keeping for everyone.", None,
+                     ("propose_wiki", {"entry": "Screening cards and pitches never state a price "
+                                       "target or rating; valuation waits for Quant's approved "
+                                       "model (demo)."})),
+               think("Done.", "Flag upheld, fix requested, wiki entry proposed."))
+    office.assign("Scout", "Put Northwind Storage in front of the Captain as a research "
+                  "candidate (demo).", title="Northwind pitch card (demo)")
+
+
 DRY_RUN_TICKER = "META"   # real coverage in the erb submodule: the dry run uses real tools on it
 
 
@@ -400,7 +465,8 @@ def _sigma_files_for_approval(params: dict, t: str) -> TurnResult:
 
 DEMO_PENDING_KEEP = 3
 
-SCENES = [scene_gem_hunt, scene_memo, scene_quant_model, scene_lobby_sync, scene_newsletter]
+SCENES = [scene_gem_hunt, scene_memo, scene_quant_model, scene_audit, scene_lobby_sync,
+          scene_newsletter]
 
 
 async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0) -> None:
@@ -414,10 +480,14 @@ async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0) -> None:
         pending = office.store.approvals("pending")
         for card in pending[:-DEMO_PENDING_KEEP]:
             office.store.decide_approval(card["id"], "expired", "Tidied up by the demo")
+        for held in office.store.memory_writes(status="pending")[:-DEMO_PENDING_KEEP]:
+            office.store.set_memory_status(held["id"], "expired")
         usable = office.ledger.daily_cap - office.ledger.audit_reserve
         if office.ledger.spent_today() > usable * 0.5:
             office.store.clear_spend()   # demo spend is pretend; keep the meter in range
         scene(office, llm)
         await asyncio.sleep(1)
         await office.idle()
+        if scene is scene_audit:   # normally posted once a finished day; shown here for the tour
+            office.post_digest(office.ledger.today())
         await asyncio.sleep(pause)

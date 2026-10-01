@@ -124,8 +124,9 @@ aside { display: flex; flex-direction: column; min-height: 0; border-left: 1px s
 .card-live:empty { display: none; }
 
 /* sidebar */
-.tabs { display: flex; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--grid); }
-.tab { border: 0; background: none; padding: 8px 6px; font-size: 13px; white-space: nowrap; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; }
+.tabs { display: flex; gap: 0; justify-content: space-between; padding: 8px 4px 0; border-bottom: 1px solid var(--grid); overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { border: 0; background: none; padding: 8px 2px; font-size: 12px; flex: 0 0 auto; white-space: nowrap; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; }
 .tab.active { color: var(--ink); border-bottom-color: var(--clay); }
 .panel { flex: 1; min-height: 0; overflow: hidden; display: flex; }
 .panel > * { flex: 1; min-height: 0; overflow-y: auto; }
@@ -144,7 +145,7 @@ aside { display: flex; flex-direction: column; min-height: 0; border-left: 1px s
 .chip.warn { background: color-mix(in srgb, var(--danger) 13%, transparent); color: var(--danger); }
 .chip.ticker { background: color-mix(in srgb, var(--slate) 14%, transparent); color: var(--slate); }
 .btn.danger { color: var(--danger); }
-.badge { display: inline-block; min-width: 18px; margin-left: 5px; padding: 1px 5px; border-radius: 99px; background: var(--clay); color: #fff; font-size: 11px; font-weight: 700; }
+.badge { display: inline-block; min-width: 16px; margin-left: 2px; padding: 1px 4px; text-align: center; border-radius: 99px; background: var(--clay); color: #fff; font-size: 11px; font-weight: 700; }
 .pill.awaiting { border: 0; background: var(--clay); color: #fff; font-weight: 700; cursor: pointer; }
 .approvals { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
 .approvals .section { margin: 6px 2px 0; font-family: var(--pixel); font-size: 13px; color: var(--text-2); }
@@ -282,3 +283,25 @@ input[type="color"] { width: 32px; height: 26px; padding: 1px; }
 .scorecard .up { color: var(--sage); } .scorecard .down { color: var(--danger); }
 .pitch-text { white-space: pre-wrap; font: 12px/1.45 var(--sans); background: var(--paper-light); border-radius: 8px; padding: 10px; max-height: 420px; overflow: auto; margin: 0; }
 .badge.quiet { background: var(--slate); }
+
+/* Audit tab */
+.audit { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.audit .section { margin: 6px 2px 0; font-family: var(--pixel); font-size: 13px; color: var(--text-2); }
+.audit-intro { margin: 0 2px; }
+.audit-card { border: 1px solid var(--grid); border-left: 4px solid var(--grid); border-radius: 10px; padding: 10px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow); }
+.audit-card.flag.s-open, .audit-card.flag.s-reviewing, .audit-card.paused { border-left-color: var(--danger); }
+.audit-card.flag.s-upheld { border-left-color: var(--clay); }
+.audit-card.flag.s-cleared { border-left-color: var(--sage); }
+.audit-card.memory.s-pending { border-left-color: var(--gold); }
+.audit-card.memory.k-wiki.s-pending { border-left-color: var(--heather); }
+.audit-card.digest { border-left-color: var(--slate); }
+.audit-card.note, .audit-card.s-cleared, .audit-card.s-upheld, .audit-card.s-dismissed,
+.audit-card.memory:not(.s-pending) { box-shadow: none; }
+.audit-card.s-dismissed, .audit-card.s-rejected, .audit-card.s-removed, .audit-card.s-expired { opacity: .6; }
+.audit-subject { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.audit-error { color: var(--danger); }
+.digest-open { margin: 0; padding-left: 18px; font-size: 13px; }
+.digest-past summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.digest-text { white-space: pre-wrap; font: 12px/1.5 var(--sans); background: var(--paper-light); border-radius: 8px; padding: 10px; margin: 6px 0 0; overflow-wrap: anywhere; }
+.card-audit { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.card-audit ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-2); }

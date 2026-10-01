@@ -10,9 +10,13 @@ import { SettingsPanel } from "./ui/settings";
 import { ApprovalsPanel } from "./ui/approvals";
 import { BossChannel } from "./ui/boss";
 import { WatchlistPanel } from "./ui/watchlist";
+import { AuditPanel } from "./ui/audit";
 
-type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "settings";
-const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "settings"];
+type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "audit" | "settings";
+const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "audit", "settings"];
+// Events that change what the Audit tab shows.
+const AUDIT_EVENTS = new Set(["audit_flag", "audit_review", "audit_resolved", "memory_saved", "memory_held",
+  "memory_decided", "audit_digest", "status", "incident", "task_done"]);
 
 const state = new OfficeState();
 let focus: Focus = { kind: "floor" };
@@ -77,6 +81,8 @@ const approvals = new ApprovalsPanel(approvalsRoot, state, () => render());
 const boss = new BossChannel(bossBar, state);
 const watchRoot = h("div", { class: "watchlist" });
 const watchlist = new WatchlistPanel(watchRoot, state, () => render());
+const auditRoot = h("div", { class: "audit" });
+const audit = new AuditPanel(auditRoot, state, () => render());
 // Picking a thread addresses the chat bar to it (never over a draft in progress).
 chatPanel.onChannel = (to) => { if (to && tab === "chat") boss.setDefaultRecipient(to); };
 
@@ -136,12 +142,13 @@ function renderTabs() {
       if (t === "settings" && focus.kind === "agent") settings.select(focus.id);
       tab = t; render();
     } },
-      { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", settings: "Settings" }[t],
+      { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", audit: "Audit", settings: "Settings" }[t],
+      t === "audit" && audit.count ? h("span", { class: "badge" }, String(audit.count)) : null,
       t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null,
       t === "watchlist" && watchlist.count ? h("span", { class: "badge quiet" }, String(watchlist.count)) : null)));
   writeHash();
   // Swap the panel only on a real tab change: re-attaching an element resets its scroll.
-  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, settings: settingsRoot }[tab];
+  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, audit: auditRoot, settings: settingsRoot }[tab];
   if (panelRoot.firstElementChild !== panel) panelRoot.replaceChildren(panel);
 }
 
@@ -195,6 +202,7 @@ function frame() {
       if (tab === "settings") settings.render();
       if (tab === "approvals") approvals.render();
       if (tab === "watchlist") { watchlist.render(); watchlist.maybeRefresh(); }
+      if (tab === "audit") { audit.render(); audit.maybeRefresh(); }
     }
   }
   requestAnimationFrame(frame);
@@ -206,6 +214,7 @@ async function loadState() {
   state.load(snap);
   approvals.items = (snap as any).approvals ?? [];
   watchlist.refresh();
+  audit.refresh();
   scene?.sync();
   render();
 }
@@ -215,8 +224,9 @@ function connect() {
   ws.onmessage = (m) => {
     const ev: OfficeEvent = JSON.parse(m.data);
     if (ev.type === "roster_updated") { loadState(); }
-    if (ev.type === "approval_requested" || ev.type === "approval_decided") { approvals.refresh(); }
+    if (["approval_requested", "approval_decided", "audit_resolved", "audit_review"].includes(ev.type)) { approvals.refresh(); }
     if (ev.type === "watchlist_added" || ev.type === "watchlist_status") { watchlist.refresh(); }
+    if (AUDIT_EVENTS.has(ev.type) && (tab === "audit" || !["status", "task_done"].includes(ev.type))) { audit.refresh(); }
     if (tab === "agent" && focus.kind === "agent" && ev.agent === focus.id &&
         ["approval_requested", "approval_decided", "captain_report", "task_done"].includes(ev.type)) {
       agentPanel.loadDocs(focus.id);

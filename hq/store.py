@@ -1,4 +1,4 @@
-"""SQLite persistence: tasks, conversations, chat messages, events, spend and incidents.
+"""SQLite persistence: tasks, conversations, chat messages, events, spend, incidents and audit.
 
 One connection per Store, guarded by a lock so the asyncio office and its worker threads can
 share it. Everything stays local in data/ (gitignored).
@@ -114,6 +114,45 @@ CREATE TABLE IF NOT EXISTS watchlist (
     status TEXT NOT NULL,            -- watching | researching | dropped
     UNIQUE (ticker, source)
 );
+CREATE TABLE IF NOT EXISTS audit_findings (
+    id INTEGER PRIMARY KEY,
+    ts REAL NOT NULL,
+    agent TEXT,                      -- whose work was checked
+    task_id INTEGER,
+    root_id INTEGER,
+    rule TEXT NOT NULL,              -- e.g. unapproved_figures, verify_left, tool_errors
+    severity TEXT NOT NULL,          -- flag (Vera reviews) | note (digest only)
+    subject TEXT NOT NULL,           -- what was checked, e.g. "RMBS memo.md"
+    detail TEXT NOT NULL,
+    status TEXT NOT NULL,            -- open | reviewing | cleared | upheld | dismissed
+    review_task_id INTEGER,
+    resolved_by TEXT,
+    resolved_ts REAL,
+    note TEXT
+);
+CREATE TABLE IF NOT EXISTS memory_writes (
+    id INTEGER PRIMARY KEY,
+    ts REAL NOT NULL,
+    agent TEXT NOT NULL,
+    task_id INTEGER,
+    kind TEXT NOT NULL,              -- desk | wiki
+    text TEXT NOT NULL,
+    reasons TEXT NOT NULL,           -- JSON list: why the code screen held it (empty if clean)
+    status TEXT NOT NULL,            -- saved | pending | approved | rejected | removed
+    decided_ts REAL
+);
+CREATE TABLE IF NOT EXISTS digests (
+    day TEXT PRIMARY KEY,            -- office-local date
+    ts REAL NOT NULL,
+    text TEXT NOT NULL,
+    data TEXT NOT NULL               -- JSON: the numbers behind the text
+);
+CREATE TABLE IF NOT EXISTS pauses (
+    agent TEXT PRIMARY KEY,          -- survives a restart: only the Captain unpauses
+    by TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    ts REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS spend_day ON spend(day);
 CREATE INDEX IF NOT EXISTS spend_root ON spend(root_id);
 CREATE INDEX IF NOT EXISTS events_task ON events(task_id);
@@ -162,6 +201,16 @@ class Store:
         if not rows:
             raise KeyError(f"no task {task_id}")
         return rows[0]
+
+    def children(self, task_id: int, kind: str | None = None) -> list[dict]:
+        sql, args = "SELECT * FROM tasks WHERE parent_id=?", (task_id,)
+        if kind:
+            sql, args = sql + " AND kind=?", (task_id, kind)
+        return self._all(sql + " ORDER BY id", args)
+
+    def tasks_between(self, start: float, end: float, *, by: str = "created") -> list[dict]:
+        col = "updated" if by == "updated" else "created"
+        return self._all(f"SELECT * FROM tasks WHERE {col}>=? AND {col}<? ORDER BY id", (start, end))
 
     def tasks(self, status: str | None = None) -> list[dict]:
         if status:
@@ -224,6 +273,37 @@ class Store:
         for r in rows:
             r["payload"] = json.loads(r["payload"])
         return rows
+
+    def events_where(self, *, agent: str | None = None, task_ids: list[int] | None = None,
+                     types: list[str] | None = None, start: float | None = None,
+                     end: float | None = None, limit: int = 500) -> list[dict]:
+        """The newest `limit` events matching every filter given, oldest first."""
+        where, args = [], []
+        if agent:
+            where.append("agent=?")
+            args.append(agent)
+        if task_ids is not None:
+            where.append(f"task_id IN ({','.join('?' * len(task_ids)) or 'NULL'})")
+            args += task_ids
+        if types:
+            where.append(f"type IN ({','.join('?' * len(types))})")
+            args += types
+        if start is not None:
+            where.append("ts>=?")
+            args.append(start)
+        if end is not None:
+            where.append("ts<?")
+            args.append(end)
+        sql = "SELECT * FROM events" + (" WHERE " + " AND ".join(where) if where else "")
+        rows = self._all(f"SELECT * FROM ({sql} ORDER BY id DESC LIMIT ?) ORDER BY id",
+                         (*args, limit))
+        for r in rows:
+            r["payload"] = json.loads(r["payload"])
+        return rows
+
+    def count_tool_errors(self, start: float, end: float) -> int:
+        return self._all("SELECT COUNT(*) AS n FROM events WHERE type='tool_result' AND ts>=? AND ts<?"
+                         " AND json_extract(payload, '$.is_error')", (start, end))[0]["n"]
 
     def events(self, task_id: int | None = None, limit: int = 500) -> list[dict]:
         if task_id is not None:
@@ -288,8 +368,147 @@ class Store:
         sql = "SELECT * FROM incidents" + (" WHERE resolved=0" if unresolved_only else "")
         return self._all(sql + " ORDER BY id")
 
+    def incidents_between(self, start: float, end: float) -> list[dict]:
+        return self._all("SELECT * FROM incidents WHERE ts>=? AND ts<? ORDER BY id", (start, end))
+
     def resolve_incident(self, incident_id: int) -> None:
         self._exec("UPDATE incidents SET resolved=1 WHERE id=?", (incident_id,))
+
+    # audit findings ----------------------------------------------------------------------
+    def add_finding(self, *, agent: str | None, task_id: int | None, root_id: int | None,
+                    rule: str, severity: str, subject: str, detail: str) -> tuple[int, bool]:
+        """Record a code-check finding; returns (id, is_new). The same finding is recorded once
+        per task (a file is checked when it's filed for approval and again when the task ends)
+        and once per piece of work while it is still waiting for a ruling. After a ruling, the
+        same problem turning up again in later work is a new finding."""
+        sql = ("SELECT id FROM audit_findings WHERE rule=? AND subject=? AND detail=? AND ("
+               "(root_id IS ? AND status IN ('open','reviewing'))")
+        args: tuple = (rule, subject, detail, root_id)
+        if task_id is not None:
+            sql, args = sql + " OR task_id=?", (*args, task_id)
+        dup = self._all(sql + ") ORDER BY id DESC LIMIT 1", args)
+        if dup:
+            return dup[0]["id"], False
+        cur = self._exec(
+            "INSERT INTO audit_findings (ts, agent, task_id, root_id, rule, severity, subject,"
+            " detail, status) VALUES (?,?,?,?,?,?,?,?, 'open')",
+            (time.time(), agent, task_id, root_id, rule, severity, subject, detail))
+        return cur.lastrowid, True
+
+    def count_findings(self, status: str, severity: str) -> int:
+        return self._all("SELECT COUNT(*) AS n FROM audit_findings WHERE status=? AND severity=?",
+                         (status, severity))[0]["n"]
+
+    def reopen_findings(self, review_task_id: int) -> int:
+        """Findings a review task left without a ruling go back to open."""
+        cur = self._exec("UPDATE audit_findings SET status='open' WHERE status='reviewing'"
+                         " AND review_task_id=?", (review_task_id,))
+        return cur.rowcount
+
+    def finding(self, finding_id: int) -> dict:
+        rows = self._all("SELECT * FROM audit_findings WHERE id=?", (finding_id,))
+        if not rows:
+            raise KeyError(f"no audit finding {finding_id}")
+        return rows[0]
+
+    def findings(self, *, statuses: tuple[str, ...] | None = None, start: float | None = None,
+                 end: float | None = None, limit: int = 200) -> list[dict]:
+        where, args = [], []
+        if statuses:
+            where.append(f"status IN ({','.join('?' * len(statuses))})")
+            args += statuses
+        if start is not None:
+            where.append("ts>=?")
+            args.append(start)
+        if end is not None:
+            where.append("ts<?")
+            args.append(end)
+        sql = "SELECT * FROM audit_findings" + (" WHERE " + " AND ".join(where) if where else "")
+        return self._all(sql + " ORDER BY id DESC LIMIT ?", (*args, limit))[::-1]
+
+    def set_finding(self, finding_id: int, status: str, *, by: str | None = None,
+                    note: str | None = None, review_task_id: int | None = None) -> None:
+        done = status in ("cleared", "upheld", "dismissed")
+        self._exec(
+            "UPDATE audit_findings SET status=?, resolved_by=COALESCE(?, resolved_by),"
+            " note=COALESCE(?, note), review_task_id=COALESCE(?, review_task_id),"
+            " resolved_ts=CASE WHEN ? THEN ? ELSE resolved_ts END WHERE id=?",
+            (status, by, note, review_task_id, done, time.time(), finding_id))
+
+    # memory writes -----------------------------------------------------------------------
+    def add_memory_write(self, *, agent: str, task_id: int | None, kind: str, text: str,
+                         reasons: list[str], status: str) -> int:
+        cur = self._exec(
+            "INSERT INTO memory_writes (ts, agent, task_id, kind, text, reasons, status)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (time.time(), agent, task_id, kind, text, json.dumps(reasons), status))
+        return cur.lastrowid
+
+    def memory_write(self, write_id: int) -> dict:
+        rows = self.memory_writes(write_id=write_id)
+        if not rows:
+            raise KeyError(f"no memory write {write_id}")
+        return rows[0]
+
+    def memory_writes(self, *, status: str | None = None, write_id: int | None = None,
+                      start: float | None = None, end: float | None = None,
+                      limit: int = 200) -> list[dict]:
+        where, args = [], []
+        if write_id is not None:
+            where.append("id=?")
+            args.append(write_id)
+        if status:
+            where.append("status=?")
+            args.append(status)
+        if start is not None:
+            where.append("ts>=?")
+            args.append(start)
+        if end is not None:
+            where.append("ts<?")
+            args.append(end)
+        sql = "SELECT * FROM memory_writes" + (" WHERE " + " AND ".join(where) if where else "")
+        rows = self._all(sql + " ORDER BY id DESC LIMIT ?", (*args, limit))[::-1]
+        for r in rows:
+            r["reasons"] = json.loads(r["reasons"])
+        return rows
+
+    def count_memory(self, status: str) -> int:
+        return self._all("SELECT COUNT(*) AS n FROM memory_writes WHERE status=?", (status,))[0]["n"]
+
+    def set_memory_status(self, write_id: int, status: str) -> None:
+        self._exec("UPDATE memory_writes SET status=?, decided_ts=? WHERE id=?",
+                   (status, time.time(), write_id))
+
+    # digests -----------------------------------------------------------------------------
+    def save_digest(self, day: str, text: str, data: dict) -> None:
+        self._exec("INSERT INTO digests (day, ts, text, data) VALUES (?,?,?,?)"
+                   " ON CONFLICT(day) DO UPDATE SET ts=excluded.ts, text=excluded.text,"
+                   " data=excluded.data", (day, time.time(), text, json.dumps(data, default=str)))
+
+    def digest(self, day: str) -> dict | None:
+        rows = self._all("SELECT * FROM digests WHERE day=?", (day,))
+        if not rows:
+            return None
+        rows[0]["data"] = json.loads(rows[0]["data"])
+        return rows[0]
+
+    def digests(self, limit: int = 30) -> list[dict]:
+        rows = self._all("SELECT * FROM digests ORDER BY day DESC LIMIT ?", (limit,))
+        for r in rows:
+            r["data"] = json.loads(r["data"])
+        return rows
+
+    # pauses ------------------------------------------------------------------------------
+    def set_pause(self, agent: str, by: str, reason: str) -> None:
+        self._exec("INSERT INTO pauses (agent, by, reason, ts) VALUES (?,?,?,?)"
+                   " ON CONFLICT(agent) DO UPDATE SET by=excluded.by, reason=excluded.reason,"
+                   " ts=excluded.ts", (agent, by, reason, time.time()))
+
+    def clear_pause(self, agent: str) -> None:
+        self._exec("DELETE FROM pauses WHERE agent=?", (agent,))
+
+    def pauses(self) -> list[dict]:
+        return self._all("SELECT * FROM pauses ORDER BY ts")
 
     # watchlist ---------------------------------------------------------------------------
     def add_watch(self, *, ticker: str, added_by: str, source: str, thesis: str,
@@ -378,6 +597,9 @@ class Store:
         if not rows:
             raise KeyError(f"no approval {approval_id}")
         return rows[0]
+
+    def set_approval_payload(self, approval_id: int, payload: dict) -> None:
+        self._exec("UPDATE approvals SET payload=? WHERE id=?", (json.dumps(payload), approval_id))
 
     def approvals(self, status: str | None = None, approval_id: int | None = None) -> list[dict]:
         sql, args = "SELECT * FROM approvals", ()

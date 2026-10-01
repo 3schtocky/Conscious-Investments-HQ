@@ -52,6 +52,15 @@ class Office:
         self._wings: dict[str, str] = {k: v["name"] for k, v in cast["wings"].items()}
         self.captain_name: str = cast.get("captain", {}).get("nickname") or "the Captain"
         self.agents: dict[str, Agent] = {e["id"]: Agent(self, e) for e in cast["agents"]}
+        for p in self.store.pauses():   # a pause outlives a restart: only the Captain unpauses
+            agent = self.agents.get(p["agent"])
+            if agent is not None:
+                agent.gate.clear()
+                agent.status, agent.paused_by = "paused", p["by"]
+
+    def api_available(self) -> bool:
+        """Whether an agent could run a model call right now (a scripted model always can)."""
+        return self._llm is not None or bool(office().get("api", {}).get("enabled", False))
 
     @property
     def llm(self) -> ModelClient:
@@ -121,8 +130,10 @@ class Office:
 
     async def idle(self) -> None:
         """Wait until no task is running (used by the CLI and tests)."""
-        while self._running:
-            await asyncio.gather(*list(self._running), return_exceptions=True)
+        # Finished tasks leave `_running` a moment later (in a callback), so only the unfinished
+        # ones count: waiting on a finished task returns at once and would spin here forever.
+        while pending := [t for t in self._running if not t.done()]:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     # messaging --------------------------------------------------------------------------
     async def send_message(self, sender: str, recipients: list[str], text: str,
@@ -295,8 +306,36 @@ class Office:
 
     def request_approval(self, agent_id: str, *, kind: str, title: str, summary: str,
                          payload: dict, task_id: int | None) -> int:
+        # Tally's code checks run on every card before it reaches the Captain (free).
+        from hq import audit
+
+        agent = self.agents.get(agent_id)
+        found = []
+        if agent is not None and not agent.is_audit:
+            try:   # a failed check must never stop a card reaching the Captain
+                found = audit.check_approval(self, agent_id, kind=kind, title=title,
+                                             summary=summary, payload=payload)
+            except Exception:
+                log.exception("audit check failed for approval %r", title)
+        payload = {**payload, "audit": [{"rule": f.rule, "severity": f.severity,
+                                         "subject": f.subject, "detail": f.detail,
+                                         "status": "open"} for f in found]}
         approval_id = self.store.add_approval(kind=kind, agent=agent_id, task_id=task_id,
                                               title=title, summary=summary, payload=payload)
+        try:
+            # The card's own findings carry its number, so a re-filed card is checked afresh.
+            mine = f'approval card "{title}"'
+            found = [audit.Finding(f.rule, f.severity, f"approval #{approval_id} \"{title}\"", f.detail)
+                     if f.subject == mine else f for f in found]
+            ids = self.record_findings(agent_id, self.store.task(task_id) if task_id else None,
+                                       found, with_ids=True)
+            for entry, f, fid in zip(payload["audit"], found, ids, strict=True):
+                entry["subject"], entry["finding"] = f.subject, fid
+                entry["status"] = self.store.finding(fid)["status"]
+            if found:
+                self.store.set_approval_payload(approval_id, payload)
+        except Exception:
+            log.exception("recording audit findings failed for approval %s", approval_id)
         if kind == "model":
             self.store.set_model_status(payload["ticker"], payload["version"], "awaiting",
                                         approval_id=approval_id)
@@ -466,6 +505,220 @@ class Office:
         self.store.resolve_incident(incident_id)
         self.bus.publish("incident_resolved", None, None, incident=incident_id)
 
+    # audit --------------------------------------------------------------------------------
+    def audit_task(self, task: dict) -> list[dict]:
+        """Tally's code checks on a finished assignment (free). Audit's own work is not
+        re-audited, and delegated jobs are covered through the lead's assignment."""
+        from hq import audit
+
+        agent = self.agents.get(task["assignee"])
+        if task["kind"] != "assignment" or agent is None or agent.is_audit:
+            return []
+        return self.record_findings(agent.id, task, audit.check_task(self, task))
+
+    def record_findings(self, agent_id: str | None, task: dict | None, findings: list, *,
+                        with_ids: bool = False) -> list:
+        """Save new findings, announce them, and call Vera in on the flags. Returns the new
+        findings, or with `with_ids` the finding id for every input (new or already known)."""
+        new, ids = [], []
+        for f in findings:
+            fid, is_new = self.store.add_finding(
+                agent=agent_id, task_id=task["id"] if task else None,
+                root_id=task["root_id"] if task else None, rule=f.rule, severity=f.severity,
+                subject=f.subject, detail=f.detail)
+            ids.append(fid)
+            if not is_new:
+                continue   # already recorded for this piece of work
+            self.bus.publish("audit_flag", agent_id, task["id"] if task else None, finding=fid,
+                             rule=f.rule, severity=f.severity, subject=f.subject, detail=f.detail)
+            new.append(self.store.finding(fid))
+        flags = [f for f in new if f["severity"] == "flag"]
+        if flags:
+            self.send_to_vera(flags)
+        return ids if with_ids else new
+
+    def send_to_vera(self, flags: list[dict]) -> int | None:
+        """Give Vera one review task for a batch of flags. With the API off the flags simply
+        stay open in the Audit tab, where the Captain can dismiss them or send them later."""
+        vera = "audit_lead"
+        if vera not in self.agents or not self.api_available():
+            return None
+        whose = sorted({self.name(f["agent"]) for f in flags if f["agent"] in self.agents})
+        lines = "\n".join(f"- [finding #{f['id']}] {f['rule']} · {f['subject']}: {f['detail']}"
+                          for f in flags)
+        body = (f"Tally's code checks flagged work by {', '.join(whose) or 'a colleague'}:\n\n"
+                f"{lines}\n\n"
+                "Review each flag against the evidence (audit_log, read_file, get_model). Close "
+                "each one with resolve_finding: cleared if the check was wrong, upheld if it "
+                "stands. For an upheld flag, tell the colleague exactly what to fix with "
+                "send_message. Pause someone only if the problem is serious or keeps happening. "
+                "End with a one-line recap.")
+        n = len(flags)
+        by = "audit_associate" if "audit_associate" in self.agents else "office"
+        task_id = self.assign(vera, body, by=by,
+                              title=f"Review {n} flag{'s' if n != 1 else ''} on "
+                                    f"{', '.join(whose) or 'recent'} work")
+        for f in flags:
+            self.store.set_finding(f["id"], "reviewing", review_task_id=task_id)
+        self.bus.publish("audit_review", vera, task_id, findings=[f["id"] for f in flags])
+        return task_id
+
+    def review_finding(self, finding_id: int) -> int:
+        """The Captain's 'Ask Vera': send one open finding for review."""
+        f = self.store.finding(finding_id)
+        if f["status"] != "open":
+            raise ValueError(f"finding {finding_id} is already {f['status']}")
+        if "audit_lead" not in self.agents:
+            raise ValueError("There is no Audit lead in the roster to review this.")
+        task_id = self.send_to_vera([f])
+        if task_id is None:
+            raise ValueError("The API is switched off, so Vera can't review this now. It stays "
+                             "open here; dismiss it or send it once the API is on.")
+        return task_id
+
+    def reopen_unreviewed(self, review_task_id: int) -> None:
+        """A review task ended (finished, failed or paused) without ruling on everything: those
+        findings go back to open, so they count as waiting and can be sent or dismissed."""
+        if self.store.reopen_findings(review_task_id):
+            self.bus.publish("audit_review", "audit_lead", review_task_id, findings=[], reopened=True)
+
+    def resolve_finding(self, finding_id: int, verdict: str, *, by: str,
+                        note: str | None = None) -> dict:
+        """Close a finding: Vera clears or upholds it, the Captain can dismiss it."""
+        allowed = ("dismissed",) if by == CAPTAIN else ("cleared", "upheld")
+        if verdict not in allowed:
+            raise ValueError(f"verdict must be {' or '.join(allowed)}")
+        f = self.store.finding(finding_id)
+        if f["status"] not in ("open", "reviewing"):
+            raise ValueError(f"finding {finding_id} is already {f['status']}")
+        self.store.set_finding(finding_id, verdict, by=by, note=note)
+        for card in self.store.approvals():   # keep the card's audit line in step with the ruling
+            entries = card["payload"].get("audit") or []
+            if any(e.get("finding") == finding_id for e in entries):
+                for e in entries:
+                    if e.get("finding") == finding_id:
+                        e["status"] = verdict
+                self.store.set_approval_payload(card["id"], card["payload"])
+        self.bus.publish("audit_resolved", f["agent"], f["task_id"], finding=finding_id,
+                         verdict=verdict, by=by, note=note, rule=f["rule"], subject=f["subject"])
+        return self.store.finding(finding_id)
+
+    # memory -------------------------------------------------------------------------------
+    def memory_write(self, agent_id: str, kind: str, text: str,
+                     task_id: int | None = None) -> dict:
+        """An agent saving to office memory. A clean desk note is saved at once; a flagged note
+        and every wiki proposal wait for the Captain."""
+        from hq import audit
+        from hq.memory import add_desk_note
+
+        text = " ".join(text.split())   # one line: a note is one entry in the file
+        reasons = audit.screen_note(text)
+        if kind == "desk" and not reasons:
+            add_desk_note(agent_id, text, self.memory_dir)
+            write_id = self.store.add_memory_write(agent=agent_id, task_id=task_id, kind=kind,
+                                                   text=text, reasons=[], status="saved")
+            self.bus.publish("memory_saved", agent_id, task_id, write=write_id, kind=kind, text=text)
+            return {"id": write_id, "held": False, "reasons": []}
+        write_id = self.store.add_memory_write(agent=agent_id, task_id=task_id, kind=kind,
+                                               text=text, reasons=reasons, status="pending")
+        self.bus.publish("memory_held", agent_id, task_id, write=write_id, kind=kind, text=text,
+                         reasons=reasons)
+        return {"id": write_id, "held": True, "reasons": reasons}
+
+    def decide_memory(self, write_id: int, decision: str) -> dict:
+        """The Captain's call on a held note or a wiki proposal."""
+        from hq.memory import add_desk_note, add_wiki_entry
+
+        if decision not in ("approved", "rejected"):
+            raise ValueError("decision must be approved or rejected")
+        w = self.store.memory_write(write_id)
+        if w["status"] != "pending":
+            raise ValueError(f"memory write {write_id} is already {w['status']}")
+        fits = True
+        if decision == "approved":
+            if w["kind"] == "wiki":
+                fits = add_wiki_entry(w["text"], self.memory_dir)
+            else:
+                add_desk_note(w["agent"], w["text"], self.memory_dir)
+        self.store.set_memory_status(write_id, decision)
+        self.bus.publish("memory_decided", w["agent"], w["task_id"], write=write_id,
+                         kind=w["kind"], decision=decision)
+        return {**self.store.memory_write(write_id), "fits": fits}
+
+    def remove_memory(self, write_id: int) -> dict:
+        """The Captain deleting something already in memory (a saved note or a wiki entry)."""
+        from hq.memory import remove_note, remove_wiki_entry
+
+        w = self.store.memory_write(write_id)
+        if w["status"] not in ("saved", "approved"):
+            raise ValueError(f"memory write {write_id} is {w['status']}; nothing to remove")
+        if w["kind"] == "wiki":
+            path = self.memory_dir / "wiki.md"
+            gone = remove_wiki_entry(w["text"], self.memory_dir)
+        else:
+            path = self.memory_dir / "desks" / f"{w['agent']}.md"
+            gone = remove_note(w["agent"], w["text"], self.memory_dir)
+        if not gone and path.is_file() and w["text"] in path.read_text():
+            raise ValueError(f"Couldn't remove it automatically; delete the line by hand in {path}.")
+        self.store.set_memory_status(write_id, "removed")   # deleted now, or already gone
+        self.bus.publish("memory_decided", w["agent"], w["task_id"], write=write_id,
+                         kind=w["kind"], decision="removed")
+        return self.store.memory_write(write_id)
+
+    # the daily audit digest -----------------------------------------------------------------
+    def digest(self, day: str | None = None) -> dict:
+        """One day's digest, computed fresh from the ledger and logs (no API call)."""
+        from hq import audit
+
+        d = audit.build_digest(self, day or self.ledger.today())
+        return {**d, "text": audit.render_digest(d)}
+
+    def post_digest(self, day: str) -> bool:
+        """Post a day's digest to the Captain under Tally's name, once, if anything happened."""
+        if self.store.digest(day) is not None:
+            return False
+        d = self.digest(day)
+        if not d["active"]:
+            return False
+        text = d.pop("text")
+        self.store.save_digest(day, text, d)
+        tally = "audit_associate"
+        if tally in self.agents:
+            self.store.add_chat(channel=f"dm:{CAPTAIN}|{tally}", sender=tally,
+                                recipients=[CAPTAIN], text=text)
+            self.bus.publish("captain_report", tally, None, text=text)
+        self.bus.publish("audit_digest", tally if tally in self.agents else None, None, day=day)
+        return True
+
+    def daily_digest(self, now=None, days_back: int = 7) -> list[str]:
+        """Post the digest for each finished day that had work and has none yet."""
+        from datetime import datetime, timedelta
+        today = (now or datetime.now(self.ledger.tz)).date()
+        posted = []
+        for back in range(days_back, 0, -1):
+            day = (today - timedelta(days=back)).isoformat()
+            if self.post_digest(day):
+                posted.append(day)
+        return posted
+
+    def audit_view(self) -> dict:
+        """Everything the Audit tab shows."""
+        who = lambda a: self.name(a) if a in self.agents or a == CAPTAIN else (a or "Office")
+        findings = [{**f, "name": who(f["agent"]),
+                     "resolved_by_name": who(f["resolved_by"]) if f["resolved_by"] else None}
+                    for f in self.store.findings(limit=120)]
+        memory = [{**w, "name": who(w["agent"])} for w in self.store.memory_writes(limit=120)]
+        return {"findings": findings, "memory": memory, "digest": self.digest(),
+                "digests": [{"day": d["day"], "ts": d["ts"], "text": d["text"]}
+                            for d in self.store.digests()],
+                "paused": [{**p, "name": who(p["agent"]), "by_name": who(p["by"])}
+                           for p in self.store.pauses() if p["agent"] in self.agents],
+                "api_available": self.api_available()}
+
+    def audit_counts(self) -> dict:
+        return {"open_flags": self.store.count_findings("open", "flag"),
+                "memory_pending": self.store.count_memory("pending")}
+
     # delegation -------------------------------------------------------------------------
     async def delegate(self, lead: str, associate: str, job: str, *, parent_task: dict) -> dict:
         task_id = self.store.create_task(
@@ -491,6 +744,8 @@ class Office:
     def pause(self, agent_id: str, *, by: str, reason: str) -> None:
         agent = self.agents[self.resolve(agent_id)]
         agent.gate.clear()
+        agent.paused_by = by
+        self.store.set_pause(agent.id, by, reason)
         agent.set_status("paused", by=by, reason=reason)
         if by != CAPTAIN:
             self.raise_incident(agent.id, agent.current_task, "paused",
@@ -501,6 +756,8 @@ class Office:
             raise PermissionError("Only the Captain can unpause an agent.")
         agent = self.agents[self.resolve(agent_id)]
         agent.gate.set()
+        agent.paused_by = None
+        self.store.clear_pause(agent.id)
         agent.set_status("working" if agent.current_task else "idle", by=by)
 
     def on_budget_exhausted(self, detail: str) -> None:
@@ -567,6 +824,7 @@ class Office:
             "approvals": self.store.approvals(),
             "model_registry": self.store.models(),
             "watchlist_count": len(self.store.watchlist()),
+            "audit": self.audit_counts(),
             "captain_name": self.captain_name,
         }
 

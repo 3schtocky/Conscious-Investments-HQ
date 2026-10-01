@@ -163,7 +163,8 @@ async def test_model_approval_round_trip(make_office):
     await office.idle()
     [card] = office.store.approvals("pending")
     assert card["kind"] == "model" and card["payload"] == {"ticker": "RMBS", "version": 1,
-                                                           "attachments": ["RMBS_v1.xlsx"]}
+                                                           "attachments": ["RMBS_v1.xlsx"],
+                                                           "audit": []}   # code checks: clean
     decided = office.decide(card["id"], "approved", "Good work, ship it.")
     assert decided["status"] == "approved" and decided["note"] == "Good work, ship it."
     await office.idle()

@@ -1,4 +1,4 @@
-"""Desk tools: the real work of the Equity Research and Quant wings.
+"""Desk tools: the real work of the Equity Research, Quant and Screening wings.
 
 Research runs erb's data tools and writes briefs and memos; Quant owns the assumptions, builds
 the formula workbook, runs simulations and registers model versions for the Captain's approval.
@@ -46,7 +46,7 @@ def _resolve(ctx: ToolContext, ticker: str, rel: str) -> Path:
     """Map a path like 'brief.md', 'facts/facts.md' or 'quant/notes/x.md' into the ticker's
     folders and refuse anything that escapes them."""
     rel = rel.strip().lstrip("/")
-    if rel.startswith("quant/") and ctx.agent.wing != "quant":
+    if rel.startswith("quant/") and ctx.agent.wing not in ("quant", "audit"):
         raise GuardBlock("Quant's working files are private until a model is approved; read the "
                          "approved numbers with get_model.")
     if rel.startswith("quant/"):
@@ -274,7 +274,7 @@ async def _get_model(ctx: ToolContext, inp: dict) -> str:
         m = store.model(t, int(version))
         if m is None:
             raise GuardBlock(f"No model v{version} for {t}.")
-        if ctx.agent.wing != "quant" and m["status"] not in ("approved", "superseded"):
+        if ctx.agent.wing not in ("quant", "audit") and m["status"] not in ("approved", "superseded"):
             raise GuardBlock(f"v{version} is a {m['status']} draft: nothing from Quant reaches "
                              "other teams until the Captain approves it. Use get_model without a "
                              "version for the approved numbers.")
@@ -388,6 +388,8 @@ async def _pitch_memo(ctx: ToolContext, inp: dict) -> str:
         raise GuardBlock(_erb_failure(f"erb memo for {t}", out))
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(src.read_text())
+    ctx.office.bus.publish("file_written", ctx.agent.id, ctx.task["id"], ticker=t, path="pitch.md",
+                           chars=len(dest.read_text()))
     head = "\n".join(dest.read_text().splitlines()[:60])
     return (f"Pitch skeleton for {t} saved as pitch.md (numbers auto-filled from filings and the screen; "
             f"no valuation, which is Quant's job). Fill every [VERIFY: ...] with write_file, keeping it to "
@@ -500,4 +502,7 @@ def desk_tools(wing: str, tier: str) -> list[Tool]:
         if tier == "lead":
             tools = [RUN_SCREEN, *tools, ADD_TO_WATCHLIST]
         return tools
+    if wing == "audit":   # Audit reads everything (Quant's drafts included) and writes nothing
+        from hq.tools.audit import audit_tools
+        return [*audit_tools(tier), LIST_FILES, READ_FILE, GET_MODEL]
     return [GET_MODEL]

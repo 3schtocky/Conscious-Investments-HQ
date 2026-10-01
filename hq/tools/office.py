@@ -346,12 +346,15 @@ POST_TO_GROUP = Tool(
 
 # note_to_self --------------------------------------------------------------------------------
 async def _note_to_self(ctx: ToolContext, inp: dict) -> str:
-    from hq.memory import NOTE_CHARS, add_desk_note
+    from hq.memory import NOTE_CHARS
 
     note = _str(inp, "note", max_len=NOTE_CHARS)
     ctx.agent.guard.check_note()
-    add_desk_note(ctx.agent.id, note, ctx.office.memory_dir)
+    out = ctx.office.memory_write(ctx.agent.id, "desk", note, task_id=ctx.task["id"])
     ctx.agent.guard.record_note()
+    if out["held"]:
+        return (f"Not saved yet: the note {' and '.join(out['reasons'])}, so it waits for "
+                f"{ctx.office.captain_name}'s review. Carry on; don't re-send it.")
     return "Saved to your desk notes; you'll see it at the start of future tasks."
 
 
@@ -367,6 +370,29 @@ NOTE_TO_SELF = Tool(
 )
 
 
+# propose_wiki --------------------------------------------------------------------------------
+async def _propose_wiki(ctx: ToolContext, inp: dict) -> str:
+    entry = _str(inp, "entry", max_len=300)
+    ctx.agent.guard.check_note()
+    out = ctx.office.memory_write(ctx.agent.id, "wiki", entry, task_id=ctx.task["id"])
+    ctx.agent.guard.record_note()
+    return (f"Proposal #{out['id']} is waiting for {ctx.office.captain_name}. The wiki only "
+            "changes if he approves it; carry on.")
+
+
+PROPOSE_WIKI = Tool(
+    name="propose_wiki",
+    description=(
+        "Propose one short entry for the office wiki, the standing guidance every colleague "
+        "reads: a preference {captain} stated, or a firm-wide rule worth keeping. One sentence. "
+        "It is added only if {captain} approves it. Not for figures, and not for anything that "
+        "only matters to your own desk (use note_to_self)."),
+    input_schema={"type": "object", "properties": {"entry": {"type": "string"}},
+                  "required": ["entry"]},
+    handler=_propose_wiki,
+)
+
+
 def tools_for(tier: str, agent_id: str, wing: str | None = None) -> list[Tool]:
     """The fixed tool list for an agent. It never changes during a task (preserved thinking).
     With `wing`, the wing's desk tools (research, quant) are added after the office tools."""
@@ -374,6 +400,8 @@ def tools_for(tier: str, agent_id: str, wing: str | None = None) -> list[Tool]:
     if wing is None:
         return base
     base = base + [NOTE_TO_SELF]
+    if tier == "lead" or agent_id == "chief_of_staff":
+        base = base + [PROPOSE_WIKI]
     from hq.tools.desk import desk_tools
     return base + [t for t in desk_tools(wing, tier) if t.name not in {b.name for b in base}]
 
