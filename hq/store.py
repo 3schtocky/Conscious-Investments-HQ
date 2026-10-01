@@ -114,6 +114,34 @@ CREATE TABLE IF NOT EXISTS watchlist (
     status TEXT NOT NULL,            -- watching | researching | dropped
     UNIQUE (ticker, source)
 );
+CREATE TABLE IF NOT EXISTS positions (
+    id INTEGER PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    status TEXT NOT NULL,            -- open | closed
+    shares REAL NOT NULL,
+    entry_price REAL NOT NULL,
+    entry_value REAL NOT NULL,       -- dollars put in (size % of the portfolio at entry)
+    size_pct INTEGER NOT NULL,
+    entry_ts REAL NOT NULL,
+    spy_at_entry REAL,               -- the benchmark's price the same day
+    thesis TEXT NOT NULL,
+    proposed_by TEXT NOT NULL,
+    model_version INTEGER,
+    approval_id INTEGER,
+    exit_price REAL,
+    exit_ts REAL,
+    exit_reason TEXT,
+    spy_at_exit REAL,
+    exit_approval_id INTEGER,
+    held_flags TEXT NOT NULL DEFAULT '[]'   -- exit flags the Captain chose to hold through
+);
+CREATE TABLE IF NOT EXISTS portfolio_marks (
+    day TEXT PRIMARY KEY,            -- office-local date: one mark-to-market per day
+    ts REAL NOT NULL,
+    value REAL NOT NULL,
+    cash REAL NOT NULL,
+    benchmark REAL NOT NULL          -- the benchmark's price that day
+);
 CREATE TABLE IF NOT EXISTS audit_findings (
     id INTEGER PRIMARY KEY,
     ts REAL NOT NULL,
@@ -373,6 +401,55 @@ class Store:
 
     def resolve_incident(self, incident_id: int) -> None:
         self._exec("UPDATE incidents SET resolved=1 WHERE id=?", (incident_id,))
+
+    # paper portfolio ---------------------------------------------------------------------
+    def add_position(self, *, ticker: str, shares: float, entry_price: float, entry_value: float,
+                     size_pct: int, spy_at_entry: float | None, thesis: str, proposed_by: str,
+                     model_version: int | None, approval_id: int | None) -> int:
+        cur = self._exec(
+            "INSERT INTO positions (ticker, status, shares, entry_price, entry_value, size_pct,"
+            " entry_ts, spy_at_entry, thesis, proposed_by, model_version, approval_id)"
+            " VALUES (?, 'open', ?,?,?,?,?,?,?,?,?,?)",
+            (ticker, shares, entry_price, entry_value, size_pct, time.time(), spy_at_entry, thesis,
+             proposed_by, model_version, approval_id))
+        return cur.lastrowid
+
+    def positions(self, status: str | None = None) -> list[dict]:
+        sql, args = "SELECT * FROM positions", ()
+        if status:
+            sql, args = sql + " WHERE status=?", (status,)
+        rows = self._all(sql + " ORDER BY id", args)
+        for r in rows:
+            r["held_flags"] = json.loads(r["held_flags"])
+        return rows
+
+    def position(self, position_id: int) -> dict:
+        rows = [p for p in self.positions() if p["id"] == position_id]
+        if not rows:
+            raise KeyError(f"no position {position_id}")
+        return rows[0]
+
+    def close_position(self, position_id: int, *, exit_price: float, reason: str,
+                       spy_at_exit: float | None, approval_id: int | None) -> None:
+        self._exec("UPDATE positions SET status='closed', exit_price=?, exit_ts=?, exit_reason=?,"
+                   " spy_at_exit=?, exit_approval_id=? WHERE id=? AND status='open'",
+                   (exit_price, time.time(), reason, spy_at_exit, approval_id, position_id))
+
+    def hold_flag(self, position_id: int, code: str) -> None:
+        flags = self.position(position_id)["held_flags"]
+        if code not in flags:
+            self._exec("UPDATE positions SET held_flags=? WHERE id=?",
+                       (json.dumps([*flags, code]), position_id))
+
+    def save_mark(self, day: str, *, value: float, cash: float, benchmark: float) -> None:
+        self._exec("INSERT INTO portfolio_marks (day, ts, value, cash, benchmark) VALUES (?,?,?,?,?)"
+                   " ON CONFLICT(day) DO UPDATE SET ts=excluded.ts, value=excluded.value,"
+                   " cash=excluded.cash, benchmark=excluded.benchmark",
+                   (day, time.time(), value, cash, benchmark))
+
+    def marks(self, limit: int = 400) -> list[dict]:
+        return self._all("SELECT * FROM (SELECT * FROM portfolio_marks ORDER BY day DESC LIMIT ?)"
+                         " ORDER BY day", (limit,))
 
     # audit findings ----------------------------------------------------------------------
     def add_finding(self, *, agent: str | None, task_id: int | None, root_id: int | None,

@@ -84,6 +84,9 @@ def _never_spend(monkeypatch):
     monkeypatch.setattr(config, "office", lambda: safe)
     for mod in ("hq.engine.ledger", "hq.engine.agent", "hq.engine.runtime", "hq.engine.guards"):
         monkeypatch.setattr(f"{mod}.office", lambda: safe)
+    # No test reaches Yahoo either: quotes come back empty unless a test supplies its own.
+    monkeypatch.setattr("hq.quotes._download", lambda tickers: dict.fromkeys(tickers))
+    monkeypatch.setattr("hq.quotes._cache", {})
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-valid")
 

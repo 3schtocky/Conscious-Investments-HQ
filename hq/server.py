@@ -111,6 +111,12 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
                         office.daily_digest()     # Tally's digest for each finished day
                 except Exception:
                     log.exception("daily digest failed")
+                try:
+                    if office.store.positions():   # mark to market, raise exit flags
+                        from hq import portfolio
+                        office.portfolio_tick(await portfolio.fetch_prices(office))
+                except Exception:
+                    log.exception("portfolio tick failed")
                 await asyncio.sleep(1800)
 
         state["reminder_task"] = asyncio.create_task(reminders())
@@ -287,10 +293,24 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
     async def approvals(status: str | None = None) -> JSONResponse:
         return JSONResponse(office().store.approvals(status=status))
 
+    async def _portfolio_prices(extra: list[str] | None = None) -> dict:
+        from hq import portfolio
+
+        return await portfolio.fetch_prices(office(), extra)
+
+    @app.get("/api/portfolio")
+    async def portfolio_view() -> JSONResponse:
+        return JSONResponse(office().portfolio_view(await _portfolio_prices()))
+
     @app.post("/api/approvals/{approval_id}/decide")
     async def decide(approval_id: int, req: Decision) -> JSONResponse:
         try:
-            card = office().decide(approval_id, req.decision, (req.note or "").strip() or None)
+            prices = None
+            pending = office().store.approval(approval_id)
+            if pending["kind"] == "portfolio" and req.decision == "approved":
+                prices = await _portfolio_prices([pending["payload"].get("ticker", "")])   # off the event loop
+            card = office().decide(approval_id, req.decision, (req.note or "").strip() or None,
+                                   prices=prices)
         except KeyError as e:
             raise HTTPException(404, str(e.args[0])) from e
         except ValueError as e:

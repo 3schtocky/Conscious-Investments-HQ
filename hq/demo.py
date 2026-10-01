@@ -440,6 +440,69 @@ def scene_audit(office: Office, llm: DemoLLM) -> None:
                   "candidate (demo).", title="Northwind pitch card (demo)")
 
 
+DEMO_HOLDING = "RMBS"   # a real ticker, so the paper fill and the scoreboard use real prices
+
+
+async def prepare_demo_portfolio(office: Office) -> bool:
+    """Give the demo office one approved Outperform model, so the portfolio rules have something
+    real to work on. The model's targets are placeholders scaled from today's price and exist
+    only in the demo database."""
+    from hq import quotes
+
+    t = DEMO_HOLDING
+    m = office.store.approved_model(t)
+    if m is not None:
+        return m["summary"].get("rating") == "Outperform"
+    price = (await asyncio.to_thread(quotes.latest, [t])).get(t)
+    if not price:
+        return False   # offline: skip the portfolio scene
+    version = office.store.next_model_version(t)
+    office.store.add_model(
+        ticker=t, version=version, path=str(office.quant_dir / t / f"{t}_model_v{version}_demo.xlsx"),
+        created_by="quant_lead",
+        summary={"price_targets": {"bear": round(price * 0.75, 2), "base": round(price * 1.3, 2),
+                                   "bull": round(price * 1.7, 2)},
+                 "total_returns": {}, "rating": "Outperform", "price": price, "warnings": ["demo placeholder"],
+                 "as_of": office.ledger.today(), "target_date": "", "check": {"ok": True}})
+    office.store.set_model_status(t, version, "approved")
+    return True
+
+
+def scene_portfolio(office: Office, llm: DemoLLM) -> None:
+    """The paper portfolio with the REAL rules and real prices: Quill reads the scoreboard and
+    proposes the demo holding at a conviction size. The entry waits for the Captain; once he
+    approves it, later loops report the scoreboard instead."""
+    t = DEMO_HOLDING
+    model = office.store.approved_model(t)
+    if model is None or model["summary"].get("rating") != "Outperform":
+        return   # prepare_demo_portfolio hasn't run (tests, or no price feed)
+
+    def quill_acts(params: dict) -> TurnResult:
+        board = _last_tool_json(params)
+        held = any(p["ticker"] == t for p in office.store.positions("open"))
+        waiting = any(c["kind"] == "portfolio" and c["payload"].get("ticker") == t
+                      for c in office.store.approvals("pending"))
+        if held or waiting:
+            line = board.get("summary", "") if held else f"The {t} entry is still waiting for your decision."
+            return think("Nothing new to propose. The scoreboard speaks for itself.", None,
+                         ("report_to_captain", {"text": f"Portfolio check (demo): {line}"}))(params)
+        return think(f"{t} has an approved model rated Outperform, and we don't hold it. A middle "
+                     "conviction size until the next earnings report.", None,
+                     ("propose_position", {"ticker": t, "size_pct": 5,
+                                           "thesis": "Demo entry on the real rules: the approved model "
+                                                     "rates it Outperform. Middle size (5%) until the next "
+                                                     "earnings report confirms the thesis; a miss on growth "
+                                                     "would prove it wrong."}))(params)
+
+    llm.script("er_lead",
+               think("The portfolio first: what do we hold, and how are we doing against the S&P 500?",
+                     None, ("read_portfolio", {})),
+               quill_acts,
+               think("Done.", "Portfolio reviewed."))
+    office.assign("Quill", "Review the paper portfolio and propose an entry if one qualifies (demo).",
+                  title="Portfolio review (demo)")
+
+
 DRY_RUN_TICKER = "META"   # real coverage in the erb submodule: the dry run uses real tools on it
 
 
@@ -529,8 +592,8 @@ def _sigma_files_for_approval(params: dict, t: str) -> TurnResult:
 
 DEMO_PENDING_KEEP = 3
 
-SCENES = [scene_gem_hunt, scene_memo, scene_quant_model, scene_audit, scene_lobby_sync,
-          scene_newsletter]
+SCENES = [scene_gem_hunt, scene_memo, scene_quant_model, scene_audit, scene_portfolio,
+          scene_lobby_sync, scene_newsletter]
 
 
 async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0) -> None:
@@ -554,6 +617,8 @@ async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0) -> None:
         usable = office.ledger.daily_cap - office.ledger.audit_reserve
         if office.ledger.spent_today() > usable * 0.5:
             office.store.clear_spend()   # demo spend is pretend; keep the meter in range
+        if scene is scene_portfolio:
+            await prepare_demo_portfolio(office)
         scene(office, llm)
         await asyncio.sleep(1)
         await office.idle()

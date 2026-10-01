@@ -105,6 +105,7 @@ export class OfficeState {
   name(id: string | null | undefined): string {
     if (!id) return "Office";
     if (id === "captain") return this.captain.nickname;
+    if (id === "office") return "Office checks";
     return this.agents.get(id)?.nickname ?? id;
   }
 

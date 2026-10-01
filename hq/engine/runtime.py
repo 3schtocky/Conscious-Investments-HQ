@@ -23,6 +23,7 @@ from hq.store import Store
 log = logging.getLogger(__name__)
 
 CAPTAIN = "captain"
+OFFICE = "office"             # the author of cards raised by code rather than by a colleague
 GROUP_STOTT = "group:stott"   # Stott -> all: the Captain's announcements and the replies
 GROUP_JUNO = "group:juno"     # Juno -> all: the Chief of Staff's announcements and the replies
 GROUPS = {"stott": GROUP_STOTT, "juno": GROUP_JUNO}
@@ -345,7 +346,8 @@ class Office:
                          title=title)
         return approval_id
 
-    def decide(self, approval_id: int, decision: str, note: str | None = None) -> dict:
+    def decide(self, approval_id: int, decision: str, note: str | None = None, *,
+               prices: dict | None = None) -> dict:
         """The Captain's decision on an approval card, sent back to the agent who asked."""
         if decision not in ("approved", "changes", "rejected"):
             raise ValueError("decision must be approved, changes or rejected")
@@ -363,6 +365,7 @@ class Office:
                 raise ValueError(f"v{newest['version']} is already the official model; approving "
                                  f"v{m['version']} would roll it back. Decline this card instead.")
         self._outbox_decided(card, decision)   # may refuse an approval (ValueError) before it is recorded
+        self._portfolio_decided(card, decision, prices)
         self.store.decide_approval(approval_id, decision, note)
         mdl = self.store.model(p.get("ticker", ""), p.get("version", 0)) if card["kind"] == "model" else None
         if mdl and mdl["status"] == "awaiting" and mdl["approval_id"] == approval_id:
@@ -378,7 +381,7 @@ class Office:
             text += (" This version is now the firm's official numbers; distribute it to the "
                      "teams covering this equity.")
         self.bus.publish("approval_decided", card["agent"], card["task_id"], approval=approval_id,
-                         decision=decision, note=note, title=card["title"])
+                         decision=decision, note=note, title=card["title"], kind=card["kind"])
         agent = self.agents.get(card["agent"])
         if agent is not None:
             self.store.add_chat(channel=f"dm:{CAPTAIN}|{agent.id}", sender=CAPTAIN,
@@ -450,6 +453,120 @@ class Office:
         self.bus.publish("captain_report", "chief_of_staff", None, text=text)
         self.bus.publish("weekly_reminder", None, None, week=week)
         return True
+
+    # paper portfolio -----------------------------------------------------------------------
+    def _prices(self, prices: dict | None, extra: list[str] | None = None) -> dict:
+        from hq import portfolio, quotes
+
+        names = sorted(set(portfolio.tickers(self)) | set(extra or []))
+        if prices is not None and all(n in prices for n in names):
+            return prices
+        return quotes.latest(names)
+
+    def _pending_portfolio(self, action: str, ticker: str) -> dict | None:
+        return next((c for c in self.store.approvals("pending")
+                     if c["kind"] == "portfolio" and c["payload"].get("action") == action
+                     and c["payload"].get("ticker") == ticker), None)
+
+    def propose_position(self, agent_id: str, ticker: str, size_pct: int, thesis: str, *,
+                         task_id: int | None, prices: dict | None = None) -> int:
+        """Put an entry on the Captain's desk, if the rules allow it (ValueError says why not)."""
+        from hq import portfolio
+
+        prices = self._prices(prices, [ticker])
+        ok = portfolio.check_entry(self, ticker, size_pct, prices)
+        pending = self._pending_portfolio("enter", ticker)
+        if pending:
+            raise ValueError(f"An entry for {ticker} is already waiting for a decision (approval #{pending['id']}).")
+        m = ok["model"]
+        pts = m["summary"].get("price_targets", {})
+        summary = (f"Enter {ticker} at {size_pct}% of the paper portfolio: about ${ok['amount']:,.2f} at the "
+                   f"latest price of ${ok['price']:,.2f}. Quant model v{m['version']} rates it Outperform with a "
+                   f"base price target of ${pts.get('base', 0):,.2f} (bear ${pts.get('bear', 0):,.2f}, bull "
+                   f"${pts.get('bull', 0):,.2f}).\n\n{thesis}\n\nA paper fill at the price when you "
+                   "approve, which may differ from the price above. No real money moves.")
+        return self.request_approval(agent_id, kind="portfolio", title=f"Enter {ticker} at {size_pct}%",
+                                     summary=summary, task_id=task_id,
+                                     payload={"action": "enter", "ticker": ticker, "size_pct": size_pct,
+                                              "version": m["version"], "thesis": thesis, "attachments": []})
+
+    def propose_exit(self, agent_id: str, ticker: str, reason: str, *, task_id: int | None,
+                     prices: dict | None = None, code: str | None = None) -> int:
+        from hq import portfolio
+
+        position = next((p for p in self.store.positions("open") if p["ticker"] == ticker), None)
+        if position is None:
+            raise ValueError(f"The portfolio holds no open {ticker} position.")
+        pending = self._pending_portfolio("exit", ticker)
+        if pending:
+            raise ValueError(f"An exit for {ticker} is already waiting for a decision (approval #{pending['id']}).")
+        prices = self._prices(prices, [ticker])
+        row = next(r for r in portfolio.scoreboard(self, prices)["open"] if r["id"] == position["id"])
+        pct = lambda x: "n/a" if x is None else f"{x * 100:+.1f}%"
+        what = portfolio.FLAGS[portfolio.flag_kind(code)] if code else ""
+        lead = (f"Exit flag from the office's code checks (no API cost): {ticker} {what}. "
+                if code else f"Exit {ticker}. ")
+        now = (f"now ${row['price']:,.2f}: {pct(row['return'])}, {pct(row['vs_spy'])} against the S&P 500"
+               if row["price"] else "no quote right now")
+        summary = (f"{lead}{reason}\n\nEntered {row['entry_day']} at ${row['entry_price']:,.2f} "
+                   f"({row['size_pct']}%); {now}.\n\nApprove to close on paper at the latest price, or "
+                   "decline to hold"
+                   + (" (this flag is then not raised again unless the facts change)." if code else "."))
+        return self.request_approval(agent_id, kind="portfolio",
+                                     title=f"Exit {ticker}" + (f": {what}" if code else ""),
+                                     summary=summary, task_id=task_id,
+                                     payload={"action": "exit", "ticker": ticker, "position": position["id"],
+                                              "code": code, "reason": reason, "attachments": []})
+
+    def _portfolio_decided(self, card: dict, decision: str, prices: dict | None) -> None:
+        """Carry out the Captain's decision on a portfolio card, before the card is closed. An
+        approval that can't be filled (the rating changed, no quote, not enough cash) is refused
+        with the reason and the card stays open."""
+        from hq import portfolio
+
+        p = card["payload"]
+        if card["kind"] != "portfolio" or p.get("action") not in ("enter", "exit"):
+            return
+        if p["action"] == "enter" and decision == "approved":
+            portfolio.enter(self, ticker=p["ticker"], size_pct=p["size_pct"], thesis=p.get("thesis", ""),
+                            proposed_by=card["agent"], approval_id=card["id"],
+                            prices=self._prices(prices, [p["ticker"]]))
+        elif p["action"] == "exit" and decision == "approved":
+            portfolio.close(self, p["position"], reason=p.get("reason", ""), approval_id=card["id"],
+                            prices=self._prices(prices, [p["ticker"]]))
+        elif p["action"] == "exit" and p.get("code") and decision == "rejected":
+            self.store.hold_flag(p["position"], p["code"])   # held: don't raise this same flag again
+        if decision == "approved":
+            self.bus.publish("portfolio_changed", card["agent"], card["task_id"], action=p["action"],
+                             ticker=p["ticker"])
+
+    def portfolio_tick(self, prices: dict | None = None) -> dict:
+        """Mark to market and raise exit cards. Plain code on free prices: no API call."""
+        from hq import portfolio
+
+        if not self.store.positions():
+            return {"marked": False, "flags": []}
+        prices = self._prices(prices)
+        marked = portfolio.mark(self, prices) is not None
+        raised = []
+        filer = OFFICE   # raised by code: no colleague is asked to act, so no model call follows
+        for flag in portfolio.exit_flags(self, prices):
+            ticker = flag["position"]["ticker"]
+            if self._pending_portfolio("exit", ticker):
+                continue
+            raised.append(self.propose_exit(filer, ticker, flag["detail"], task_id=None, prices=prices,
+                                            code=flag["code"]))
+        return {"marked": marked, "flags": raised}
+
+    def portfolio_view(self, prices: dict | None = None) -> dict:
+        from hq import portfolio
+
+        s = portfolio.scoreboard(self, self._prices(prices))
+        pending = [{"id": c["id"], "title": c["title"], "action": c["payload"].get("action"),
+                    "ticker": c["payload"].get("ticker")} for c in self.store.approvals("pending")
+                   if c["kind"] == "portfolio"]
+        return {**s, "summary": portfolio.summary_text(s), "history": portfolio.history(self),
+                "pending": pending}
 
     # outbox --------------------------------------------------------------------------------
     def _outbox_decided(self, card: dict, decision: str) -> None:
@@ -555,7 +672,8 @@ class Office:
                                       f"bull ${pts.get('bull', 0):,.2f} · {s.get('rating')} · formula "
                                       f"check {'passed' if s.get('check', {}).get('ok') else 'FAILED'}"),
                              "ticker": mdl["ticker"], "version": mdl["version"], "status": mdl["status"],
-                             "file": f"/files/quant/{mdl['ticker']}/{Path(mdl['path']).name}"})
+                             **({"file": f"/files/quant/{mdl['ticker']}/{Path(mdl['path']).name}"}
+                                if Path(mdl["path"]).is_file() else {})})
         return sorted(docs, key=lambda d: d["ts"], reverse=True)
 
     def resolve_incident(self, incident_id: int) -> None:

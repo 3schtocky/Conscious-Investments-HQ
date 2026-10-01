@@ -12,9 +12,10 @@ import { BossChannel } from "./ui/boss";
 import { WatchlistPanel } from "./ui/watchlist";
 import { AuditPanel } from "./ui/audit";
 import { OutboxPanel } from "./ui/outbox";
+import { PortfolioPanel, pct as signedPct } from "./ui/portfolio";
 
-type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "audit" | "outbox" | "settings";
-const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "audit", "outbox", "settings"];
+type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings";
+const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "portfolio", "audit", "outbox", "settings"];
 const OUTBOX_EVENTS = new Set(["outbox_draft", "outbox_ready", "outbox_status"]);
 // Events that change what the Audit tab shows.
 const AUDIT_EVENTS = new Set(["audit_flag", "audit_review", "audit_resolved", "memory_saved", "memory_held",
@@ -32,6 +33,8 @@ const statusPill = h("span", { class: "pill office-status" });
 const demoBadge = h("span", { class: "pill demo hidden", title: "Scripted demo office: no API calls, no real spend" }, "DEMO");
 const crumbs = h("div", { class: "crumbs" });
 const awaiting = h("button", { class: "pill awaiting hidden", onclick: () => { tab = "approvals"; render(); } });
+const scorePill = h("button", { class: "pill score hidden", title: "Paper portfolio vs the S&P 500 since the first position",
+  onclick: () => { tab = "portfolio"; render(); } });
 // Theme: follows the system unless the Captain picks one (remembered per browser).
 const THEME_KEY = "hq-theme";
 function applyTheme(theme: string | null) {
@@ -48,7 +51,7 @@ const themeBtn = h("button", { class: "icon-btn", title: "Switch light / dark", 
 } }, "◐");
 const header = h("header", {},
   h("div", { class: "brand" }, h("span", { class: "brand-mark" }), h("span", {}, "Conscious Investments ", h("b", {}, "HQ"))),
-  statusPill, demoBadge, awaiting, crumbs,
+  statusPill, demoBadge, awaiting, scorePill, crumbs,
   h("div", { class: "meter", title: "Today's API spend vs. the daily cap" }, h("div", { class: "meter-bar" }, spendFill), spendText),
   themeBtn);
 
@@ -85,6 +88,8 @@ const watchRoot = h("div", { class: "watchlist" });
 const watchlist = new WatchlistPanel(watchRoot, state, () => render());
 const auditRoot = h("div", { class: "audit" });
 const audit = new AuditPanel(auditRoot, state, () => render());
+const portfolioRoot = h("div", { class: "audit portfolio-panel" });
+const portfolio = new PortfolioPanel(portfolioRoot, state, () => render(), () => { tab = "approvals"; render(); });
 const outboxRoot = h("div", { class: "audit outbox-panel" });
 const outbox = new OutboxPanel(outboxRoot, state, () => render(), () => { tab = "approvals"; render(); });
 // Picking a thread addresses the chat bar to it (never over a draft in progress).
@@ -146,14 +151,14 @@ function renderTabs() {
       if (t === "settings" && focus.kind === "agent") settings.select(focus.id);
       tab = t; render();
     } },
-      { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", audit: "Audit", outbox: "Outbox", settings: "⚙" }[t],
+      { activity: "Feed", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", portfolio: "Portfolio", audit: "Audit", outbox: "Outbox", settings: "⚙" }[t],
       t === "outbox" && outbox.count ? h("span", { class: "badge quiet" }, String(outbox.count)) : null,
       t === "audit" && audit.count ? h("span", { class: "badge" }, String(audit.count)) : null,
       t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null,
       t === "watchlist" && watchlist.count ? h("span", { class: "badge quiet" }, String(watchlist.count)) : null)));
   writeHash();
   // Swap the panel only on a real tab change: re-attaching an element resets its scroll.
-  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, audit: auditRoot, outbox: outboxRoot, settings: settingsRoot }[tab];
+  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, portfolio: portfolioRoot, audit: auditRoot, outbox: outboxRoot, settings: settingsRoot }[tab];
   if (panelRoot.firstElementChild !== panel) panelRoot.replaceChildren(panel);
 }
 
@@ -185,6 +190,13 @@ function renderHeader() {
   const n = approvals.pending;
   awaiting.textContent = `${n} awaiting you`;
   awaiting.classList.toggle("hidden", n === 0);
+  const pv = portfolio.view;
+  const scored = !!pv && pv.return !== null && pv.priced;
+  scorePill.classList.toggle("hidden", !scored);
+  if (pv && scored) {
+    scorePill.textContent = `Portfolio ${signedPct(pv.return)} · S&P ${signedPct(pv.benchmark_return)}`;
+    scorePill.dataset.state = pv.vs_benchmark !== null && pv.vs_benchmark >= 0 ? "ahead" : "behind";
+  }
 }
 
 let dirty = true;
@@ -209,6 +221,7 @@ function frame() {
       if (tab === "watchlist") { watchlist.render(); watchlist.maybeRefresh(); }
       if (tab === "audit") { audit.render(); audit.maybeRefresh(); }
       if (tab === "outbox") outbox.render();
+      if (tab === "portfolio") { portfolio.render(); portfolio.maybeRefresh(); }
     }
   }
   requestAnimationFrame(frame);
@@ -222,6 +235,7 @@ async function loadState() {
   watchlist.refresh();
   audit.refresh();
   outbox.refresh();
+  portfolio.refresh();
   scene?.sync();
   render();
 }
@@ -234,6 +248,7 @@ function connect() {
     if (["approval_requested", "approval_decided", "audit_resolved", "audit_review"].includes(ev.type)) { approvals.refresh(); }
     if (ev.type === "watchlist_added" || ev.type === "watchlist_status") { watchlist.refresh(); }
     if (OUTBOX_EVENTS.has(ev.type)) { outbox.refresh(); }
+    if (ev.type === "portfolio_changed" || (["approval_requested", "approval_decided"].includes(ev.type) && ev.kind === "portfolio")) { portfolio.refresh(); }
     if (AUDIT_EVENTS.has(ev.type) && (tab === "audit" || !["status", "task_done"].includes(ev.type))) { audit.refresh(); }
     if (tab === "agent" && focus.kind === "agent" && ev.agent === focus.id &&
         ["approval_requested", "approval_decided", "captain_report", "task_done"].includes(ev.type)) {

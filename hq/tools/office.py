@@ -270,6 +270,9 @@ async def _request_approval(ctx: ToolContext, inp: dict) -> str:
         raise GuardBlock(f"A newsletter reaches {ctx.office.captain_name} through finalize_newsletter "
                          f"({lead.nickname if lead else 'the Client Relations lead'}), which runs the "
                          "checks, builds the files and files this card.")
+    if kind == "portfolio":
+        raise GuardBlock("A portfolio entry or exit goes through propose_position or propose_exit, "
+                         "which check the rules and file this card.")
     if kind == "model" and ("ticker" not in payload or "version" not in payload):
         raise GuardBlock("A model approval needs `ticker` and `version`.")
     if kind == "model":
@@ -297,13 +300,12 @@ REQUEST_APPROVAL = Tool(
     description=(
         "Put a decision on {captain}'s desk as an approval card: a research brief to review "
         "(kind brief), a model version to make official (kind model, with ticker and version), "
-        "a model that contradicts the thesis (kind conflict, numbers attached), a portfolio "
-        "entry, or other. Lead the summary with what you need decided and why. "
+        "a model that contradicts the thesis (kind conflict, numbers attached), or other. Lead the summary with what you need decided and why. "
         "The decision comes back to you as a message later."),
     input_schema={
         "type": "object",
         "properties": {
-            "kind": {"type": "string", "enum": [k for k in APPROVAL_KINDS if k != "newsletter"]},
+            "kind": {"type": "string", "enum": [k for k in APPROVAL_KINDS if k not in ("newsletter", "portfolio")]},
             "title": {"type": "string"},
             "summary": {"type": "string",
                         "description": "What needs deciding, the key numbers, and risks."},
@@ -408,7 +410,9 @@ def tools_for(tier: str, agent_id: str, wing: str | None = None) -> list[Tool]:
     if tier == "lead" or agent_id == "chief_of_staff":
         base = base + [PROPOSE_WIKI]
     from hq.tools.desk import desk_tools
-    return base + [t for t in desk_tools(wing, tier) if t.name not in {b.name for b in base}]
+    from hq.tools.portfolio import portfolio_tools
+    extra = [*desk_tools(wing, tier), *portfolio_tools(agent_id)]
+    return base + [t for t in extra if t.name not in {b.name for b in base}]
 
 
 def _office_tools(tier: str, agent_id: str) -> list[Tool]:

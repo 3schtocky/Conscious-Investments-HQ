@@ -146,7 +146,7 @@ async def test_a_target_that_differs_from_the_approved_model_is_flagged(make_off
     register_model(office, "RMBS", 1)
     office.store.set_model_status("RMBS", 1, "approved")
     llm.script("Harbor",
-               tool_turn(("request_approval", {"kind": "portfolio", "ticker": "RMBS", "title": "Weekly",
+               tool_turn(("request_approval", {"kind": "other", "ticker": "RMBS", "title": "Weekly",
                                                "summary": "RMBS: price target $4.50, a clear buy."})),
                text_turn("Sent."))
     llm.script("Vera", vera_upholds(), text_turn("Upheld."))

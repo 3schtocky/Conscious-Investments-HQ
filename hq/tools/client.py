@@ -53,9 +53,14 @@ async def _newsletter_material(ctx: ToolContext, inp: dict) -> str:
                  "return_since_flagged": None if w["return"] is None else round(w["return"], 4),
                  "vs_sp500": None if w["vs_spy"] is None else round(w["vs_spy"], 4),
                  "status": w["status"]} for w in office.watchlist_view(prices)]
+    from hq import portfolio
+
+    board = portfolio.scoreboard(office, await portfolio.fetch_prices(office))
+    scoreboard = (portfolio.summary_text(board) if board["return"] is not None else
+                  "The paper portfolio has no positions yet. Leave the scoreboard out.")
     return json.dumps({
         "researched_names": researched, "watchlist": watching,
-        "scoreboard": "Not yet: the paper portfolio opens in a later phase. Leave the scoreboard out.",
+        "scoreboard": scoreboard,
         "rules": ["Price targets and ratings only for researched_names, exactly as given, with the cite_as line.",
                   ("Watchlist names are ideas we are watching: thesis and returns since flagged, never a "
                    "valuation, a target, a rating or upside."),
