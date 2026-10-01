@@ -122,6 +122,8 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
     case "captain_message": return s(ev.to === "all" ? "📢 " : "⭐ ", who("captain"), " → ",
       ev.to === "office" ? h("strong", {}, "the office") : ev.to === "all" ? h("strong", {}, "everyone") : who(ev.to), `: ${short(ev.text, 140)}`);
     case "approval_requested": return s("📝 ", who(ev.agent), ` asks ${state.captain.nickname} to decide: ${ev.title}`);
+    case "watchlist_added": return s("👀 ", who(ev.agent), ` added ${ev.ticker} to the watchlist (${ev.source})`);
+    case "screen_run": return s("🔎 ", who(ev.agent), ` ran the ${ev.preset} screen (${ev.run})`);
     case "approval_decided": return s("⚖️ ", who("captain"), ` ${ev.decision === "approved" ? "approved" : ev.decision === "changes" ? "asked for changes on" : "declined"} "${ev.title}"`);
   }
   return null;

@@ -71,13 +71,14 @@ def request_params(model_cfg: dict, *, system: str, messages: list[dict],
 
 
 WEB_WINGS = {"equity_research"}   # wings that research the open web
+WEB_AGENTS = {"screen_associate"}  # plus these individuals (Pip digs catalysts on finalists)
 WEB_SEARCH_MAX_USES = 5            # per request: web search is billed per search
 
 
-def web_tools(model_cfg: dict, wing: str) -> list[dict]:
+def web_tools(model_cfg: dict, wing: str, agent_id: str = "") -> list[dict]:
     """Anthropic's server-side web search and fetch for research wings (real office only; the
     demo and tests never execute them). Newer models get the dynamic-filtering versions."""
-    if wing not in WEB_WINGS:
+    if wing not in WEB_WINGS and agent_id not in WEB_AGENTS:
         return []
     new = not str(model_cfg.get("id", "")).startswith("claude-haiku-4-5")
     return [

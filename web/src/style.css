@@ -125,7 +125,7 @@ aside { display: flex; flex-direction: column; min-height: 0; border-left: 1px s
 
 /* sidebar */
 .tabs { display: flex; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--grid); }
-.tab { border: 0; background: none; padding: 8px 9px; white-space: nowrap; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; }
+.tab { border: 0; background: none; padding: 8px 6px; font-size: 13px; white-space: nowrap; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; }
 .tab.active { color: var(--ink); border-bottom-color: var(--clay); }
 .panel { flex: 1; min-height: 0; overflow: hidden; display: flex; }
 .panel > * { flex: 1; min-height: 0; overflow-y: auto; }
@@ -266,3 +266,19 @@ input[type="color"] { width: 32px; height: 26px; padding: 1px; }
 .small-btn { align-self: flex-start; padding: 4px 10px; font-size: 12px; text-decoration: none; margin-top: 4px; }
 .attachments a { color: var(--slate); font-weight: 600; }
 .doc.k-workbook { border-left-color: #1f7a4a; }
+
+/* watchlist */
+.watchlist { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.watch-intro { margin: 0 2px; }
+.watch { border: 1px solid var(--grid); border-left: 4px solid var(--clay); border-radius: 10px; padding: 10px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 7px; box-shadow: var(--shadow); }
+.watch.s-researching { border-left-color: var(--sage); }
+.watch-head { display: flex; gap: 6px; align-items: center; }
+.watch-head .feed-time { margin-left: auto; }
+.watch-ticker { font: 700 18px/1 var(--pixel); letter-spacing: .5px; }
+.watch-thesis { margin: 0; font-size: 13px; }
+.scorecard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: var(--paper-light); border-radius: 8px; padding: 7px 8px; }
+.scorecard div { display: flex; flex-direction: column; gap: 1px; }
+.scorecard strong { font-variant-numeric: tabular-nums; font-size: 14px; }
+.scorecard .up { color: var(--sage); } .scorecard .down { color: var(--danger); }
+.pitch-text { white-space: pre-wrap; font: 12px/1.45 var(--sans); background: var(--paper-light); border-radius: 8px; padding: 10px; max-height: 420px; overflow: auto; margin: 0; }
+.badge.quiet { background: var(--slate); }

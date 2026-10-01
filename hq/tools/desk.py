@@ -26,6 +26,8 @@ TICKER = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 MAX_READ_LINES = 400
 MAX_WRITE_CHARS = 60_000
 ER_WRITABLE = re.compile(r"^(brief|sources|memo)\.md$|^notes/[\w\-]+\.md$")
+SCREEN_WRITABLE = re.compile(r"^pitch\.md$|^notes/[\w\-]+\.md$")
+PRESETS = ("gems", "core")
 QUANT_WRITABLE = re.compile(r"^assumptions\.yaml$|^quant/notes/[\w\-]+\.md$")
 
 
@@ -73,6 +75,15 @@ async def run_erb(*args: str, timeout: float = 900) -> tuple[int, str]:
     return proc.returncode or 0, text[-4000:]
 
 
+def _erb_failure(what: str, out: str) -> str:
+    """A readable failure: name the usual culprits instead of dumping a traceback."""
+    if "RateLimit" in out or "Too Many Requests" in out or "429" in out:
+        return (f"{what} failed: Yahoo Finance is rate-limiting us right now. Wait a few minutes "
+                "and try again (nothing is wrong with the request).")
+    last = [ln for ln in out.strip().splitlines() if ln.strip()][-3:]
+    return f"{what} failed: " + " / ".join(last)[:600]
+
+
 def _brief(text: str, limit: int = 4000) -> str:
     return text if len(text) <= limit else "…" + text[-limit:]
 
@@ -117,10 +128,11 @@ async def _write_file(ctx: ToolContext, inp: dict) -> str:
         raise GuardBlock("`content` must be the full file text.")
     if len(content) > MAX_WRITE_CHARS:
         raise GuardBlock(f"Files are limited to {MAX_WRITE_CHARS:,} characters.")
-    allowed = QUANT_WRITABLE if ctx.agent.wing == "quant" else ER_WRITABLE
+    allowed, what = {
+        "quant": (QUANT_WRITABLE, "assumptions.yaml or quant/notes/*.md"),
+        "screening": (SCREEN_WRITABLE, "pitch.md or notes/*.md"),
+    }.get(ctx.agent.wing, (ER_WRITABLE, "brief.md, sources.md, memo.md or notes/*.md"))
     if not allowed.match(rel):
-        what = ("assumptions.yaml or quant/notes/*.md" if ctx.agent.wing == "quant"
-                else "brief.md, sources.md, memo.md or notes/*.md")
         raise GuardBlock(f"Your wing can write {what}. The model and approved numbers belong to Quant.")
     path = _resolve(ctx, t, rel)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,7 +148,7 @@ async def _erb_facts(ctx: ToolContext, inp: dict) -> str:
     code, out = await run_erb("facts", t, *(["--no-filings"] if inp.get("skip_filings") else []))
     facts = coverage_dir(t) / "facts" / "facts.md"
     if code or not facts.is_file():
-        raise GuardBlock(f"erb facts failed for {t}:\n{_brief(out, 1500)}")
+        raise GuardBlock(_erb_failure(f"erb facts for {t}", out))
     head = "\n".join(facts.read_text().splitlines()[:120])
     return (f"Facts pack ready: facts/facts.md (provenance in facts/provenance.csv, filing excerpts "
             f"in facts/filings/). First 120 lines:\n\n{head}")
@@ -281,6 +293,122 @@ async def _get_model(ctx: ToolContext, inp: dict) -> str:
     }, indent=1, default=float)
 
 
+# ---- screening ------------------------------------------------------------------------------
+def screen_dir(preset: str, day: str | None = None) -> Path:
+    from datetime import date as _date
+    day = day or _date.today().isoformat()  # noqa: DTZ011 - matches erb's local-date folder names
+    return ERB_DIR / "coverage" / "_screens" / (f"{day}-gems" if preset == "gems" else day)
+
+
+def latest_screen_dir(preset: str) -> Path | None:
+    root = ERB_DIR / "coverage" / "_screens"
+    if not root.is_dir():
+        return None
+    runs = [p for p in root.iterdir() if (p / "screen.csv").exists()
+            and (p.name.endswith("-gems") if preset == "gems" else re.fullmatch(r"\d{4}-\d{2}-\d{2}", p.name))]
+    return max(runs) if runs else None
+
+
+def _preset(inp: dict) -> str:
+    p = str(inp.get("preset", "gems")).lower()
+    if p not in PRESETS:
+        raise GuardBlock("`preset` must be gems or core.")
+    return p
+
+
+def screen_rows(run: Path, top: int) -> list[dict]:
+    import pandas as pd
+
+    df = pd.read_csv(run / "screen.csv")
+    df = df[df["factors_used"] >= 3].sort_values("composite", ascending=False).head(top)
+    gems = "acceleration" in df.columns
+    cols = (["ticker", "name", "sector", "market_cap", "composite", "acceleration", "growth", "margin",
+             "momentum", "yoy_q", "yoy_q1", "margin_change", "mom_6m", "runway_years", "loss_maker",
+             "flags"] if gems else
+            ["ticker", "name", "sector", "market_cap", "composite", "value", "quality", "growth", "momentum",
+             "rev_growth", "op_margin", "mom_12_1"])
+    rows = []
+    for i, (_, r) in enumerate(df.iterrows(), 1):
+        row = {"rank": i}
+        for c in cols:
+            v = r.get(c)
+            row[c] = (None if pd.isna(v) else round(float(v), 4) if isinstance(v, float) else v)
+        rows.append(row)
+    return rows
+
+
+async def _run_screen(ctx: ToolContext, inp: dict) -> str:
+    preset = _preset(inp)
+    run = screen_dir(preset)
+    if not (run / "screen.csv").exists() or inp.get("refresh"):
+        code, out = await run_erb("screen", "--preset", preset,
+                                  *(["--refresh"] if inp.get("refresh") and preset == "gems" else []),
+                                  timeout=2400)
+        if code or not (run / "screen.csv").exists():
+            raise GuardBlock(_erb_failure(f"The {preset} screen", out))
+        ran = "Ran"
+    else:
+        ran = "Reused today's"
+    ctx.office.bus.publish("screen_run", ctx.agent.id, ctx.task["id"], preset=preset, run=run.name)
+    rows = screen_rows(run, 15)
+    return json.dumps({"note": f"{ran} {preset} screen ({run.name}). Top 15 below; read_screen for more "
+                               "and for 8-K events.", "top": rows}, indent=1, default=str)
+
+
+async def _read_screen(ctx: ToolContext, inp: dict) -> str:
+    preset = _preset(inp)
+    run = latest_screen_dir(preset)
+    if run is None:
+        raise GuardBlock(f"No {preset} screen yet. Run it with run_screen.")
+    top = min(max(int(inp.get("top") or 15), 1), 50)
+    rows = screen_rows(run, top)
+    signals = {}
+    sig = run / "signals.json"
+    if sig.exists():
+        allsig = json.loads(sig.read_text())
+        signals = {r["ticker"]: allsig.get(r["ticker"], []) for r in rows if allsig.get(r["ticker"])}
+    return json.dumps({"run": run.name, "preset": preset, "rows": rows, "recent_8k_events": signals},
+                      indent=1, default=str)
+
+
+async def _pitch_memo(ctx: ToolContext, inp: dict) -> str:
+    t = _ticker(inp)
+    preset = _preset(inp)
+    run = latest_screen_dir(preset)
+    if run is None:
+        raise GuardBlock(f"No {preset} screen yet; a pitch comes from a screened name. Run the screen first.")
+    dest = coverage_dir(t) / "pitch.md"
+    if dest.exists() and not inp.get("overwrite"):
+        head = "\n".join(dest.read_text().splitlines()[:60])
+        return (f"{t} already has a pitch.md (kept, so no work is lost). Edit it with write_file, or "
+                f"pass overwrite=true for a fresh skeleton.\n\n{head}")
+    code, out = await run_erb("memo", t, "--no-model", "--screen", str(run), timeout=900)
+    src = run / "memos" / f"{t}.md"
+    if code or not src.exists():
+        raise GuardBlock(_erb_failure(f"erb memo for {t}", out))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(src.read_text())
+    head = "\n".join(dest.read_text().splitlines()[:60])
+    return (f"Pitch skeleton for {t} saved as pitch.md (numbers auto-filled from filings and the screen; "
+            f"no valuation, which is Quant's job). Fill every [VERIFY: ...] with write_file, keeping it to "
+            f"one page.\n\n{head}")
+
+
+async def _add_to_watchlist(ctx: ToolContext, inp: dict) -> str:
+    from hq import quotes
+
+    t = _ticker(inp)
+    thesis = _str(inp, "thesis", max_len=600)
+    source = _str(inp, "source", max_len=80)
+    pitch = "pitch.md" if (coverage_dir(t) / "pitch.md").exists() else None
+    px = await asyncio.to_thread(quotes.latest, [t, "SPY"])
+    watch_id = ctx.office.add_watch(ticker=t, added_by=ctx.agent.id, source=source, thesis=thesis,
+                                    pitch=pitch, price=px.get(t), spy=px.get("SPY"),
+                                    task_id=ctx.task["id"])
+    return (f"{t} is on the watchlist (#{watch_id}) at ${px.get(t) or 0:,.2f}. It stays there until "
+            f"{ctx.office.captain_name} sends it to research.")
+
+
 # ---- definitions ------------------------------------------------------------------------------
 def _schema(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required}
@@ -327,6 +455,30 @@ RUN_SIMULATIONS = Tool(
     "results go into the workbook and come back as a summary.",
     _schema({**TICK, "runs": {"type": "integer", "description": "200 to 10,000 (default 2,000)"}},
             ["ticker"]), _run_simulations)
+RUN_SCREEN = Tool(
+    "run_screen", "Run today's screen: gems (small/mid caps at a growth inflection) or core (quality "
+    "growth, $2B+). Free data (SEC, Yahoo) but takes several minutes; today's run is reused unless "
+    "refresh=true. Returns the top 15.",
+    _schema({"preset": {"type": "string", "enum": list(PRESETS)}, "refresh": {"type": "boolean"}},
+            ["preset"]), _run_screen)
+READ_SCREEN = Tool(
+    "read_screen", "Read the latest gems or core screen: ranked rows with factor scores and, for "
+    "Gems, recent 8-K material events for the finalists.",
+    _schema({"preset": {"type": "string", "enum": list(PRESETS)},
+             "top": {"type": "integer", "description": "1 to 50 (default 15)"}}, ["preset"]), _read_screen)
+PITCH_MEMO = Tool(
+    "pitch_memo", "Write a one-page pitch memo skeleton for a screened ticker (snapshot, why it "
+    "screened, multiples vs history, Street view; no valuation) as pitch.md, then fill its "
+    "[VERIFY] sections with write_file.",
+    _schema({**TICK, "preset": {"type": "string", "enum": list(PRESETS)},
+             "overwrite": {"type": "boolean", "description": "replace an existing pitch.md"}},
+            ["ticker"]), _pitch_memo)
+ADD_TO_WATCHLIST = Tool(
+    "add_to_watchlist", "Put a shortlisted name on the Captain's watchlist with a one or two line "
+    "thesis and its source (e.g. \"gems 2026-09-30 #3\"). Its price today is recorded so the "
+    "office can track how the pick does.",
+    _schema({**TICK, "thesis": {"type": "string"}, "source": {"type": "string"}},
+            ["ticker", "thesis", "source"]), _add_to_watchlist)
 GET_MODEL = Tool(
     "get_model", "The firm's approved model for a ticker (price targets, rating, version, approval "
     "date), or a specific version. Only approved numbers may appear in anything published.",
@@ -343,4 +495,9 @@ def desk_tools(wing: str, tier: str) -> list[Tool]:
     if wing == "quant":
         return [LIST_FILES, READ_FILE, WRITE_FILE, DRAFT_ASSUMPTIONS, BUILD_MODEL, RUN_SIMULATIONS,
                 GET_MODEL]
+    if wing == "screening":
+        tools = [READ_SCREEN, PITCH_MEMO, LIST_FILES, READ_FILE, WRITE_FILE, GET_MODEL]
+        if tier == "lead":
+            tools = [RUN_SCREEN, *tools, ADD_TO_WATCHLIST]
+        return tools
     return [GET_MODEL]

@@ -114,8 +114,10 @@ def test_websocket_streams_events(client):
 
 
 # demo scenes ------------------------------------------------------------------------------
-async def test_every_demo_scene_runs_clean(make_office):
+async def test_every_demo_scene_runs_clean(make_office, monkeypatch):
     from hq.demo import SCENES, DemoLLM
+
+    monkeypatch.setattr("hq.tools.desk.latest_screen_dir", lambda preset: None)   # no network in tests
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000)
@@ -132,8 +134,10 @@ async def test_every_demo_scene_runs_clean(make_office):
     assert not any(llm.scripts.values())   # every scripted turn was used
 
 
-async def test_demo_loop_resets_guard_between_cycles(make_office):
+async def test_demo_loop_resets_guard_between_cycles(make_office, monkeypatch):
     from hq.demo import SCENES, DemoLLM, run_demo
+
+    monkeypatch.setattr("hq.tools.desk.latest_screen_dir", lambda preset: None)   # no network in tests
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000)
@@ -188,7 +192,8 @@ async def test_model_change_mid_task_waits_for_the_next_task(make_office):
     assert models == {"fake"}
 
 
-async def test_demo_keeps_its_pretend_budget_in_range(make_office):
+async def test_demo_keeps_its_pretend_budget_in_range(make_office, monkeypatch):
+    monkeypatch.setattr("hq.tools.desk.latest_screen_dir", lambda preset: None)
     from hq.demo import DemoLLM, run_demo
 
     office, _ = make_office(daily_cap=1.0)   # a few loops of pretend spend per "day"
@@ -233,7 +238,8 @@ def test_agents_call_the_captain_by_his_settings_name(make_office):
     assert "Boss (Ethan Stott) is the Captain" in office.agents["er_lead"].system_prompt()
 
 
-async def test_demo_keeps_only_a_few_pending_cards(make_office):
+async def test_demo_keeps_only_a_few_pending_cards(make_office, monkeypatch):
+    monkeypatch.setattr("hq.tools.desk.latest_screen_dir", lambda preset: None)
     from hq.demo import DEMO_PENDING_KEEP, DemoLLM, run_demo
 
     office, _ = make_office()

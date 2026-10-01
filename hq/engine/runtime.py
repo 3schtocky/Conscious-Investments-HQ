@@ -355,6 +355,59 @@ class Office:
                 self._schedule(agent.id, task_id)
         return self.store.approval(approval_id)
 
+    # watchlist -----------------------------------------------------------------------------
+    def add_watch(self, *, ticker: str, added_by: str, source: str, thesis: str,
+                  pitch: str | None, price: float | None, spy: float | None,
+                  task_id: int | None = None) -> int:
+        watch_id = self.store.add_watch(ticker=ticker, added_by=added_by, source=source,
+                                        thesis=thesis, pitch=pitch, price=price, spy=spy)
+        self.bus.publish("watchlist_added", added_by, task_id, ticker=ticker, source=source,
+                         watch=watch_id)
+        return watch_id
+
+    def watchlist_view(self, prices: dict[str, float | None]) -> list[dict]:
+        """Watchlist rows with the scorecard: return since added vs SPY over the same days."""
+        rows = []
+        spy_now = prices.get("SPY")
+        for w in self.store.watchlist():
+            now = prices.get(w["ticker"])
+            ret = (now / w["price_at_add"] - 1) if now and w["price_at_add"] else None
+            spy_ret = (spy_now / w["spy_at_add"] - 1) if spy_now and w["spy_at_add"] else None
+            rows.append({**w, "price_now": now, "return": ret, "spy_return": spy_ret,
+                         "vs_spy": (ret - spy_ret) if ret is not None and spy_ret is not None else None,
+                         "added_by_name": self.name(w["added_by"]) if w["added_by"] in self.agents else w["added_by"]})
+        return rows
+
+    def send_watch_to_research(self, watch_id: int) -> dict:
+        """The Captain's 'Send to research': routed through Juno like any office message."""
+        w = self.store.watch(watch_id)
+        pitch = f" Scout's pitch is in coverage/{w['ticker']}/pitch.md." if w["pitch"] else ""
+        text = (f"Please start research on {w['ticker']} from the watchlist ({w['source']}). "
+                f"Screening's thesis: {w['thesis']}.{pitch}")
+        out = self.captain_send("office", text)
+        self.store.set_watch_status(watch_id, "researching")
+        self.bus.publish("watchlist_status", None, None, watch=watch_id, status="researching")
+        return out
+
+    def weekly_reminder(self, now=None) -> bool:
+        """Monday nudge from Juno that a fresh screen is available. Plain code, no API call.
+        Returns True if a reminder was posted (once per ISO week)."""
+        from datetime import datetime
+        now = now or datetime.now(self.ledger.tz)
+        if now.weekday() != 0 or now.hour < 8:
+            return False
+        week = f"{now.isocalendar().year}-W{now.isocalendar().week:02d}"
+        if any(e["payload"].get("week") == week for e in self.store.events_of_type("weekly_reminder")):
+            return False
+        text = ("Good morning. It's Monday, so a fresh Gems or Core screen is ready whenever you want "
+                "it. Pulling the data is free; Scout and Pip reviewing the results and writing pitches "
+                "costs a little. Just say the word and I'll route it.")
+        self.store.add_chat(channel=f"dm:{CAPTAIN}|chief_of_staff", sender="chief_of_staff",
+                            recipients=[CAPTAIN], text=text)
+        self.bus.publish("captain_report", "chief_of_staff", None, text=text)
+        self.bus.publish("weekly_reminder", None, None, week=week)
+        return True
+
     def model_lock(self, ticker: str) -> asyncio.Lock:
         return self._model_locks.setdefault(ticker, asyncio.Lock())
 
@@ -513,6 +566,7 @@ class Office:
             "incidents": self.store.incidents(),
             "approvals": self.store.approvals(),
             "model_registry": self.store.models(),
+            "watchlist_count": len(self.store.watchlist()),
             "captain_name": self.captain_name,
         }
 

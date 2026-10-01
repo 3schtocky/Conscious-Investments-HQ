@@ -93,7 +93,18 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         else:
             office = office_factory() if office_factory else Office()
         state["office"] = office
+
+        async def reminders() -> None:   # Juno's Monday nudge (plain code, no API call)
+            while True:
+                try:
+                    office.weekly_reminder()
+                except Exception:
+                    log.exception("weekly reminder failed")
+                await asyncio.sleep(1800)
+
+        state["reminder_task"] = asyncio.create_task(reminders())
         yield
+        state["reminder_task"].cancel()
         task = state.get("demo_task")
         if task:
             task.cancel()
@@ -159,6 +170,28 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         if not target.is_relative_to(root.resolve()) or not target.is_file():
             raise HTTPException(404)
         return FileResponse(target, filename=target.name)
+
+    @app.get("/api/watchlist")
+    async def watchlist() -> JSONResponse:
+        from hq import quotes
+
+        rows = office().store.watchlist()
+        tickers = sorted({w["ticker"] for w in rows} | {"SPY"})
+        prices = await asyncio.to_thread(quotes.latest, tickers) if rows else {}
+        return JSONResponse(office().watchlist_view(prices))
+
+    @app.post("/api/watchlist/{watch_id}/research")
+    async def watch_research(watch_id: int) -> JSONResponse:
+        try:
+            return JSONResponse(office().send_watch_to_research(watch_id))
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
+
+    @app.post("/api/watchlist/{watch_id}/drop")
+    async def watch_drop(watch_id: int) -> JSONResponse:
+        office().store.set_watch_status(watch_id, "dropped")
+        office().bus.publish("watchlist_status", None, None, watch=watch_id, status="dropped")
+        return JSONResponse({"ok": True})
 
     @app.get("/api/models")
     async def models(ticker: str | None = None) -> JSONResponse:

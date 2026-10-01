@@ -164,42 +164,69 @@ class DemoLLM:
 
 # Scenes ------------------------------------------------------------------------------------
 def scene_gem_hunt(office: Office, llm: DemoLLM) -> None:
+    """Free dry run of Screening with REAL tools on today's Gems screen: Scout reads the ranked
+    list, skips flagged names, Pip writes real pitch memos, and the picks land on the watchlist.
+    Only the agents' words are scripted."""
+    from hq.tools.desk import latest_screen_dir
+
+    run = latest_screen_dir("gems")
+    if run is None:
+        return   # no Gems screen yet (run `erb screen --preset gems` once)
+    picks: list[dict] = []
+
+    def scout_delegates(params: dict) -> TurnResult:
+        rows = _last_tool_json(params).get("rows", [])
+        clean = [r for r in rows if not r.get("flags")]
+        picks.extend(clean[:2])
+        names = " and ".join(r["ticker"] for r in picks) or "the top names"
+        return think("Two clean inflections near the top; the flagged names (lumpy revenue or "
+                     "commodity-driven) I set aside. Pip writes the pitches.", None,
+                     ("delegate", {"to": "Pip", "job": f"Write one-page pitches for {names} with "
+                                   "pitch_memo (Gems screen). Return what each pitch shows."}))(params)
+
+    def scout_watchlists(params: dict) -> TurnResult:
+        calls = []
+        def pct(v):
+            return "n/a" if v is None else f"{v:.0%}"
+
+        for r in picks:
+            margin = "n/a" if r.get("margin_change") is None else f"{r['margin_change'] * 100:+.1f} pts"
+            thesis = (f"Revenue growth from {pct(r.get('yoy_q1'))} to {pct(r.get('yoy_q'))} YoY, "
+                      f"margin {margin} vs a year ago (demo dry run).")
+            calls.append(("add_to_watchlist", {"ticker": r["ticker"], "thesis": thesis,
+                                               "source": f"gems {run.name[:10]} #{r['rank']}"}))
+        return think("Both pitches hold up. Onto the watchlist; the Captain decides from there.",
+                     None, *calls)(params)
+
+    def pip_pitch(i: int):
+        def turn(params: dict) -> TurnResult:
+            if i >= len(picks):
+                return think("Nothing else to pitch.", None,
+                             ("submit_result", {"findings": "No more names.", "confidence": "low"}))(params)
+            return think(f"Pitch skeleton for {picks[i]['ticker']}: filings and the screen fill the "
+                         "numbers.", None, ("pitch_memo", {"ticker": picks[i]["ticker"],
+                                                           "preset": "gems"}))(params)
+        return turn
+
     llm.script("screen_lead",
-               think("The Captain wants small-cap gems. I'll have Pip run the Gems screen and dig "
-                     "catalysts while I think about which themes deserve conviction. Energy "
-                     "storage and power semis both have real demand tailwinds.",
-                     "Kicking off the gem hunt.",
-                     ("delegate", {"to": "Pip", "job": "Run the Gems screen (demo). Return the top "
-                                   "two names with one catalyst each and a source per figure."})),
-               think("Pip's two names look interesting. Northwind Storage has a contract catalyst "
-                     "and Lumen Power has margin expansion. Quill should see these for a memo.",
-                     None,
-                     ("send_message", {"to": ["Quill"], "text": "Two gems for a memo: Northwind "
-                                       "Storage (demo) and Lumen Power (demo). Pip's catalysts "
-                                       "are in the screen folder."})),
-               think("Handoff done. I'll brief the Captain.", None,
-                     ("report_to_captain", {"text": "Gem hunt (demo): two candidates, Northwind "
-                                            "Storage and Lumen Power. Both passed sanity checks. "
-                                            "Sent to Quill for memos."})),
-               think("Done.", "Shortlist sent to Quill and the Captain."))
-    llm.script("screen_associate",
-               think("Running the Gems preset: $0.3 to 15bn market cap, revenue acceleration, "
-                     "gross margin expansion, momentum. Then catalyst digging on the top names.",
-                     None,
-                     ("submit_result", {"findings": "1. Northwind Storage (demo): utility contract "
-                                        "pipeline.\n2. Lumen Power (demo): gross margin up four "
-                                        "quarters running.",
-                                        "figures": [],
-                                        "open_questions": ["Contract timing unconfirmed (demo)"],
-                                        "confidence": "medium"})))
-    llm.script("er_lead",
-               think("Scout sent two names. I'll acknowledge and queue memos after the current "
-                     "work.", None,
-                     ("send_message", {"to": ["Scout"], "text": "Got them. I'll start with "
-                                       "Northwind."})),
-               think("Acknowledged.", "Queued two memos."))
-    office.assign("Scout", "Find two small-cap gems in energy storage or power semis (demo).",
-                  title="Gem hunt (demo)")
+               think("Fresh Gems screen. I read the top of the list and sanity-check it before "
+                     "anything else.", "Reading today's Gems screen.",
+                     ("read_screen", {"preset": "gems", "top": 10})),
+               scout_delegates, scout_watchlists,
+               lambda p: think("Reporting the shortlist.", None,
+                               ("report_to_captain", {"text": "Gems dry run: "
+                                                      + ", ".join(r["ticker"] for r in picks)
+                                                      + " added to your watchlist with pitches. "
+                                                      "Nothing goes to research until you send it."}))(p),
+               think("Done.", "Shortlist on the watchlist."))
+    llm.script("screen_associate", pip_pitch(0), pip_pitch(1),
+               lambda p: think("Both pitches written.", None,
+                               ("submit_result", {"findings": "Pitches written: "
+                                                  + ", ".join(f"{r['ticker']} (coverage/{r['ticker']}/pitch.md)"
+                                                              for r in picks),
+                                                  "confidence": "medium"}))(p))
+    office.assign("Scout", "Run the Gems hunt on today's screen (demo dry run, real tools).",
+                  title="Gems hunt (demo, real tools)")
 
 
 def scene_memo(office: Office, llm: DemoLLM) -> None:

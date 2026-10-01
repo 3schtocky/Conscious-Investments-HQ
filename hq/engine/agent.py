@@ -146,7 +146,7 @@ class Agent:
         model_cfg = self.model_cfg   # frozen for this run, like the prompt and tools
         tools = tools_for(self.tier, self.id, self.wing)
         by_name = tool_map(tools)
-        tool_defs = definitions(tools, captain=office_.captain_name) + web_tools(model_cfg, self.wing)
+        tool_defs = definitions(tools, captain=office_.captain_name) + web_tools(model_cfg, self.wing, self.id)
         self.guard = guard = self._task_guard(task, messages)
 
         store.set_task_status(task_id, "running")

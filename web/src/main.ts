@@ -9,9 +9,10 @@ import { AgentPanel, ChatPanel, DeskCards, renderActivity, WING_ORDER } from "./
 import { SettingsPanel } from "./ui/settings";
 import { ApprovalsPanel } from "./ui/approvals";
 import { BossChannel } from "./ui/boss";
+import { WatchlistPanel } from "./ui/watchlist";
 
-type Tab = "activity" | "agent" | "chat" | "approvals" | "settings";
-const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "settings"];
+type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "settings";
+const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "settings"];
 
 const state = new OfficeState();
 let focus: Focus = { kind: "floor" };
@@ -74,6 +75,8 @@ const settings = new SettingsPanel(settingsRoot, state);
 const approvalsRoot = h("div", { class: "approvals" });
 const approvals = new ApprovalsPanel(approvalsRoot, state, () => render());
 const boss = new BossChannel(bossBar, state);
+const watchRoot = h("div", { class: "watchlist" });
+const watchlist = new WatchlistPanel(watchRoot, state, () => render());
 // Picking a thread addresses the chat bar to it (never over a draft in progress).
 chatPanel.onChannel = (to) => { if (to && tab === "chat") boss.setDefaultRecipient(to); };
 
@@ -133,11 +136,12 @@ function renderTabs() {
       if (t === "settings" && focus.kind === "agent") settings.select(focus.id);
       tab = t; render();
     } },
-      { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", settings: "Settings" }[t],
-      t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null)));
+      { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", settings: "Settings" }[t],
+      t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null,
+      t === "watchlist" && watchlist.count ? h("span", { class: "badge quiet" }, String(watchlist.count)) : null)));
   writeHash();
   // Swap the panel only on a real tab change: re-attaching an element resets its scroll.
-  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, settings: settingsRoot }[tab];
+  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, settings: settingsRoot }[tab];
   if (panelRoot.firstElementChild !== panel) panelRoot.replaceChildren(panel);
 }
 
@@ -190,6 +194,7 @@ function frame() {
       if (tab === "chat") chatPanel.render(selected);
       if (tab === "settings") settings.render();
       if (tab === "approvals") approvals.render();
+      if (tab === "watchlist") { watchlist.render(); watchlist.maybeRefresh(); }
     }
   }
   requestAnimationFrame(frame);
@@ -200,6 +205,7 @@ async function loadState() {
   const snap: Snapshot = await (await fetch("/api/state")).json();
   state.load(snap);
   approvals.items = (snap as any).approvals ?? [];
+  watchlist.refresh();
   scene?.sync();
   render();
 }
@@ -210,6 +216,7 @@ function connect() {
     const ev: OfficeEvent = JSON.parse(m.data);
     if (ev.type === "roster_updated") { loadState(); }
     if (ev.type === "approval_requested" || ev.type === "approval_decided") { approvals.refresh(); }
+    if (ev.type === "watchlist_added" || ev.type === "watchlist_status") { watchlist.refresh(); }
     if (tab === "agent" && focus.kind === "agent" && ev.agent === focus.id &&
         ["approval_requested", "approval_decided", "captain_report", "task_done"].includes(ev.type)) {
       agentPanel.loadDocs(focus.id);

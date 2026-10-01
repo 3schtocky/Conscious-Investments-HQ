@@ -101,6 +101,19 @@ CREATE TABLE IF NOT EXISTS models (
     approved_at REAL,
     UNIQUE (ticker, version)
 );
+CREATE TABLE IF NOT EXISTS watchlist (
+    id INTEGER PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    added REAL NOT NULL,
+    added_by TEXT NOT NULL,
+    source TEXT NOT NULL,            -- e.g. "gems 2026-09-30 #3"
+    thesis TEXT NOT NULL,
+    pitch TEXT,                      -- file path inside coverage/<TICKER>/
+    price_at_add REAL,
+    spy_at_add REAL,
+    status TEXT NOT NULL,            -- watching | researching | dropped
+    UNIQUE (ticker, source)
+);
 CREATE INDEX IF NOT EXISTS spend_day ON spend(day);
 CREATE INDEX IF NOT EXISTS spend_root ON spend(root_id);
 CREATE INDEX IF NOT EXISTS events_task ON events(task_id);
@@ -206,6 +219,12 @@ class Store:
         )
         return cur.lastrowid
 
+    def events_of_type(self, type_: str) -> list[dict]:
+        rows = self._all("SELECT * FROM events WHERE type=? ORDER BY id", (type_,))
+        for r in rows:
+            r["payload"] = json.loads(r["payload"])
+        return rows
+
     def events(self, task_id: int | None = None, limit: int = 500) -> list[dict]:
         if task_id is not None:
             rows = self._all("SELECT * FROM events WHERE task_id=? ORDER BY id LIMIT ?",
@@ -271,6 +290,35 @@ class Store:
 
     def resolve_incident(self, incident_id: int) -> None:
         self._exec("UPDATE incidents SET resolved=1 WHERE id=?", (incident_id,))
+
+    # watchlist ---------------------------------------------------------------------------
+    def add_watch(self, *, ticker: str, added_by: str, source: str, thesis: str,
+                  pitch: str | None, price: float | None, spy: float | None) -> int:
+        """Add (or refresh) a watchlist name; the same ticker from the same screen updates."""
+        existing = self._all("SELECT id FROM watchlist WHERE ticker=? AND source=?", (ticker, source))
+        if existing:
+            self._exec("UPDATE watchlist SET thesis=?, pitch=COALESCE(?, pitch),"
+                       " status=CASE WHEN status='dropped' THEN 'watching' ELSE status END WHERE id=?",
+                       (thesis, pitch, existing[0]["id"]))
+            return existing[0]["id"]
+        cur = self._exec(
+            "INSERT INTO watchlist (ticker, added, added_by, source, thesis, pitch, price_at_add,"
+            " spy_at_add, status) VALUES (?,?,?,?,?,?,?,?, 'watching')",
+            (ticker, time.time(), added_by, source, thesis, pitch, price, spy))
+        return cur.lastrowid
+
+    def watchlist(self, include_dropped: bool = False) -> list[dict]:
+        sql = "SELECT * FROM watchlist" + ("" if include_dropped else " WHERE status!='dropped'")
+        return self._all(sql + " ORDER BY added DESC")
+
+    def set_watch_status(self, watch_id: int, status: str) -> None:
+        self._exec("UPDATE watchlist SET status=? WHERE id=?", (status, watch_id))
+
+    def watch(self, watch_id: int) -> dict:
+        rows = self._all("SELECT * FROM watchlist WHERE id=?", (watch_id,))
+        if not rows:
+            raise KeyError(f"no watchlist entry {watch_id}")
+        return rows[0]
 
     # model registry ----------------------------------------------------------------------
     def next_model_version(self, ticker: str) -> int:
