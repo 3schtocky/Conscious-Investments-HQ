@@ -320,3 +320,9 @@ input[type="color"] { width: 32px; height: 26px; padding: 1px; }
 a.btn { text-decoration: none; display: inline-block; }
 .tab:last-child { font-size: 15px; line-height: 1; padding: 6px 3px; }
 .tab .badge { font-size: 10px; min-width: 15px; padding: 1px 3px; margin-left: 1px; }
+
+/* Layering on the floor: signs at the back, name tags above them, and whoever is speaking on
+   top, so a speech bubble is never hidden behind a department sign or another name tag. */
+.room-sign { z-index: 1; }
+.tag { z-index: 2; }
+.tag:has(.bubble.show) { z-index: 3; }

@@ -62,7 +62,7 @@ client_relations:
   publisher: outbox            # outbox = ready-to-paste files in outbox/ (the only one for now)
   # Printed under every newsletter and client memo. Edit it to match what you actually hold.
   holdings_disclosure: >-
-    The author may hold positions in securities discussed. The Conscious Investments model
+    The author holds no position in the securities discussed. The Conscious Investments model
     portfolio is a paper portfolio.
 
 cadence: on_assignment         # the office only works when the Captain assigns work

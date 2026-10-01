@@ -149,7 +149,7 @@ async def test_newsletter_from_draft_to_ready_to_paste(office_llm):
     folder = office.outbox_dir / "newsletters" / issue
     final = (folder / "issue.md").read_text()
     assert final.startswith("# Weekly note") and "price target for RMBS is $2.00" in final
-    assert "not investment advice" in final and "Holdings disclosure: The author may hold positions" in final
+    assert "not investment advice" in final and "Holdings disclosure: The author holds no position" in final
     page = (folder / "issue.html").read_text()
     assert "<h2>The idea</h2>" in page and 'class="disclaimer"' in page and '<img src="header.png"' in page
     assert (folder / "body.html").read_text().startswith("<h2>The idea</h2>")
@@ -244,7 +244,7 @@ async def test_package_memo_only_ships_approved_finished_work(office_llm, covera
     text = "\n".join(p.text for p in doc.paragraphs)
     assert "Figures from Quant model v1" in text and "Our base price target is $2.00 and we rate" in text
     assert "[M]" not in text and "[S1]" not in text                        # source tags stay in-house
-    assert "Holdings disclosure: The author may hold positions" in text and len(doc.tables) == 1
+    assert "Holdings disclosure: The author holds no position" in text and len(doc.tables) == 1
     assert office.outbox_view()["deliverables"][0]["status"] == "awaiting"
     office.decide(card["id"], "approved")
     await office.idle()
