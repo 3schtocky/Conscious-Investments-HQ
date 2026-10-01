@@ -321,11 +321,11 @@ a.btn { text-decoration: none; display: inline-block; }
 .tab:last-child { font-size: 15px; line-height: 1; padding: 6px 3px; }
 .tab .badge { font-size: 10px; min-width: 15px; padding: 1px 3px; margin-left: 1px; }
 
-/* Layering on the floor: signs at the back, name tags above them, and whoever is speaking on
-   top, so a speech bubble is never hidden behind a department sign or another name tag. */
+/* Layering on the floor: signs at the back, name tags above them, and every speech bubble in
+   its own layer on top, so a bubble is never hidden behind a sign or anyone's name tag. */
 .room-sign { z-index: 1; }
 .tag { z-index: 2; }
-.tag:has(.bubble.show) { z-index: 3; }
+.bubble-anchor { position: absolute; left: 0; top: 0; z-index: 3; will-change: transform; }
 
 /* Portfolio tab and scoreboard */
 :root { --series-1: #2a68a8; --series-2: #d27030; }

@@ -4,7 +4,7 @@ import type { OfficeScene } from "../office/scene";
 import type { OfficeState } from "../state";
 import { h, plain } from "./dom";
 
-interface Tag { root: HTMLElement; name: HTMLElement; icon: HTMLElement; bubble: HTMLElement; bubbleUntil: number }
+interface Tag { root: HTMLElement; anchor: HTMLElement; name: HTMLElement; icon: HTMLElement; bubble: HTMLElement; bubbleUntil: number }
 
 export class Overlay {
   private tags = new Map<string, Tag>();
@@ -23,7 +23,7 @@ export class Overlay {
     // Place it now, not on the next frame: speech is triggered by the game loop, which can run
     // after this frame's layout pass, and a new bubble must never flash outside the view.
     const pos = this.scene()?.headPosition(id);
-    if (pos) this.fit(t, pos);
+    if (pos) { t.anchor.style.transform = `translate(${pos.x}px, ${pos.y}px)`; this.fit(t, pos); }
   }
 
   /** Keep a shown bubble inside the office view: it slides left near the right edge, right near
@@ -41,9 +41,12 @@ export class Overlay {
       const name = h("span", { class: "tag-name" });
       const icon = h("span", { class: "tag-icon" });
       const bubble = h("div", { class: "bubble" });
-      const root = h("div", { class: "tag" }, bubble, h("div", { class: "tag-row" }, icon, name));
-      this.layer.append(root);
-      t = { root, name, icon, bubble, bubbleUntil: 0 };
+      const root = h("div", { class: "tag" }, h("div", { class: "tag-row" }, icon, name));
+      // The bubble lives in its own layer above every name tag and sign, so nothing on the
+      // floor can cover what a colleague is saying.
+      const anchor = h("div", { class: "bubble-anchor" }, bubble);
+      this.layer.append(root, anchor);
+      t = { root, anchor, name, icon, bubble, bubbleUntil: 0 };
       this.tags.set(id, t);
     }
     return t;
@@ -62,6 +65,8 @@ export class Overlay {
         const t = this.tag(id);
         t.root.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
         t.root.style.display = pos.visible ? "" : "none";
+        t.anchor.style.transform = t.root.style.transform;
+        t.anchor.style.display = t.root.style.display;
         t.name.textContent = this.state.name(id);
         const a = this.state.agents.get(id);
         // Drawn status indicators (no emojis on the floor): see .tag-icon[data-kind] in style.css
