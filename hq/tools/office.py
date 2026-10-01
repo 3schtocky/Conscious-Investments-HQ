@@ -265,6 +265,11 @@ async def _request_approval(ctx: ToolContext, inp: dict) -> str:
         if not isinstance(version, int) or version < 1:
             raise GuardBlock("`version` must be a whole number starting at 1.")
         payload["version"] = version
+    if kind == "newsletter":
+        lead = ctx.office.agents.get("cr_lead")
+        raise GuardBlock(f"A newsletter reaches {ctx.office.captain_name} through finalize_newsletter "
+                         f"({lead.nickname if lead else 'the Client Relations lead'}), which runs the "
+                         "checks, builds the files and files this card.")
     if kind == "model" and ("ticker" not in payload or "version" not in payload):
         raise GuardBlock("A model approval needs `ticker` and `version`.")
     if kind == "model":
@@ -293,12 +298,12 @@ REQUEST_APPROVAL = Tool(
         "Put a decision on {captain}'s desk as an approval card: a research brief to review "
         "(kind brief), a model version to make official (kind model, with ticker and version), "
         "a model that contradicts the thesis (kind conflict, numbers attached), a portfolio "
-        "entry, a newsletter, or other. Lead the summary with what you need decided and why. "
+        "entry, or other. Lead the summary with what you need decided and why. "
         "The decision comes back to you as a message later."),
     input_schema={
         "type": "object",
         "properties": {
-            "kind": {"type": "string", "enum": list(APPROVAL_KINDS)},
+            "kind": {"type": "string", "enum": [k for k in APPROVAL_KINDS if k != "newsletter"]},
             "title": {"type": "string"},
             "summary": {"type": "string",
                         "description": "What needs deciding, the key numbers, and risks."},

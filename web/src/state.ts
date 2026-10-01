@@ -243,7 +243,7 @@ export class OfficeState {
 const FEED_TYPES = new Set(["task_created", "task_started", "task_done", "delegated", "chat",
   "captain_report", "task_paused", "task_error", "incident", "office_status", "meeting",
   "captain_message", "approval_requested", "approval_decided", "watchlist_added", "screen_run",
-  "audit_flag", "audit_resolved", "memory_held", "audit_digest"]);
+  "audit_flag", "audit_resolved", "memory_held", "audit_digest", "outbox_draft", "outbox_ready", "outbox_status"]);
 
 export function groupName(channel: string, state: OfficeState): string {
   return channel === "group:juno" ? `${state.name("chief_of_staff")} → All` : `${state.captain.nickname} → All`;

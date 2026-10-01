@@ -11,9 +11,11 @@ import { ApprovalsPanel } from "./ui/approvals";
 import { BossChannel } from "./ui/boss";
 import { WatchlistPanel } from "./ui/watchlist";
 import { AuditPanel } from "./ui/audit";
+import { OutboxPanel } from "./ui/outbox";
 
-type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "audit" | "settings";
-const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "audit", "settings"];
+type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "audit" | "outbox" | "settings";
+const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "audit", "outbox", "settings"];
+const OUTBOX_EVENTS = new Set(["outbox_draft", "outbox_ready", "outbox_status"]);
 // Events that change what the Audit tab shows.
 const AUDIT_EVENTS = new Set(["audit_flag", "audit_review", "audit_resolved", "memory_saved", "memory_held",
   "memory_decided", "audit_digest", "status", "incident", "task_done"]);
@@ -83,6 +85,8 @@ const watchRoot = h("div", { class: "watchlist" });
 const watchlist = new WatchlistPanel(watchRoot, state, () => render());
 const auditRoot = h("div", { class: "audit" });
 const audit = new AuditPanel(auditRoot, state, () => render());
+const outboxRoot = h("div", { class: "audit outbox-panel" });
+const outbox = new OutboxPanel(outboxRoot, state, () => render(), () => { tab = "approvals"; render(); });
 // Picking a thread addresses the chat bar to it (never over a draft in progress).
 chatPanel.onChannel = (to) => { if (to && tab === "chat") boss.setDefaultRecipient(to); };
 
@@ -138,17 +142,18 @@ function writeHash() {
 
 function renderTabs() {
   tabsBar.replaceChildren(...TABS.map((t) =>
-    h("button", { class: `tab${t === tab ? " active" : ""}`, onclick: () => {
+    h("button", { class: `tab${t === tab ? " active" : ""}`, title: t === "settings" ? "Settings" : undefined, onclick: () => {
       if (t === "settings" && focus.kind === "agent") settings.select(focus.id);
       tab = t; render();
     } },
-      { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", audit: "Audit", settings: "Settings" }[t],
+      { activity: "Activity", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", audit: "Audit", outbox: "Outbox", settings: "⚙" }[t],
+      t === "outbox" && outbox.count ? h("span", { class: "badge quiet" }, String(outbox.count)) : null,
       t === "audit" && audit.count ? h("span", { class: "badge" }, String(audit.count)) : null,
       t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null,
       t === "watchlist" && watchlist.count ? h("span", { class: "badge quiet" }, String(watchlist.count)) : null)));
   writeHash();
   // Swap the panel only on a real tab change: re-attaching an element resets its scroll.
-  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, audit: auditRoot, settings: settingsRoot }[tab];
+  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, audit: auditRoot, outbox: outboxRoot, settings: settingsRoot }[tab];
   if (panelRoot.firstElementChild !== panel) panelRoot.replaceChildren(panel);
 }
 
@@ -203,6 +208,7 @@ function frame() {
       if (tab === "approvals") approvals.render();
       if (tab === "watchlist") { watchlist.render(); watchlist.maybeRefresh(); }
       if (tab === "audit") { audit.render(); audit.maybeRefresh(); }
+      if (tab === "outbox") outbox.render();
     }
   }
   requestAnimationFrame(frame);
@@ -215,6 +221,7 @@ async function loadState() {
   approvals.items = (snap as any).approvals ?? [];
   watchlist.refresh();
   audit.refresh();
+  outbox.refresh();
   scene?.sync();
   render();
 }
@@ -226,6 +233,7 @@ function connect() {
     if (ev.type === "roster_updated") { loadState(); }
     if (["approval_requested", "approval_decided", "audit_resolved", "audit_review"].includes(ev.type)) { approvals.refresh(); }
     if (ev.type === "watchlist_added" || ev.type === "watchlist_status") { watchlist.refresh(); }
+    if (OUTBOX_EVENTS.has(ev.type)) { outbox.refresh(); }
     if (AUDIT_EVENTS.has(ev.type) && (tab === "audit" || !["status", "task_done"].includes(ev.type))) { audit.refresh(); }
     if (tab === "agent" && focus.kind === "agent" && ev.agent === focus.id &&
         ["approval_requested", "approval_decided", "captain_report", "task_done"].includes(ev.type)) {

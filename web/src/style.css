@@ -126,7 +126,7 @@ aside { display: flex; flex-direction: column; min-height: 0; border-left: 1px s
 /* sidebar */
 .tabs { display: flex; gap: 0; justify-content: space-between; padding: 8px 4px 0; border-bottom: 1px solid var(--grid); overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
-.tab { border: 0; background: none; padding: 8px 2px; font-size: 12px; flex: 0 0 auto; white-space: nowrap; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; }
+.tab { border: 0; background: none; padding: 8px 1px; font-size: 11.5px; letter-spacing: -.1px; flex: 0 0 auto; white-space: nowrap; border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; }
 .tab.active { color: var(--ink); border-bottom-color: var(--clay); }
 .panel { flex: 1; min-height: 0; overflow: hidden; display: flex; }
 .panel > * { flex: 1; min-height: 0; overflow-y: auto; }
@@ -305,3 +305,18 @@ input[type="color"] { width: 32px; height: 26px; padding: 1px; }
 .digest-text { white-space: pre-wrap; font: 12px/1.5 var(--sans); background: var(--paper-light); border-radius: 8px; padding: 10px; margin: 6px 0 0; overflow-wrap: anywhere; }
 .card-audit { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .card-audit ul { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-2); }
+
+/* Outbox tab */
+.audit-card.outbox { border-left-color: var(--sage); }
+.audit-card.outbox.s-blocked { border-left-color: var(--danger); }
+.audit-card.outbox.s-awaiting { border-left-color: var(--gold); }
+.audit-card.outbox.s-draft, .audit-card.outbox.s-changes { border-left-color: var(--slate); }
+.audit-card.outbox.s-rejected, .audit-card.outbox.s-expired { opacity: .6; }
+.outbox-title { font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
+.outbox-header { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--grid); }
+.outbox-problems { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-2); }
+.outbox-problems.errors { color: var(--danger); }
+.outbox-next { background: color-mix(in srgb, var(--sage) 12%, transparent); border-radius: 8px; padding: 7px 9px; }
+a.btn { text-decoration: none; display: inline-block; }
+.tab:last-child { font-size: 15px; line-height: 1; padding: 6px 3px; }
+.tab .badge { font-size: 10px; min-width: 15px; padding: 1px 3px; margin-left: 1px; }

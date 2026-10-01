@@ -35,7 +35,14 @@ _PT_WORDS = r"(?:(?i:price\s+targets?|target\s+price)|\bPT\b)"
 _USD = r"\$\s?(\d[\d,]*(?:\.\d+)?)"
 _PT_AFTER = re.compile(_PT_WORDS + r"[^$\n]{0,40}?" + _USD)
 _PT_BEFORE = re.compile(_USD + r"\s+" + _PT_WORDS)
-_STREET = re.compile(r"street|consensus|analyst|sell-side|\bmean\b|\bmedian\b|\baverage\b", re.IGNORECASE)
+# A sentence quotes the Street only when it attributes the figure and doesn't claim it as ours.
+_STREET = re.compile(
+    r"\bconsensus\b|\bstreet\b|\bsell-side\b|"
+    r"\b(?:mean|median|average)\s+(?:analyst\s+)?(?:price\s+target|target|pt)\b|"
+    r"\banalysts?['’]?\s+(?:mean|median|average|consensus|estimates?|targets?|expect|see)\b",
+    re.IGNORECASE)
+_OURS = re.compile(r"\b(?:our|we)\b", re.IGNORECASE)
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z\[(\"'*$])")
 _RATING = re.compile(
     r"\b(?:we\s+rate|rating\s*(?::|of|is)|rated|initiat\w+\s+(?:at|with))\W+(?:\w+\W+){0,3}?"
     r"(buy|sell|hold|outperform|underperform|overweight|underweight|neutral)\b", re.IGNORECASE)
@@ -54,19 +61,34 @@ def _usd(n: float) -> str:
     return f"${n:,.2f}"
 
 
-def price_targets(text: str) -> list[float]:
-    """Price targets a text states as its own (lines quoting the Street are left alone)."""
+def sentences(text: str) -> list[str]:
+    """Sentences (and list items), so one clause can't excuse another in the same paragraph."""
+    return [s for line in text.splitlines() for s in _SENTENCE_END.split(line.strip()) if s.strip()]
+
+
+def is_street(sentence: str) -> bool:
+    """The sentence attributes its figure to the Street and doesn't claim it as ours."""
+    return bool(_STREET.search(sentence)) and not _OURS.search(sentence)
+
+
+def sentence_targets(sentence: str) -> list[float]:
     out: list[float] = []
-    for line in text.splitlines():
-        if _STREET.search(line):
-            continue
-        for rx in (_PT_AFTER, _PT_BEFORE):
-            for m in rx.finditer(line):
-                try:
-                    out.append(float(m.group(1).replace(",", "")))
-                except ValueError:
-                    continue
+    for rx in (_PT_AFTER, _PT_BEFORE):
+        for m in rx.finditer(sentence):
+            try:
+                out.append(float(m.group(1).replace(",", "")))
+            except ValueError:
+                continue
     return out
+
+
+def matches_target(n: float, targets: list[float]) -> bool:
+    return any(abs(n - t) <= max(0.01, 0.005 * abs(t)) for t in targets)
+
+
+def price_targets(text: str) -> list[float]:
+    """Price targets a text states as its own (sentences quoting the Street are left alone)."""
+    return [n for s in sentences(text) if not is_street(s) for n in sentence_targets(s)]
 
 
 def _targets(model: dict) -> list[float]:
@@ -99,8 +121,7 @@ def _figure_findings(text: str, subject: str, ticker: str | None,
         return [Finding("unapproved_figures", "flag", subject,
                         f"States a price target ({', '.join(_usd(n) for n in found[:4])}) but "
                         f"{name} has no approved model.")]
-    off = [n for n in found
-           if not any(abs(n - t) <= max(0.01, 0.005 * abs(t)) for t in approved["targets"])]
+    off = [n for n in found if not matches_target(n, approved["targets"])]
     if not off:
         return []
     if approved["version"] is None:
@@ -126,8 +147,8 @@ def check_document(kind: str, text: str, *, subject: str, ticker: str | None = N
                            + ("finished memo." if final else f"{kind}.")))
     if kind == "pitch":
         targets = price_targets(text)
-        rated = [m.group(1) for line in text.splitlines() if not _STREET.search(line)
-                 for m in _RATING.finditer(line)]
+        rated = [m.group(1) for s in sentences(text) if not is_street(s)
+                 for m in _RATING.finditer(s)]
         if targets or rated:
             what = []
             if targets:

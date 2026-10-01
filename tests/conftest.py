@@ -109,7 +109,7 @@ def make_office(monkeypatch, tmp_path):
         llm = FakeLLM(ref)
         ledger = Ledger(store, daily_cap=daily_cap, audit_reserve=audit_reserve)
         office_ = Office(store=store, llm=llm, ledger=ledger, quant_dir=tmp_path / "quant",
-                         memory_dir=tmp_path / "memory")
+                         memory_dir=tmp_path / "memory", outbox_dir=tmp_path / "outbox")
         ref["office"] = office_
         return office_, llm
 

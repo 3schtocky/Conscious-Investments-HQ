@@ -502,6 +502,9 @@ def desk_tools(wing: str, tier: str) -> list[Tool]:
         if tier == "lead":
             tools = [RUN_SCREEN, *tools, ADD_TO_WATCHLIST]
         return tools
+    if wing == "client_relations":
+        from hq.tools.client import client_tools
+        return [*client_tools(tier), LIST_FILES, READ_FILE, GET_MODEL]
     if wing == "audit":   # Audit reads everything (Quant's drafts included) and writes nothing
         from hq.tools.audit import audit_tools
         return [*audit_tools(tier), LIST_FILES, READ_FILE, GET_MODEL]

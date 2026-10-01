@@ -146,7 +146,7 @@ async def test_a_target_that_differs_from_the_approved_model_is_flagged(make_off
     register_model(office, "RMBS", 1)
     office.store.set_model_status("RMBS", 1, "approved")
     llm.script("Harbor",
-               tool_turn(("request_approval", {"kind": "newsletter", "ticker": "RMBS", "title": "Weekly",
+               tool_turn(("request_approval", {"kind": "portfolio", "ticker": "RMBS", "title": "Weekly",
                                                "summary": "RMBS: price target $4.50, a clear buy."})),
                text_turn("Sent."))
     llm.script("Vera", vera_upholds(), text_turn("Upheld."))
@@ -543,9 +543,9 @@ async def test_a_card_without_a_ticker_may_quote_any_approved_target(make_office
     register_model(office, "RMBS", 1)
     office.store.set_model_status("RMBS", 1, "approved")
     llm.script("Harbor",
-               tool_turn(("request_approval", {"kind": "newsletter", "title": "Weekly A",
+               tool_turn(("request_approval", {"kind": "other", "title": "Weekly A",
                                                "summary": "RMBS price target $2.00, per Quant."}),
-                         ("request_approval", {"kind": "newsletter", "title": "Weekly B",
+                         ("request_approval", {"kind": "other", "title": "Weekly B",
                                                "summary": "RMBS price target $9.00."})),
                text_turn("Sent."))
     llm.script("Vera", vera_upholds(), text_turn("Upheld."))

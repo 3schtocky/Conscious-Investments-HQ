@@ -33,7 +33,7 @@ class Office:
     def __init__(self, *, store: Store | None = None, llm: ModelClient | None = None,
                  ledger: Ledger | None = None, db_path: Path | str | None = None,
                  tone: str | None = None, quant_dir: Path | None = None,
-                 memory_dir: Path | None = None):
+                 memory_dir: Path | None = None, outbox_dir: Path | None = None):
         self.store = store or Store(db_path or DATA_DIR / "office.db")
         self.bus = EventBus(self.store)
         self.ledger = ledger or Ledger(self.store)
@@ -45,6 +45,8 @@ class Office:
         self._model_locks: dict[str, asyncio.Lock] = {}
         from hq.memory import MEMORY_DIR
         self.memory_dir = memory_dir or MEMORY_DIR
+        from hq.outbox import OUTBOX_DIR
+        self.outbox_dir = outbox_dir or OUTBOX_DIR   # Client Relations' ready-to-publish files
         self._running: set[asyncio.Task] = set()
         # The Captain's tone filter: "llm" (Haiku, billed to Juno) or "rules" (free, demo).
         self.tone_engine = tone or office().get("tone", {}).get("engine", "llm")
@@ -360,6 +362,7 @@ class Office:
             if newest and m and newest["version"] > m["version"]:
                 raise ValueError(f"v{newest['version']} is already the official model; approving "
                                  f"v{m['version']} would roll it back. Decline this card instead.")
+        self._outbox_decided(card, decision)   # may refuse an approval (ValueError) before it is recorded
         self.store.decide_approval(approval_id, decision, note)
         mdl = self.store.model(p.get("ticker", ""), p.get("version", 0)) if card["kind"] == "model" else None
         if mdl and mdl["status"] == "awaiting" and mdl["approval_id"] == approval_id:
@@ -440,12 +443,66 @@ class Office:
             return False
         text = ("Good morning. It's Monday, so a fresh Gems or Core screen is ready whenever you want "
                 "it. Pulling the data is free; Scout and Pip reviewing the results and writing pitches "
-                "costs a little. Just say the word and I'll route it.")
+                "costs a little. Harbor and Wren can also draft this week's newsletter from what is "
+                "approved and on the watchlist. Just say the word and I'll route it.")
         self.store.add_chat(channel=f"dm:{CAPTAIN}|chief_of_staff", sender="chief_of_staff",
                             recipients=[CAPTAIN], text=text)
         self.bus.publish("captain_report", "chief_of_staff", None, text=text)
         self.bus.publish("weekly_reminder", None, None, week=week)
         return True
+
+    # outbox --------------------------------------------------------------------------------
+    def _outbox_decided(self, card: dict, decision: str) -> None:
+        """Carry the Captain's decision into the Outbox, before the card itself is closed.
+        Approval hands the issue to the publisher (today: marks the files ready to paste), and
+        is refused with a reason if the issue can no longer go out as it stands. Any other
+        decision is best effort: a missing Outbox entry must not stop him declining a card."""
+        from hq import outbox
+        from hq.publish import get_publisher
+
+        p = card["payload"]
+        issue, memo = p.get("issue"), p.get("deliverable")
+        if card["kind"] == "newsletter" and issue:
+            if decision == "approved":
+                try:
+                    errors = [e for e in outbox.recheck(self, issue) if e["level"] == "error"]
+                except (KeyError, OSError) as e:
+                    raise ValueError(f"The issue's files are missing from the Outbox ({e}). Ask "
+                                     "for it to be finalized again.") from e
+                if errors:
+                    raise ValueError("What is approved changed since this issue was finalized: "
+                                     + "; ".join(e["msg"] for e in errors[:3])
+                                     + " Request changes so it is revised against the current model.")
+                try:
+                    publisher = get_publisher(p.get("publisher"))
+                except ValueError:
+                    publisher = get_publisher("outbox")   # a renamed publisher must not strand the issue
+                publisher.publish(self, issue)
+            else:
+                try:
+                    outbox.set_status(self.outbox_dir, issue, decision)
+                except (KeyError, OSError):
+                    log.exception("could not update outbox issue %s", issue)
+            self.bus.publish("outbox_status", card["agent"], card["task_id"], issue=issue, status=decision)
+        elif card["kind"] == "deliverable" and memo:
+            try:
+                outbox.set_deliverable_status(self.outbox_dir, memo, decision)
+            except (KeyError, OSError) as e:
+                if decision == "approved":
+                    raise ValueError(f"The client file is missing from the Outbox ({e}). Ask for "
+                                     "the memo to be packaged again.") from e
+                log.exception("could not update outbox deliverable %s", memo)
+            self.bus.publish("outbox_status", card["agent"], card["task_id"], deliverable=memo,
+                             status=decision)
+
+    def outbox_view(self) -> dict:
+        from hq import outbox
+
+        who = lambda a: self.name(a) if a in self.agents else a
+        issues = [{**m, "drafted_by_name": who(m.get("drafted_by")),
+                   "revised_by_name": who(m.get("revised_by"))} for m in outbox.issues(self.outbox_dir)]
+        return {"issues": issues, "deliverables": outbox.deliverables(self.outbox_dir),
+                "publisher": outbox.settings()["publisher"]}
 
     def model_lock(self, ticker: str) -> asyncio.Lock:
         return self._model_locks.setdefault(ticker, asyncio.Lock())

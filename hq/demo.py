@@ -304,27 +304,91 @@ def scene_lobby_sync(office: Office, llm: DemoLLM) -> None:
                   title="Monday sync (demo)")
 
 
+_issue_no = itertools.count(1)
+
+LEAD = """## The idea: let the numbers go first
+
+Most stock ideas start with a story and go looking for numbers. We work the other way round. Every week the screen reads the filings of the whole US market and asks one narrow question: where is growth speeding up while margins widen, before the share price has fully noticed? That is the pattern that showed up early in names like Eos Energy and Rambus, and it is rarer than it sounds. Most weeks only a handful of companies pass, and most of those fall away once we read them closely.
+
+Reading closely is the part that takes time. A jump in revenue can be one large order that never repeats. A margin can widen because a company stopped investing. A share price can move because a commodity did. Each name that survives gets a one-page pitch that says plainly why it screened, what would have to be true for the growth to last, and what could go wrong. For companies that still lose money, we add how many years of cash they have left.
+
+What a pitch never contains is a valuation. Putting a number on a company is the Quant team's job, and it happens only after a name goes to full research. Until a model has been built, checked and approved, we do not publish a target or a rating for anything. That rule costs us some excitement. It also means that when a number does appear in this letter, it is one we are prepared to be held to.
+"""
+
+WATCHING_NONE = """## What we're watching
+
+Nothing new cleared the bar this week. We would rather send a short letter than pad the list.
+"""
+
+CLOSE = """## What happens next
+
+Names stay on the watchlist until one earns a full research assignment. When that happens you will read the thesis here first, then the model's numbers once they are approved, with the bear case given the same room as the bull case. We track every idea from the day it was flagged against the S&P 500, including the ones that go nowhere, and we will show that record here in full once the paper portfolio opens. If an idea stops working, we will say so in this letter rather than let it quietly drop off the list.
+"""
+
+
+def _demo_issue(material: dict, n: int) -> dict:
+    """A newsletter built from the real publishable material (the demo's own watchlist)."""
+    def pct(v):
+        return "n/a" if v is None else f"{v * 100:+.1f}%"
+
+    watching = [w for w in material.get("watchlist", []) if w.get("status") != "dropped"][:4]
+    if watching:
+        lines = "\n".join(
+            f"- **{w['ticker']}**: {w['thesis'].rstrip('.')}. Since we flagged it on {w['flagged_on']}: "
+            f"{pct(w['return_since_flagged'])}, or {pct(w['vs_sp500'])} against the S&P 500."
+            for w in watching)
+        section = "## What we're watching\n\nThese are ideas, not recommendations, and none has a valuation yet.\n\n" + lines + "\n"
+        names = ", ".join(w["ticker"] for w in watching)
+        x = f"This week's note: how we screen for growth that is speeding up, and the names on our watchlist ({names}). Ideas only, no targets yet. (demo)"
+    else:
+        section, names = WATCHING_NONE, ""
+        x = "This week's note: how we screen for growth that is speeding up, and why a pitch never carries a valuation. (demo)"
+    linkedin = ("Our weekly note is out. We explain how the screen looks for companies where growth is "
+                "accelerating and margins are widening, why a one-page pitch never contains a valuation, "
+                "and what is on the watchlist this week. Every idea is tracked against the S&P 500 from "
+                "the day it was flagged. (demo)")
+    return {"title": f"Weekly note {n}: numbers first (demo)", "body": f"{LEAD}\n{section}\n{CLOSE}",
+            "x_post": x[:280], "linkedin_post": linkedin}
+
+
 def scene_newsletter(office: Office, llm: DemoLLM) -> None:
+    """Free dry run of Client Relations with the REAL tools: Wren drafts from what is actually
+    publishable, the code checks run, Harbor finalizes and the issue lands in the Outbox with
+    its approval card. Only the agents' words are scripted."""
+    n = next(_issue_no)
+    issue: dict = {}
+
+    def wren_drafts(params: dict) -> TurnResult:
+        return think("Plain and human. Lead with how we work, then the watchlist as ideas only: "
+                     "no targets, no ratings, because none of these has an approved model.", None,
+                     ("save_newsletter", _demo_issue(_last_tool_json(params), n)))(params)
+
+    def wren_returns(params: dict) -> TurnResult:
+        issue.update(_last_tool_json(params))
+        return think("The checks came back clean.", None,
+                     ("submit_result", {"findings": f"Draft saved as issue {issue.get('issue')}: "
+                                        f"{issue.get('words')} words plus one X post and one LinkedIn "
+                                        "post. No check errors.",
+                                        "figures": [], "open_questions": [], "confidence": "high"}))(params)
+
     llm.script("cr_lead",
-               think("This week's newsletter: lead with the gem hunt, then the memo pipeline. "
-                     "Wren drafts, I finalize and run lint and the disclosure check.", None,
-                     ("delegate", {"to": "Wren", "job": "Draft this week's newsletter (demo): gem "
-                                   "hunt recap and memo pipeline, 400 words, plus two social "
-                                   "teasers."})),
-               think("Wren's draft reads well. Disclosure added. Ready for the Captain's "
-                     "approval.", None,
-                     ("request_approval", {"kind": "newsletter", "title": "This week's newsletter "
-                                           "(demo)", "summary": "Gem hunt recap and memo "
-                                           "pipeline, 400 words, plus two social teasers. "
-                                           "Disclosure included. Ready for Substack on your "
-                                           "OK."})),
-               think("Done.", "Newsletter ready for approval."))
+               think("This week's note. Wren drafts from what is publishable; I check the voice and "
+                     "the numbers, then finalize.", None,
+                     ("delegate", {"to": "Wren", "job": "Draft this week's newsletter (demo): start "
+                                   "from newsletter_material, lead with how we screen, list the "
+                                   "watchlist as ideas only, and save it with save_newsletter. Return "
+                                   "the issue id."})),
+               lambda p: think("Reading Wren's draft before it goes anywhere.", None,
+                               ("read_newsletter", {"issue": issue.get("issue", "")}))(p),
+               lambda p: think("It says what we do and promises nothing. The checks pass. Building "
+                               "the files and filing it for the Captain.", None,
+                               ("finalize_newsletter", {"issue": issue.get("issue", ""),
+                                                        "note": "Demo issue built from the demo watchlist."}))(p),
+               think("Done.", "This week's note is in the Outbox for approval."))
     llm.script("cr_associate",
-               think("Plain, human tone. No hype. Hook with the gem hunt.", None,
-                     ("submit_result", {"findings": "Draft: 'Two small caps worth a closer look "
-                                        "this week...' (demo). Two teasers written.",
-                                        "figures": [], "open_questions": [],
-                                        "confidence": "high"})))
+               think("First, what are we actually allowed to publish this week?", None,
+                     ("newsletter_material", {})),
+               wren_drafts, wren_returns)
     office.assign("Harbor", "Prepare this week's newsletter (demo).", title="Newsletter (demo)")
 
 
@@ -478,8 +542,13 @@ async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0) -> None:
         llm.scripts.clear()   # leftovers from an interrupted scene must not play later
         # Nobody decides the demo's cards, so keep only the newest few instead of a pile.
         pending = office.store.approvals("pending")
+        import shutil
         for card in pending[:-DEMO_PENDING_KEEP]:
             office.store.decide_approval(card["id"], "expired", "Tidied up by the demo")
+            office._outbox_decided(card, "expired")   # its Outbox entry stops waiting too
+        folders = [f for f in (office.outbox_dir / "newsletters").glob("*") if f.is_dir()]
+        for stale in sorted(folders, key=lambda f: f.stat().st_mtime)[:-DEMO_PENDING_KEEP]:
+            shutil.rmtree(stale, ignore_errors=True)   # the demo's own Outbox folder only
         for held in office.store.memory_writes(status="pending")[:-DEMO_PENDING_KEEP]:
             office.store.set_memory_status(held["id"], "expired")
         usable = office.ledger.daily_cap - office.ledger.audit_reserve

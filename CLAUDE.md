@@ -17,6 +17,7 @@ You are building (and later maintaining) an AI-run stock-picking office for **Co
 - The office only works when the Captain assigns work. Captain messages go through a tone preview (original kept in the log; instructions, numbers and tickers must survive the rewrite).
 - Audit: Tally's checks are plain code in `hq/audit.py` and run for free on every approval card and finished assignment (flags and notes). Vera is called in only on flags, or when the Captain sends her a finding. She can pause one colleague at a time and alert the Captain; only the Captain unpauses, and a pause survives a restart.
 - Office memory: a desk note passes the code screen (`hq.audit.screen_note`) or waits for the Captain; wiki changes always wait for the Captain. The daily audit digest is compiled by code, never by a model call.
+- Client Relations: Wren drafts and Harbor finalizes the weekly newsletter and client memos into `outbox/`. `hq/outbox.py: check_issue` is the code gate (only approved numbers, watchlist names as ideas only, no hype or advice); a failing issue can't be finalized. `hq/publish.py` holds the Publisher interface; the only publisher writes ready-to-paste files and never posts anything.
 - Nothing is published or entered into the paper portfolio without the Captain's approval.
 
 ## Conventions

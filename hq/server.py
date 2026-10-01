@@ -80,9 +80,11 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
             db = DATA_DIR / "demo.db"
             for suffix in ("", "-wal", "-shm"):
                 Path(f"{db}{suffix}").unlink(missing_ok=True)
+            import shutil
+            shutil.rmtree(DATA_DIR / "demo-outbox", ignore_errors=True)
             llm = DemoLLM(speed=demo_speed)
             office = Office(db_path=db, llm=llm, tone="rules", quant_dir=DATA_DIR / "demo-quant",
-                            memory_dir=DATA_DIR / "demo-memory")
+                            memory_dir=DATA_DIR / "demo-memory", outbox_dir=DATA_DIR / "demo-outbox")
             llm.office = office
 
             async def loop() -> None:
@@ -201,6 +203,19 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         office().store.set_watch_status(watch_id, "dropped")
         office().bus.publish("watchlist_status", None, None, watch=watch_id, status="dropped")
         return JSONResponse({"ok": True})
+
+    @app.get("/api/outbox")
+    async def outbox_view() -> JSONResponse:
+        return JSONResponse(office().outbox_view())
+
+    @app.get("/outbox/{path:path}")
+    async def outbox_file(path: str) -> FileResponse:
+        """A newsletter or deliverable file, confined to the Outbox folder."""
+        root = office().outbox_dir.resolve()
+        target = (root / path).resolve()
+        if not target.is_relative_to(root) or not target.is_file() or target.name.startswith("."):
+            raise HTTPException(404)
+        return FileResponse(target)
 
     @app.get("/api/models")
     async def models(ticker: str | None = None) -> JSONResponse:

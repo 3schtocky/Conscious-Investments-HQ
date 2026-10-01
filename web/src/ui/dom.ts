@@ -36,8 +36,8 @@ export function plain(s: string): string {
 
 /** Download link for an attachment path like "quant/META_model_v1.xlsx" or "brief.md". */
 export function fileHref(path: string, ticker?: string | null): string | null {
+  if (path.startsWith("/files/") || path.startsWith("/outbox/")) return path;
   if (!ticker) return null;
-  if (path.startsWith("/files/")) return path;
   return path.startsWith("quant/") ? `/files/quant/${ticker}/${path.slice(6)}` : `/files/coverage/${ticker}/${path}`;
 }
 

@@ -127,6 +127,9 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
     case "audit_flag": return s(ev.severity === "flag" ? "🔍 Audit flag · " : "🗒️ Audit note · ", who(ev.agent), ` · ${short(`${ev.subject}: ${ev.detail}`, 150)}`);
     case "audit_resolved": return s("🔏 ", ev.by === "captain" ? who("captain") : who(ev.by), ` ${ev.verdict} the finding on ${short(String(ev.subject), 80)}`);
     case "memory_held": return s("🗂️ ", who(ev.agent), ev.kind === "wiki" ? " proposed a wiki entry for your approval" : " has a desk note held for your review");
+    case "outbox_draft": return s("✍️ ", who(ev.agent), ` saved a newsletter draft: ${short(String(ev.title), 70)} (${ev.words} words${ev.status === "blocked" ? ", checks failing" : ""})`);
+    case "outbox_ready": return s("📬 ", who(ev.agent), ` put "${short(String(ev.title), 70)}" in the Outbox for your approval`);
+    case "outbox_status": return ev.status === "approved" ? s("📮 Ready to paste: ", ev.issue ? "the newsletter issue" : "the client memo", " you approved is in the Outbox") : null;
     case "audit_digest": return s("🧾 ", who(ev.agent), ` posted the audit digest for ${ev.day}`);
     case "approval_decided": return s("⚖️ ", who("captain"), ` ${ev.decision === "approved" ? "approved" : ev.decision === "changes" ? "asked for changes on" : "declined"} "${ev.title}"`);
   }
@@ -138,7 +141,7 @@ interface Doc { ts: number; kind: string; title: string; text: string; source: s
   note?: string | null; attachments?: string[]; ticker?: string | null; version?: number | null; file?: string }
 
 const DOC_KIND: Record<string, string> = { brief: "📄 Brief", model: "📊 Model", conflict: "⚖️ Conflict",
-  portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", other: "📝 Decision request", report: "📣 Report", result: "📦 Hand-back",
+  portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", deliverable: "📦 Client memo", other: "📝 Decision request", report: "📣 Report", result: "📦 Hand-back",
   workbook: "📗 Excel model" };
 
 export class AgentPanel {

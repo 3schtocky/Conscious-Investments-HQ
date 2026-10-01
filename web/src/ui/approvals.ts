@@ -12,7 +12,7 @@ export interface Approval {
 }
 
 const KIND: Record<string, string> = { brief: "📄 Brief review", model: "📊 Model approval",
-  conflict: "⚖️ Thesis conflict", portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", other: "📝 Decision" };
+  conflict: "⚖️ Thesis conflict", portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", deliverable: "📦 Client memo", other: "📝 Decision" };
 const DECIDED: Record<string, string> = { approved: "✅ Approved", changes: "✏️ Changes requested", rejected: "✖️ Declined",
   expired: "⌛ Expired (demo tidy-up)" };
 
@@ -64,7 +64,8 @@ export class ApprovalsPanel {
       this.auditEl(a),
       a.payload.attachments?.length ? h("div", { class: "attachments" }, "📎 ", ...a.payload.attachments.flatMap((f, i) => {
         const href = fileHref(f, a.payload.ticker);
-        const el = href ? h("a", { href, download: "" }, f.split("/").pop()!) : h("span", {}, f);
+        const page = f.endsWith(".html");   // a web page opens in a new tab; everything else downloads
+        const el = href ? h("a", page ? { href, target: "_blank", rel: "noopener" } : { href, download: "" }, f.split("/").pop()!) : h("span", {}, f);
         return i ? [", ", el] : [el];
       })) : null,
       a.status === "pending"
