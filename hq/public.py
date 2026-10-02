@@ -151,7 +151,7 @@ def state(office: Office, *, demo: bool) -> dict:
                        "paused": a.paused, "task": task})
     captain = cast.get("captain", {}) or {}
     return {
-        "office": {"clocked_out": office.clocked_out, "day": office.ledger.today(), "demo": demo,
+        "office": {"clocked_out": office.clocked_out, "held": office.held, "day": office.ledger.today(), "demo": demo,
                    "max_concurrent": office_config()["limits"]["max_concurrent_agents"]},
         "wings": {k: v["name"] for k, v in cast["wings"].items()},
         "captain": {"nickname": office.captain_name, "avatar": captain.get("avatar")},
@@ -172,7 +172,7 @@ def event(office: Office, ev: dict[str, Any]) -> dict | None:
     base = {"id": ev.get("id"), "ts": ev.get("ts"), "type": kind, "agent": agent, "task_id": None}
     if kind == "status":
         status = ev.get("status")
-        return {**base, "status": status} if status in ("idle", "working", "paused") else None
+        return {**base, "status": status} if status in ("idle", "working", "paused", "held") else None
     if kind == "move":
         return {**base, "to": ev.get("to")}
     if kind == "meeting":
@@ -193,6 +193,8 @@ def event(office: Office, ev: dict[str, Any]) -> dict | None:
         return base
     if kind == "office_status":
         return {**base, "agent": None, "status": ev.get("status")}
+    if kind == "office_hold":
+        return {**base, "agent": None, "held": bool(ev.get("held"))}
     if kind in ("watchlist_added", "watchlist_status", "portfolio_changed", "roster_updated"):
         return {**base, "agent": None}   # a nudge to fetch the public view again, no details
     if kind == "outbox_status" and ev.get("status") == "approved":

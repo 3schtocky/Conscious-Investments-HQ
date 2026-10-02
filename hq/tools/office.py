@@ -25,6 +25,7 @@ class ToolContext:
     agent: Agent
     task: dict
     finished: dict | None = None   # set by submit_result: ends the task after this turn
+    hold_turn: bool = False        # the office is paused and this turn only answers the Captain
 
 
 Handler = Callable[[ToolContext, dict], Awaitable[str]]

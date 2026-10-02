@@ -24,6 +24,7 @@ export function modelLabel(modelId: string): string {
 
 function statusLabel(a: AgentView, clockedOut: boolean): string {
   if (a.paused) return "Paused";
+  if (a.status === "held") return "On hold";
   if (a.status === "working") return a.live?.kind === "thinking" ? "Thinking" : a.live ? "Writing" : "Working";
   return clockedOut ? "Clocked out" : "At desk";
 }
@@ -130,6 +131,7 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
     case "outbox_draft": return s("✍️ ", who(ev.agent), ` saved a newsletter draft: ${short(String(ev.title), 70)} (${ev.words} words${ev.status === "blocked" ? ", checks failing" : ""})`);
     case "outbox_ready": return s("📬 ", who(ev.agent), ` put "${short(String(ev.title), 70)}" in the Outbox for your approval`);
     case "outbox_status": return ev.status === "approved" ? s("📮 Ready to paste: ", ev.issue ? "the newsletter issue" : "the client memo", " you approved is in the Outbox") : null;
+    case "office_hold": return s(ev.held ? "⏸️ " : "▶️ ", who("captain"), ev.held ? " paused the office. Work waits; message anyone to talk one to one." : " resumed the office");
     case "audit_digest": return s("🧾 ", who(ev.agent), ` posted the audit digest for ${ev.day}`);
     case "approval_decided": return s("⚖️ ", who("captain"), ` ${ev.decision === "approved" ? "approved" : ev.decision === "changes" ? "asked for changes on" : "declined"} "${ev.title}"`);
   }

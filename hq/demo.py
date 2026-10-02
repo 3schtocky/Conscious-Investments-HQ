@@ -163,7 +163,15 @@ class DemoLLM:
         m = _WHO.search(params["system"])
         who = m.group(1) if m else "?"
         await asyncio.sleep(0.6 / self.speed)   # time to first token
-        if self.scripts[who]:
+        last = _text_of(params["messages"][-1]["content"])
+        if "has paused the whole office" in last:
+            # The office is paused and the Captain wrote to this agent: answer him, and leave the
+            # scene's script untouched so the work picks up where it stopped on resume.
+            first = _text_of(params["messages"][0]["content"]).strip().splitlines()[0][:90]
+            result = think("The office is paused and the Captain is asking me directly. I stop and answer.",
+                           f"(demo) Paused where I am on: {first} Happy to walk you through it; nothing "
+                           "moves until you resume.")(params)
+        elif self.scripts[who]:
             result = self.scripts[who].popleft()(params)
         else:
             result = self.improvise(who, params)

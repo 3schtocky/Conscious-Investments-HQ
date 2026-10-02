@@ -30,6 +30,15 @@ TERMINAL = {"done", "declined"}
 TRUNCATED_NOTE = ("[Office] Your last reply hit the length limit and was cut off. Continue from "
                   "where it stopped, more concisely.")
 NOTES_LIMIT = 3000   # chars of associate text passed along with a submitted result
+HOLD_NOTE = ("[Office] {captain} has paused the whole office to read and to talk with you one to "
+             "one. Answer his message fully, in plain text: what you write in this reply is delivered "
+             "to him. You may read files to answer, but do not continue your task, start anything "
+             "new or contact colleagues until he resumes the office.")
+RESUME_NOTE = ("[Office] {captain} has your answer. Your next turn comes when he resumes the office (or "
+               "writes to you again); when the office resumes, carry on with your task from where you stopped.")
+# What an agent may still do while the office is paused: answer the Captain, and read.
+HOLD_TOOLS = {"report_to_captain", "read_file", "list_files", "get_model", "read_portfolio", "read_screen",
+              "read_newsletter", "newsletter_material", "audit_log", "read_spend", "read_findings"}
 
 
 class Agent:
@@ -45,6 +54,11 @@ class Agent:
         self.guard: TaskGuard | None = None
         self.status = "idle"
         self.paused_by: str | None = None   # who paused this agent (the Captain or Audit)
+        # While the whole office is paused, an agent takes a turn only to answer the Captain:
+        # each message he sends this agent grants one turn.
+        self.hold_passes = 0
+        self.hold_wake = asyncio.Event()
+        self.hold_chat_task: int | None = None   # a task that is itself a paused-office chat
 
     def update_profile(self, entry: dict) -> None:
         self.nickname: str = entry["nickname"]
@@ -158,10 +172,13 @@ class Agent:
         self.set_status("working", title=task["title"])
 
         last_stop: str | None = None
+        hold_turn = False
         try:
             while True:
                 if messages[-1]["role"] == "assistant" and last_stop != "pause_turn":
-                    ctx = ToolContext(office_, self, task)
+                    ctx = ToolContext(office_, self, task, hold_turn=hold_turn)
+                    if hold_turn:
+                        await self._answer_reaches_captain(task, messages[-1])
                     follow_up = await self._after_assistant(ctx, messages[-1], by_name,
                                                             truncated=last_stop == "max_tokens")
                     if ctx.finished is not None:
@@ -172,6 +189,11 @@ class Agent:
                             messages.append({"role": "user", "content": follow_up})
                             store.save_conversation(task_id, system, messages)
                         return self._finish(task, result=ctx.finished)
+                    if follow_up is None and hold_turn and task_id != self.hold_chat_task:
+                        # He interrupted real work with a question. The answer is not the end of
+                        # the task: it waits here and carries on when the office resumes.
+                        follow_up = [{"type": "text", "text": RESUME_NOTE.replace(
+                            "{captain}", office_.captain_name)}]
                     if follow_up is None:
                         final = _final_text(messages[-1])
                         return self._finish(task, result=final)
@@ -184,6 +206,11 @@ class Agent:
                     self.set_status("paused")
                     await self.gate.wait()
                     self.set_status("working", title=task["title"])
+                hold_turn = await self._office_gate(task)
+                if hold_turn:   # paused office: this turn answers the Captain and nothing else
+                    self._add_to_last_user_turn(messages, [*self._drain_inbox(), {
+                        "type": "text", "text": HOLD_NOTE.replace("{captain}", office_.captain_name)}])
+                    store.save_conversation(task_id, system, messages)
                 office_.ledger.check(is_audit=self.is_audit)
                 guard.before_turn(self._task_spend(task))
                 params = request_params(model_cfg, system=system, messages=messages,
@@ -258,13 +285,50 @@ class Agent:
             return None
         return content
 
+    async def _office_gate(self, task: dict) -> bool:
+        """Wait here while the whole office is paused. Returns True when this turn runs during
+        the pause because the Captain wrote to this agent (one message, one turn)."""
+        office_ = self.office
+        if not office_.held:
+            return False
+        if self.hold_passes <= 0:
+            self.set_status("held")
+            while office_.held and self.hold_passes <= 0:
+                self.hold_wake.clear()
+                await self.hold_wake.wait()
+            self.set_status("working", title=task["title"])
+        if office_.held:
+            self.hold_passes -= 1
+            return True
+        return False
+
+    @staticmethod
+    def _add_to_last_user_turn(messages: list[dict], blocks: list[dict]) -> None:
+        last = messages[-1]
+        content = last["content"]
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+        last["content"] = [*content, *blocks]
+
+    async def _answer_reaches_captain(self, task: dict, message: dict) -> None:
+        """During a pause the Captain is waiting on this reply: if the agent only wrote text,
+        deliver it to him as it would a report."""
+        used = {b.get("name") for b in message["content"] if b.get("type") == "tool_use"}
+        text = _final_text(message)
+        if text and "report_to_captain" not in used:
+            await self.office.report_to_captain(self.id, text, task_id=task["id"])
+
     async def _run_tool(self, ctx: ToolContext, block: dict, by_name: dict) -> dict:
         bus = self.office.bus
         name, tool_input = block.get("name"), block.get("input")
         bus.publish("tool_call", self.id, ctx.task["id"], tool=name, input=tool_input)
         tool = by_name.get(name)
         is_error = True
-        if tool is None:
+        if ctx.hold_turn and name not in HOLD_TOOLS:
+            text = (f"Not run: the office is paused by {self.office.captain_name}. Answer him in plain "
+                    "text (you may read files to answer). Your work continues when he resumes the "
+                    "office.")
+        elif tool is None:
             text = f"Unknown tool {name!r}. Available: {', '.join(by_name)}."
         elif not isinstance(tool_input, dict):
             text = "Tool input must be a JSON object."

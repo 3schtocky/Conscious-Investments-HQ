@@ -70,13 +70,14 @@ export class Overlay {
         t.name.textContent = this.state.name(id);
         const a = this.state.agents.get(id);
         // Drawn status indicators (no emojis on the floor): see .tag-icon[data-kind] in style.css
-        const kind = !a ? "captain" : a.paused ? "paused" : this.state.clockedOut && a.status !== "working" ? "away"
+        const kind = !a ? "captain" : a.paused || a.status === "held" ? "paused" : this.state.clockedOut && a.status !== "working" ? "away"
           : a.live?.kind === "thinking" ? "thinking" : a.live?.kind === "text" ? "writing" : a.status === "working" ? "working" : "";
         if (t.icon.dataset.kind !== kind) {
           t.icon.dataset.kind = kind;
           t.icon.textContent = kind === "away" ? "zz" : "";
           t.icon.title = { captain: "The Captain", paused: "Paused", away: "Clocked out", thinking: "Thinking",
             writing: "Writing", working: "Working", "": "" }[kind] ?? "";
+          if (a?.status === "held") t.icon.title = "On hold: the office is paused";
         }
         t.root.dataset.status = a ? (a.paused ? "paused" : a.status) : "captain";
         if (t.bubbleUntil && now > t.bubbleUntil) { t.bubble.classList.remove("show"); t.bubbleUntil = 0; }

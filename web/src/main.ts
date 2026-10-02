@@ -59,10 +59,18 @@ const themeBtn = h("button", { class: "icon-btn", title: "Switch light / dark", 
   applyTheme(next);
   try { localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
 } }, "◐");
+// Pause the whole office: nobody takes another step, so there is time to read models, reports
+// and concerns, and to talk to anyone one to one. Resume picks every task up where it stopped.
+const holdBtn = h("button", { class: "hold-btn", onclick: async () => {
+  holdBtn.disabled = true;
+  await fetch(state.held ? "/api/office/release" : "/api/office/hold", { method: "POST" }).catch(() => null);
+  holdBtn.disabled = false;
+} });
 const header = h("header", {},
   h("div", { class: "brand" }, h("span", { class: "brand-mark" }), h("span", {}, "Conscious Investments ", h("b", {}, "HQ"))),
   statusPill, demoBadge, awaiting, scorePill, crumbs,
   h("div", { class: "meter", title: "Today's API spend vs. the daily cap" }, h("div", { class: "meter-bar" }, spendFill), spendText),
+  holdBtn,
   signOut, themeBtn);
 
 const stage = h("div", { class: "stage" });
@@ -246,8 +254,8 @@ function renderViews() {
 function renderHeader() {
   if (visitor) {   // no spend, no desk: just whether the office is open
     const working = [...state.agents.values()].filter((a) => a.status === "working").length;
-    statusPill.textContent = state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
-    statusPill.dataset.state = state.clockedOut ? "closed" : working ? "busy" : "open";
+    statusPill.textContent = state.held ? "⏸ Paused" : state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
+    statusPill.dataset.state = state.held || state.clockedOut ? "closed" : working ? "busy" : "open";
     demoBadge.classList.toggle("hidden", !state.demo);
     const pv = portfolio.view;
     const scored = !!pv && pv.return !== null && pv.priced;
@@ -263,8 +271,14 @@ function renderHeader() {
   spendFill.dataset.level = pct > 90 ? "high" : pct > 60 ? "mid" : "low";
   spendText.textContent = `${money(state.spend.today)} of $${state.spend.cap.toFixed(2)} today`;
   const working = [...state.agents.values()].filter((a) => a.status === "working").length;
-  statusPill.textContent = state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
-  statusPill.dataset.state = state.clockedOut ? "closed" : working ? "busy" : "open";
+  statusPill.textContent = state.held ? "⏸ Paused" : state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
+  statusPill.dataset.state = state.held || state.clockedOut ? "closed" : working ? "busy" : "open";
+  holdBtn.textContent = state.held ? "▶ Resume office" : "⏸ Pause office";
+  holdBtn.title = state.held
+    ? "Resume: every task picks up where it stopped"
+    : "Pause the whole office: steps in progress finish, then everyone waits. You can still message anyone one to one.";
+  holdBtn.classList.toggle("held", state.held);
+  document.body.classList.toggle("office-held", state.held);
   demoBadge.classList.toggle("hidden", !state.demo);
   const n = approvals.pending;
   awaiting.textContent = `${n} awaiting you`;

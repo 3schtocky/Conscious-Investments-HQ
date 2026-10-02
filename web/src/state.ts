@@ -48,7 +48,7 @@ export interface ChatMsg {
 }
 
 export interface Snapshot {
-  office: { clocked_out: boolean; day: string; demo: boolean; max_concurrent: number };
+  office: { clocked_out: boolean; held?: boolean; day: string; demo: boolean; max_concurrent: number };
   wings: Record<string, string>;
   captain: { nickname: string; avatar?: AvatarSpec };
   models: Record<string, string>;
@@ -66,6 +66,7 @@ type Listener = (ev: OfficeEvent | null) => void;
 export class OfficeState {
   demo = false;
   clockedOut = false;
+  held = false;   // the Captain paused the whole office
   wings: Record<string, string> = {};
   captain: { nickname: string; avatar?: AvatarSpec } = { nickname: "Captain" };
   models: Record<string, string> = {};
@@ -80,6 +81,7 @@ export class OfficeState {
   load(s: Snapshot) {
     this.demo = s.office.demo;
     this.clockedOut = s.office.clocked_out;
+    this.held = !!s.office.held;
     this.wings = s.wings;
     this.captain = s.captain;
     this.models = s.models;
@@ -204,6 +206,7 @@ export class OfficeState {
           a.status = ev.status;
           a.paused = ev.status === "paused";
           if (ev.status === "idle") { a.task = null; a.live = null; }
+          if (ev.status === "held") a.live = null;
         }
         break;
       case "spend":
@@ -215,6 +218,9 @@ export class OfficeState {
         break;
       case "office_status":
         if (live) this.clockedOut = ev.status === "clocked_out";
+        break;
+      case "office_hold":
+        if (live) this.held = !!ev.held;
         break;
       case "incident_resolved":
         this.incidents = this.incidents.filter((i) => i.id !== ev.incident);
@@ -244,7 +250,8 @@ export class OfficeState {
 const FEED_TYPES = new Set(["task_created", "task_started", "task_done", "delegated", "chat",
   "captain_report", "task_paused", "task_error", "incident", "office_status", "meeting",
   "captain_message", "approval_requested", "approval_decided", "watchlist_added", "screen_run",
-  "audit_flag", "audit_resolved", "memory_held", "audit_digest", "outbox_draft", "outbox_ready", "outbox_status"]);
+  "audit_flag", "audit_resolved", "memory_held", "audit_digest", "outbox_draft", "outbox_ready", "outbox_status",
+  "office_hold"]);
 
 export function groupName(channel: string, state: OfficeState): string {
   return channel === "group:juno" ? `${state.name("chief_of_staff")} → All` : `${state.captain.nickname} → All`;

@@ -400,6 +400,16 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
             raise HTTPException(404)
         return FileResponse(path, media_type="image/png")
 
+    @app.post("/api/office/hold")
+    async def office_hold() -> JSONResponse:
+        office().hold()
+        return JSONResponse({"held": True})
+
+    @app.post("/api/office/release")
+    async def office_release() -> JSONResponse:
+        office().release()
+        return JSONResponse({"held": False})
+
     @app.post("/api/agents/{agent_id}/pause")
     async def pause(agent_id: str, req: PauseRequest) -> JSONResponse:
         try:

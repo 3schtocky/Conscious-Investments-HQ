@@ -377,3 +377,13 @@ body.visitor .tab { font-size: 13px; letter-spacing: 0; padding: 8px 6px; }
 body.visitor .card-live { display: none; }
 .signin input { width: 100%; }
 .pill.signout { border: 1px solid var(--grid); background: transparent; color: var(--text-2); cursor: pointer; }
+
+/* Pause the whole office, next to the spend meter */
+.hold-btn { border: 1px solid var(--grid); background: var(--paper-light); color: var(--ink); border-radius: 8px; padding: 5px 12px; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.hold-btn.held { background: var(--gold); border-color: var(--gold); color: #fff; }
+.hold-btn:disabled { opacity: .6; }
+body.visitor .hold-btn { display: none; }
+body.office-held .stage-wrap::after { content: "Office paused"; position: absolute; right: 12px; top: 12px; z-index: 6; font: 400 12px/1 var(--pixel); letter-spacing: .5px; color: #fff; background: var(--gold); padding: 6px 10px; border-radius: 6px; box-shadow: 0 2px 0 rgba(0,0,0,.2); pointer-events: none; }
+body.office-held .boss::before { content: "The office is paused. A message to one colleague is answered right away; messages to the office or to everyone wait until you resume."; display: block; width: 100%; font-size: 12px; color: var(--text-2); background: color-mix(in srgb, var(--gold) 14%, transparent); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }
+.card[data-status="held"] .pill { background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); }
+.tag[data-status="held"] .tag-name { background: var(--gold); }

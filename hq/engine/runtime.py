@@ -55,7 +55,11 @@ class Office:
         self._wings: dict[str, str] = {k: v["name"] for k, v in cast["wings"].items()}
         self.captain_name: str = cast.get("captain", {}).get("nickname") or "the Captain"
         self.agents: dict[str, Agent] = {e["id"]: Agent(self, e) for e in cast["agents"]}
+        self.held = False   # the whole office paused by the Captain (see hold / release)
         for p in self.store.pauses():   # a pause outlives a restart: only the Captain unpauses
+            if p["agent"] == OFFICE:
+                self.held = True
+                continue
             agent = self.agents.get(p["agent"])
             if agent is not None:
                 agent.gate.clear()
@@ -239,6 +243,7 @@ class Office:
                                 original=kept)
             self.bus.publish("captain_message", agent_id, agent.current_task, to=agent_id,
                              text=text, delivered="inbox", original=kept)
+            self._hold_pass(agent_id)
             return {"routed_to": agent_id, "task_id": agent.current_task, "delivered": "inbox"}
         task_id = self.store.create_task(assignee=agent_id, assigned_by=CAPTAIN,
                                          kind="assignment", title=_title(text), body=text)
@@ -248,6 +253,9 @@ class Office:
                          delivered="task", original=kept)
         self.bus.publish("task_created", agent_id, task_id, title=_title(text), kind="assignment",
                          assigned_by=CAPTAIN)
+        if self.held:   # this task is the conversation itself: his answer ends it
+            agent.hold_chat_task = task_id
+        self._hold_pass(agent_id)
         self._schedule(agent_id, task_id)
         return {"routed_to": agent_id, "task_id": task_id, "delivered": "task"}
 
@@ -935,6 +943,33 @@ class Office:
         self.store.clear_pause(agent.id)
         agent.set_status("working" if agent.current_task else "idle", by=by)
 
+    def hold(self) -> None:
+        """The Captain pauses the whole office so he can read and talk one to one. Model calls
+        already in flight finish; after that nobody takes a step except to answer a message he
+        sends them directly. Nothing is lost: every task waits where it is."""
+        if self.held:
+            return
+        self.held = True
+        self.store.set_pause(OFFICE, CAPTAIN, "office paused")
+        self.bus.publish("office_hold", None, None, held=True)
+
+    def release(self) -> None:
+        if not self.held:
+            return
+        self.held = False
+        self.store.clear_pause(OFFICE)
+        for agent in self.agents.values():
+            agent.hold_passes = 0
+            agent.hold_wake.set()
+        self.bus.publish("office_hold", None, None, held=False)
+
+    def _hold_pass(self, agent_id: str) -> None:
+        """While the office is paused, a direct message from the Captain earns that agent one turn."""
+        if self.held:
+            agent = self.agents[agent_id]
+            agent.hold_passes += 1
+            agent.hold_wake.set()
+
     def on_budget_exhausted(self, detail: str) -> None:
         if not self.clocked_out:
             self.clocked_out = True
@@ -982,7 +1017,7 @@ class Office:
                 "task": {"id": task["id"], "title": task["title"]} if task else None,
             })
         return {
-            "office": {"clocked_out": self.clocked_out, "day": day,
+            "office": {"clocked_out": self.clocked_out, "held": self.held, "day": day,
                        "max_concurrent": office()["limits"]["max_concurrent_agents"]},
             "wings": self._wings,
             "captain": cast.get("captain", {"nickname": "Captain"}),
