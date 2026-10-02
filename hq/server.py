@@ -67,6 +67,41 @@ class MemoryDecision(BaseModel):
 
 MAX_MESSAGE = 8000
 
+# The office has no login: it trusts whoever can reach it, which is why it only listens on this
+# machine. A browser on this machine can still be steered by another website, so every request
+# must be addressed to a local name (blocks DNS rebinding) and every change, and the live event
+# stream, must come from the office's own page (blocks cross-site requests and socket hijacking).
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+EXTRA_HOSTS: set[str] = set()   # tests add their client's host name here
+
+
+def _hostname(value: str | None) -> str:
+    """The host part of a Host header or an Origin URL, without scheme or port."""
+    host = (value or "").strip().lower()
+    if "://" in host:
+        host = host.split("://", 1)[1]
+    host = host.split("/", 1)[0]
+    if host.startswith("["):                  # [::1]:8750
+        return host[1:].split("]", 1)[0]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def _local(value: str | None) -> bool:
+    return _hostname(value) in LOCAL_HOSTS | EXTRA_HOSTS
+
+
+def request_allowed(method: str, headers) -> bool:
+    """Whether a request may be served: local Host always; for anything that changes state, or
+    the event stream, also a local Origin (browsers attach Origin to every cross-site write)."""
+    if not _local(headers.get("host")):
+        return False
+    if method in ("GET", "HEAD", "OPTIONS"):
+        return True
+    origin = headers.get("origin")
+    if origin is not None:
+        return origin != "null" and _local(origin)
+    return headers.get("sec-fetch-site") in (None, "same-origin", "none")   # non-browser clients
+
 
 def create_app(*, demo: bool = False, demo_speed: float = 1.0,
                office_factory=None) -> FastAPI:
@@ -129,6 +164,13 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
                 await task
 
     app = FastAPI(title="Conscious Investments HQ", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def same_machine_only(request, call_next):
+        if not request_allowed(request.method, request.headers):
+            return JSONResponse({"detail": "The office only answers its own page on this machine."},
+                                status_code=403)
+        return await call_next(request)
 
     def office() -> Office:
         return state["office"]
@@ -375,6 +417,9 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:
+        if not request_allowed("WEBSOCKET", socket.headers):   # another site must not listen in
+            await socket.close(code=1008)
+            return
         await socket.accept()
         q = office().bus.subscribe()
         try:

@@ -87,6 +87,7 @@ def _never_spend(monkeypatch):
     # No test reaches Yahoo either: quotes come back empty unless a test supplies its own.
     monkeypatch.setattr("hq.quotes._download", lambda tickers: dict.fromkeys(tickers))
     monkeypatch.setattr("hq.quotes._cache", {})
+    monkeypatch.setattr("hq.server.EXTRA_HOSTS", {"testserver"})   # the test client's host name
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-valid")
 
