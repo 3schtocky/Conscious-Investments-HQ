@@ -12,13 +12,14 @@ export interface Approval {
 }
 
 const KIND: Record<string, string> = { brief: "📄 Brief review", model: "📊 Model approval",
-  conflict: "⚖️ Thesis conflict", portfolio: "💼 Portfolio entry", newsletter: "📰 Newsletter", deliverable: "📦 Client memo", other: "📝 Decision" };
+  conflict: "⚖️ Thesis conflict", portfolio: "💼 Portfolio", newsletter: "📰 Newsletter", deliverable: "📦 Client memo", other: "📝 Decision" };
 const DECIDED: Record<string, string> = { approved: "✅ Approved", changes: "✏️ Changes requested", rejected: "✖️ Declined",
   expired: "⌛ Expired (demo tidy-up)" };
 
 export class ApprovalsPanel {
   items: Approval[] = [];
   private notes = new Map<number, string>();
+  private errors = new Map<number, string>();
   constructor(private root: HTMLElement, private state: OfficeState, private onChange: () => void) {}
 
   get pending(): number { return this.items.filter((a) => a.status === "pending").length + this.state.incidents.length; }
@@ -50,7 +51,12 @@ export class ApprovalsPanel {
     const act = (decision: string) => async () => {
       const res = await fetch(`/api/approvals/${a.id}/decide`, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision, note: this.notes.get(a.id) ?? null }) });
-      if (res.ok) { this.notes.delete(a.id); await this.refresh(); }
+      if (res.ok) { this.notes.delete(a.id); this.errors.delete(a.id); await this.refresh(); return; }
+      // A refused decision (no price for a paper fill, numbers that changed since the card was
+      // filed) must say why: the card stays open and nothing was recorded.
+      const why = (await res.json().catch(() => null))?.detail;
+      this.errors.set(a.id, typeof why === "string" ? why : "That didn't go through. Nothing was recorded; try again.");
+      this.onChange();
     };
     return h("div", { class: `approval k-${a.kind} s-${a.status}` },
       h("div", { class: "approval-head" },
@@ -69,7 +75,9 @@ export class ApprovalsPanel {
         return i ? [", ", el] : [el];
       })) : null,
       a.status === "pending"
-        ? h("div", { class: "approval-actions" }, note, h("div", { class: "row" },
+        ? h("div", { class: "approval-actions" }, note,
+          this.errors.has(a.id) ? h("div", { class: "approval-error", role: "alert" }, `Not recorded: ${this.errors.get(a.id)}`) : null,
+          h("div", { class: "row" },
             h("button", { class: "btn", onclick: act("approved") }, "Approve"),
             h("button", { class: "btn ghost", onclick: act("changes") }, "Request changes"),
             h("button", { class: "btn ghost danger", onclick: act("rejected") }, "Decline")))
