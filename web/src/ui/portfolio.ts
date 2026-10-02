@@ -137,6 +137,7 @@ export class PortfolioPanel {
     const pad = Math.max((hi - lo) * 0.12, 0.5); lo -= pad; hi += pad;
     const x = (i: number) => m.l + (i / (data.length - 1)) * (W - m.l - m.r);
     const y = (val: number) => m.t + (1 - (val - lo) / (hi - lo)) * (H - m.t - m.b);
+    const last = data[data.length - 1];
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", role: "img",
       "aria-label": `Paper portfolio and ${v.benchmark}, indexed to 100 on ${data[0].day}` }) as SVGSVGElement;
     const ticks = [lo + pad, 100, hi - pad].filter((t, i, a) => a.indexOf(t) === i && Math.abs(t - 100) > 0.05 || t === 100);
@@ -146,13 +147,13 @@ export class PortfolioPanel {
       label.textContent = t.toFixed(t === 100 ? 0 : 1);
       svg.append(label);
     }
-    for (const [i, anchor] of [[0, "start"], [data.length - 1, "end"]] as [number, string][]) {
+    const ends = (data[0].day === last.day ? [[data.length - 1, "end"]] : [[0, "start"], [data.length - 1, "end"]]) as [number, string][];
+    for (const [i, anchor] of ends) {
       const label = el("text", { x: x(i), y: H - 6, class: "axis", "text-anchor": anchor });
       label.textContent = data[i].day.slice(5);
       svg.append(label);
     }
     const series = [{ key: "benchmark" as const, name: v.benchmark, cls: "s2" }, { key: "portfolio" as const, name: "Portfolio", cls: "s1" }];
-    const last = data[data.length - 1];
     // Direct labels at the line ends; nudge them apart when the two series finish close together.
     let ly = series.map((s) => y(last[s.key]) + 3);
     if (Math.abs(ly[0] - ly[1]) < 11) { const mid = (ly[0] + ly[1]) / 2, up = ly[1] <= ly[0]; ly = [mid + (up ? 6 : -6), mid + (up ? -6 : 6)]; }

@@ -320,15 +320,27 @@ export class OfficeScene extends Phaser.Scene {
       const w = this.walkers.get(this.focus.id);
       if (w) {
         const zoom = this.fitZoom({ x: 0, y: 0, w: 14, h: 9 });
+        this.boundFor(zoom);
         if (animate) cam.zoomTo(zoom, 350); else cam.setZoom(zoom);
         cam.startFollow(w.sprite, true, 0.12, 0.12, 0, FRAME_H / 2);
         return;
       }
     }
     const zoom = this.fitZoom(rect);
+    this.boundFor(zoom);
     const cx = (rect.x + rect.w / 2) * TILE, cy = (rect.y + rect.h / 2) * TILE;
     if (animate) { cam.zoomTo(zoom, 350); cam.pan(cx, cy, 350, "Sine.easeInOut"); }
     else { cam.setZoom(zoom); cam.centerOn(cx, cy); }
+  }
+
+  /** Keep the camera inside the office, except when the view is larger than the office in one
+   *  direction (a tall, narrow floor area): clamping would then pin the map to the top-left
+   *  instead of centring it. */
+  private boundFor(zoom: number) {
+    const cam = this.cameras.main;
+    const bw = (COLS + 2) * TILE, bh = (ROWS + 2) * TILE;
+    if (cam.width / zoom > bw + 1 || cam.height / zoom > bh + 1) cam.removeBounds();
+    else cam.setBounds(-TILE, -TILE, bw, bh);
   }
 
   private fitZoom(rect: Rect): number {

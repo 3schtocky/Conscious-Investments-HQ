@@ -63,10 +63,52 @@ const tabsBar = h("nav", { class: "tabs" });
 const panelRoot = h("div", { class: "panel" });
 const bossBar = h("div", { class: "boss" });
 
-document.getElementById("app")!.append(header,
-  h("main", {},
-    h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons), cardsRoot),
-    h("aside", {}, tabsBar, panelRoot, bossBar)));
+// The sidebar's left edge is a handle: drag it (or focus it and use the arrow keys) to trade
+// office floor for reading room. Double-click resets. The width is remembered per browser.
+const SIDE_KEY = "hq-sidebar-width", SIDE_DEFAULT = 400, SIDE_MIN = 400, FLOOR_MIN = 380;   // 400 keeps all nine tabs visible
+const resizer = h("div", { class: "resizer", role: "separator", tabindex: 0, "aria-orientation": "vertical",
+  "aria-label": "Resize the sidebar", title: "Drag to resize the sidebar (double-click to reset)" });
+const aside = h("aside", {}, resizer, tabsBar, panelRoot, bossBar);
+const mainEl = h("main", {},
+  h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons), cardsRoot),
+  aside);
+document.getElementById("app")!.append(header, mainEl);
+
+let game: Phaser.Game | null = null;
+let sideWidth = SIDE_DEFAULT;
+function setSideWidth(px: number, save = true) {
+  const max = Math.max(SIDE_MIN, window.innerWidth - FLOOR_MIN);
+  sideWidth = Math.round(Math.min(Math.max(px, SIDE_MIN), max));
+  mainEl.style.setProperty("--side", `${sideWidth}px`);
+  aside.classList.toggle("wide", sideWidth >= 500);
+  resizer.setAttribute("aria-valuenow", String(sideWidth));
+  game?.scale.refresh();   // the office canvas follows its container at once, not on the next poll
+  if (save) { try { localStorage.setItem(SIDE_KEY, String(sideWidth)); } catch { /* storage unavailable */ } }
+}
+try { const saved = Number(localStorage.getItem(SIDE_KEY)); if (saved) sideWidth = saved; } catch { /* storage unavailable */ }
+setSideWidth(sideWidth, false);
+resizer.addEventListener("pointerdown", (e: PointerEvent) => {
+  e.preventDefault();
+  resizer.setPointerCapture(e.pointerId);
+  document.body.classList.add("resizing");
+  const move = (ev: PointerEvent) => setSideWidth(window.innerWidth - ev.clientX, false);
+  const up = () => {
+    resizer.removeEventListener("pointermove", move);
+    document.body.classList.remove("resizing");
+    setSideWidth(sideWidth);
+  };
+  resizer.addEventListener("pointermove", move);
+  resizer.addEventListener("pointerup", up, { once: true });
+  resizer.addEventListener("pointercancel", up, { once: true });
+});
+resizer.addEventListener("dblclick", () => setSideWidth(SIDE_DEFAULT));
+resizer.addEventListener("keydown", (e: KeyboardEvent) => {
+  const step = e.shiftKey ? 80 : 24;
+  if (e.key === "ArrowLeft") { e.preventDefault(); setSideWidth(sideWidth + step); }
+  if (e.key === "ArrowRight") { e.preventDefault(); setSideWidth(sideWidth - step); }
+  if (e.key === "Home") { e.preventDefault(); setSideWidth(SIDE_DEFAULT); }
+});
+window.addEventListener("resize", () => setSideWidth(sideWidth, false));   // keep the floor's minimum
 
 // ---- panels ---------------------------------------------------------------------------------
 const actRoot = h("div", { class: "feed" });
@@ -270,7 +312,7 @@ async function boot() {
   await loadState();
   readHash();
   const overlay = new Overlay(overlayLayer, state, () => scene);
-  new Phaser.Game({
+  game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: stage,
     pixelArt: true,
