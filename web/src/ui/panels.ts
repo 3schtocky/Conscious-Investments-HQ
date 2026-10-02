@@ -155,12 +155,16 @@ export class AgentPanel {
   private liveEl: HTMLElement | null = null;
   private count = -1;
   private header: HTMLElement | null = null;
+  /** A visitor on the public site sees who someone is and whether they're working; never
+   *  their words, their documents or any control. */
+  readOnly = false;
 
   constructor(private root: HTMLElement, private state: OfficeState,
               private actions: { pause: (id: string) => void; resume: (id: string) => void; chat: (id: string) => void }) {}
 
   /** Re-fetch the document history (call when this agent files something new). */
   async loadDocs(id: string) {
+    if (this.readOnly) return;
     this.docsRequest = id;
     const res = await fetch(`/api/agents/${id}/documents`);
     if (!res.ok || this.docsRequest !== id) return;   // a newer request (another agent) won
@@ -217,6 +221,12 @@ export class AgentPanel {
       if (this.docsFor !== a.id) { this.docs = []; this.loadDocs(a.id); }
     }
     this.renderHeader(a);
+    if (this.readOnly) {
+      clear(this.sub!); clear(this.stream!);
+      this.docsRoot!.classList.add("hidden");
+      this.stream!.append(h("p", { class: "empty" }, "What the team says and thinks stays inside the office. You can watch who is working here, and read finished work in the other tabs."));
+      return;
+    }
     this.renderSub(a);
     this.stream!.classList.toggle("hidden", this.view !== "log");
     this.docsRoot!.classList.toggle("hidden", this.view !== "docs");
@@ -254,7 +264,7 @@ export class AgentPanel {
     const hd = this.header!;
     clear(hd);
     hd.style.setProperty("--accent", WING_ACCENT[a.wing] ?? "#46505e");
-    const btn = a.paused
+    const btn = this.readOnly ? null : a.paused
       ? h("button", { class: "btn", onclick: () => this.actions.resume(a.id) }, "▶ Unpause")
       : h("button", { class: "btn ghost", onclick: () => this.actions.pause(a.id) }, "⏸ Pause");
     hd.append(
@@ -265,10 +275,10 @@ export class AgentPanel {
           h("div", { class: "badges" },
             h("span", { class: "pill" }, statusLabel(a, this.state.clockedOut)),
             h("span", { class: "pill model" }, modelLabel(a.model_id)),
-            h("span", { class: "pill" }, `${money(a.spend)} today`)))),
+            this.readOnly ? null : h("span", { class: "pill" }, `${money(a.spend)} today`)))),
       h("div", { class: "agent-task" }, h("span", { class: "muted" }, "Current task: "), a.task ? a.task.title : "none"),
-      h("p", { class: "persona" }, a.persona),
-      btn);
+      h("p", { class: "persona" }, a.persona));
+    if (btn) hd.append(btn);
   }
 }
 

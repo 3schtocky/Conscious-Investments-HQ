@@ -319,7 +319,7 @@ input[type="color"] { width: 32px; height: 26px; padding: 1px; }
 .outbox-problems.errors { color: var(--danger); }
 .outbox-next { background: color-mix(in srgb, var(--sage) 12%, transparent); border-radius: 8px; padding: 7px 9px; }
 a.btn { text-decoration: none; display: inline-block; }
-.tab:last-child { font-size: 15px; line-height: 1; padding: 6px 3px; }
+.tab.gear { font-size: 15px; line-height: 1; padding: 6px 3px; }
 .tab .badge { font-size: 10px; min-width: 15px; padding: 1px 3px; margin-left: 1px; }
 
 /* Layering on the floor: signs at the back, name tags above them, and every speech bubble in
@@ -369,3 +369,11 @@ body.resizing .stage, body.resizing .panel { pointer-events: none; }
 aside.wide .tab { font-size: 13px; letter-spacing: 0; padding: 8px 6px; }
 aside.wide .tab .badge { font-size: 11px; min-width: 18px; padding: 1px 5px; margin-left: 4px; }
 aside.wide .tabs { justify-content: flex-start; gap: 4px; padding: 8px 10px 0; }
+
+/* The public site, seen by a visitor: nothing to type into, no spend, roomier tabs */
+body.visitor .boss, body.visitor .meter, body.visitor .awaiting { display: none; }
+body.visitor .tabs { justify-content: flex-start; gap: 6px; padding: 8px 10px 0; }
+body.visitor .tab { font-size: 13px; letter-spacing: 0; padding: 8px 6px; }
+body.visitor .card-live { display: none; }
+.signin input { width: 100%; }
+.pill.signout { border: 1px solid var(--grid); background: transparent; color: var(--text-2); cursor: pointer; }

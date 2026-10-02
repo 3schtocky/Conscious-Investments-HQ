@@ -128,6 +128,37 @@ def spend() -> int:
     return 0
 
 
+def captain_password() -> int:
+    """Generate a strong password, store it in .env and show it once, here in the terminal."""
+    import re
+    import secrets
+    import tempfile
+
+    from hq.config import ROOT
+    from hq.public import PASSWORD_ENV
+
+    env = ROOT / ".env"
+    old = env.read_text().splitlines() if env.is_file() else []
+    before = os.environ.get(PASSWORD_ENV)
+    in_file = any(re.match(rf"\s*(?:export\s+)?{PASSWORD_ENV}\s*=", ln) for ln in old)
+    kept = [ln for ln in old if not re.match(rf"\s*(?:export\s+)?{PASSWORD_ENV}\s*=", ln)]
+    value = secrets.token_urlsafe(24)
+    # Written whole to a private temp file and swapped in: .env also holds the API key, so it is
+    # never left half-written or readable by other users.
+    fd, tmp = tempfile.mkstemp(dir=str(ROOT), prefix=".env.")
+    with os.fdopen(fd, "w") as f:          # mkstemp creates the file with mode 0600
+        f.write("\n".join([*kept, f"{PASSWORD_ENV}={value}"]) + "\n")
+    os.replace(tmp, env)
+    print("The Captain's password for the public site (saved in .env, shown only here):\n")
+    print(f"    {value}\n")
+    print("Keep it in your password manager. Run this command again to replace it; that signs "
+          "out every session once the office restarts.")
+    if before and not in_file:   # set in the shell, where it would win over .env
+        print(f"\nNote: {PASSWORD_ENV} is also set in your shell, and the shell's value wins over "
+              f".env. Run `unset {PASSWORD_ENV}` before starting the office.", file=sys.stderr)
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hq", description="Conscious Investments HQ")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -138,9 +169,13 @@ def main() -> None:
     p_run.add_argument("task", help="what you want done")
     p_run.add_argument("--title")
     sub.add_parser("spend", help="today's spend by agent and model")
+    sub.add_parser("captain-password", help="create the Captain's sign-in password for public mode")
     p_serve = sub.add_parser("serve", help="open the office in your browser")
     p_serve.add_argument("--demo", action="store_true",
                          help="scripted demo office: zero API cost, separate database")
+    p_serve.add_argument("--public", action="store_true",
+                         help="for a public site behind a tunnel: visitors watch read-only, the "
+                              "Captain signs in with the password in .env")
     p_serve.add_argument("--port", type=int, default=8750)
     p_serve.add_argument("--speed", type=float, default=1.0, help="demo playback speed")
     args = parser.parse_args()
@@ -159,9 +194,11 @@ def main() -> None:
         sys.exit(asyncio.run(_run_agent(args.agent, args.task, args.title)))
     if args.cmd == "spend":
         sys.exit(spend())
+    if args.cmd == "captain-password":
+        sys.exit(captain_password())
     if args.cmd == "serve":
         from hq.server import serve
 
         print(f"Conscious Investments HQ{' (demo)' if args.demo else ''}: "
               f"http://127.0.0.1:{args.port}")
-        serve(demo=args.demo, port=args.port, speed=args.speed)
+        serve(demo=args.demo, port=args.port, speed=args.speed, public=args.public)

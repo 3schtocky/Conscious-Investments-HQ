@@ -65,4 +65,11 @@ client_relations:
     The author holds no position in the securities discussed. The Conscious Investments model
     portfolio is a paper portfolio.
 
+# The public site (`hq serve --public`, behind a Cloudflare Tunnel). Visitors can only watch the
+# floor and read finished work; you sign in with HQ_CAPTAIN_PASSWORD from .env.
+public:
+  hosts:
+    - consciousinvestments.org
+    - www.consciousinvestments.org
+
 cadence: on_assignment         # the office only works when the Captain assigns work

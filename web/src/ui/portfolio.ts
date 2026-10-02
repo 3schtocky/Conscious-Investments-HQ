@@ -33,6 +33,8 @@ export class PortfolioPanel {
   private loadedAt = 0;
   private inFlight = false;
   private again = false;
+  /** A visitor on the public site: the sanitized view (no cards from the Captain's desk). */
+  readOnly = false;
 
   constructor(private root: HTMLElement, private state: OfficeState, private onChange: () => void,
               private openApprovals: () => void) {}
@@ -42,7 +44,7 @@ export class PortfolioPanel {
     this.inFlight = true;
     this.loadedAt = Date.now();
     try {
-      const res = await fetch("/api/portfolio");
+      const res = await fetch(this.readOnly ? "/api/public/portfolio" : "/api/portfolio");
       if (res.ok) { this.view = await res.json(); this.onChange(); }
     } finally {
       this.inFlight = false;

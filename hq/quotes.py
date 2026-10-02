@@ -6,23 +6,34 @@ import threading
 import time
 
 CACHE_SECONDS = 600
+MISS_SECONDS = 120            # a ticker Yahoo had nothing for is not asked again for a while
 _lock = threading.Lock()
-_cache: dict[str, tuple[float, float]] = {}   # ticker -> (fetched_at, price)
+_downloading = threading.Lock()   # one download at a time: callers queue and reuse its result
+_cache: dict[str, tuple[float, float | None]] = {}   # ticker -> (fetched_at, price or None)
+
+
+def _fresh(tickers: list[str]) -> dict[str, float | None]:
+    now = time.time()
+    with _lock:
+        return {t: p for t, (ts, p) in _cache.items()
+                if t in tickers and now - ts < (CACHE_SECONDS if p is not None else MISS_SECONDS)}
 
 
 def latest(tickers: list[str]) -> dict[str, float | None]:
-    """Last close for each ticker (None when Yahoo has nothing)."""
-    now = time.time()
-    with _lock:
-        fresh = {t: p for t, (ts, p) in _cache.items() if t in tickers and now - ts < CACHE_SECONDS}
-    missing = [t for t in tickers if t not in fresh]
-    if missing:
-        fetched = _download(missing)
-        with _lock:
-            for t, p in fetched.items():
-                if p is not None:
-                    _cache[t] = (now, p)
-        fresh.update(fetched)
+    """Latest price for each ticker (None when Yahoo has nothing). Public pages call this for
+    every visitor, so results and misses are cached and concurrent callers share one download."""
+    fresh = _fresh(tickers)
+    if any(t not in fresh for t in tickers):
+        with _downloading:
+            fresh = _fresh(tickers)   # someone else may have fetched them while we waited
+            missing = [t for t in tickers if t not in fresh]
+            if missing:
+                fetched = _download(missing)
+                now = time.time()
+                with _lock:
+                    for t in missing:
+                        _cache[t] = (now, fetched.get(t))
+                fresh.update(fetched)
     return {t: fresh.get(t) for t in tickers}
 
 

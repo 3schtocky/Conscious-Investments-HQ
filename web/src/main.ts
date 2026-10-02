@@ -13,9 +13,15 @@ import { WatchlistPanel } from "./ui/watchlist";
 import { AuditPanel } from "./ui/audit";
 import { OutboxPanel } from "./ui/outbox";
 import { PortfolioPanel, pct as signedPct } from "./ui/portfolio";
+import { NewsPanel, SignInPanel } from "./ui/visitor";
 
-type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings";
-const TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "portfolio", "audit", "outbox", "settings"];
+type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings" | "news" | "signin";
+let TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "portfolio", "audit", "outbox", "settings"];
+// On the public site a visitor (anyone who hasn't signed in as the Captain) gets a read-only
+// office: the floor, the team, the watchlist, the scoreboard and published newsletters.
+const VISITOR_TABS: Tab[] = ["agent", "watchlist", "portfolio", "news", "signin"];
+let visitor = false;
+let publicSite = false;
 const OUTBOX_EVENTS = new Set(["outbox_draft", "outbox_ready", "outbox_status"]);
 // Events that change what the Audit tab shows.
 const AUDIT_EVENTS = new Set(["audit_flag", "audit_review", "audit_resolved", "memory_saved", "memory_held",
@@ -33,6 +39,10 @@ const statusPill = h("span", { class: "pill office-status" });
 const demoBadge = h("span", { class: "pill demo hidden", title: "Scripted demo office: no API calls, no real spend" }, "DEMO");
 const crumbs = h("div", { class: "crumbs" });
 const awaiting = h("button", { class: "pill awaiting hidden", onclick: () => { tab = "approvals"; render(); } });
+const signOut = h("button", { class: "pill signout hidden", title: "Sign out of the Captain's office", onclick: async () => {
+  await fetch("/api/logout", { method: "POST" });
+  location.reload();
+} }, "Sign out");
 const scorePill = h("button", { class: "pill score hidden", title: "Paper portfolio vs the S&P 500 since the first position",
   onclick: () => { tab = "portfolio"; render(); } });
 // Theme: follows the system unless the Captain picks one (remembered per browser).
@@ -53,7 +63,7 @@ const header = h("header", {},
   h("div", { class: "brand" }, h("span", { class: "brand-mark" }), h("span", {}, "Conscious Investments ", h("b", {}, "HQ"))),
   statusPill, demoBadge, awaiting, scorePill, crumbs,
   h("div", { class: "meter", title: "Today's API spend vs. the daily cap" }, h("div", { class: "meter-bar" }, spendFill), spendText),
-  themeBtn);
+  signOut, themeBtn);
 
 const stage = h("div", { class: "stage" });
 const overlayLayer = h("div", { class: "overlay" });
@@ -75,6 +85,15 @@ const mainEl = h("main", {},
 document.getElementById("app")!.append(header, mainEl);
 
 let game: Phaser.Game | null = null;
+/** Keep the office canvas exactly the size of its container. Phaser only re-measures when the
+ *  window resizes, but the container also changes when the desk cards load or the sidebar is
+ *  dragged; a canvas left taller than its container puts the floor off-centre and cut off. */
+function fitCanvas() {
+  if (!game) return;
+  game.scale.getParentBounds();
+  game.scale.refresh();
+}
+new ResizeObserver(() => fitCanvas()).observe(stage);
 let sideWidth = SIDE_DEFAULT;
 function setSideWidth(px: number, save = true) {
   const max = Math.max(SIDE_MIN, window.innerWidth - FLOOR_MIN);
@@ -82,7 +101,7 @@ function setSideWidth(px: number, save = true) {
   mainEl.style.setProperty("--side", `${sideWidth}px`);
   aside.classList.toggle("wide", sideWidth >= 500);
   resizer.setAttribute("aria-valuenow", String(sideWidth));
-  game?.scale.refresh();   // the office canvas follows its container at once, not on the next poll
+  fitCanvas();
   if (save) { try { localStorage.setItem(SIDE_KEY, String(sideWidth)); } catch { /* storage unavailable */ } }
 }
 try { const saved = Number(localStorage.getItem(SIDE_KEY)); if (saved) sideWidth = saved; } catch { /* storage unavailable */ }
@@ -132,6 +151,10 @@ const auditRoot = h("div", { class: "audit" });
 const audit = new AuditPanel(auditRoot, state, () => render());
 const portfolioRoot = h("div", { class: "audit portfolio-panel" });
 const portfolio = new PortfolioPanel(portfolioRoot, state, () => render(), () => { tab = "approvals"; render(); });
+const newsRoot = h("div", { class: "audit" });
+const news = new NewsPanel(newsRoot, () => render());
+const signinRoot = h("div", { class: "audit" });
+const signin = new SignInPanel(signinRoot, () => state.captain.nickname, () => render());
 const outboxRoot = h("div", { class: "audit outbox-panel" });
 const outbox = new OutboxPanel(outboxRoot, state, () => render(), () => { tab = "approvals"; render(); });
 // Picking a thread addresses the chat bar to it (never over a draft in progress).
@@ -147,7 +170,7 @@ function startChat(id: string) {
 const cards = new DeskCards(cardsRoot, state, (id) => pickAgent(id));
 
 function pickAgent(id: string) {
-  if (!state.agents.has(id)) { if (id === "captain") { tab = "settings"; settings.select("captain"); render(); } return; }
+  if (!state.agents.has(id)) { if (id === "captain" && !visitor) { tab = "settings"; settings.select("captain"); render(); } return; }
   setFocus({ kind: "agent", id });
   tab = "agent";
   render();
@@ -189,18 +212,18 @@ function writeHash() {
 
 function renderTabs() {
   tabsBar.replaceChildren(...TABS.map((t) =>
-    h("button", { class: `tab${t === tab ? " active" : ""}`, title: t === "settings" ? "Settings" : undefined, onclick: () => {
+    h("button", { class: `tab${t === tab ? " active" : ""}${t === "settings" ? " gear" : ""}`, title: t === "settings" ? "Settings" : undefined, onclick: () => {
       if (t === "settings" && focus.kind === "agent") settings.select(focus.id);
       tab = t; render();
     } },
-      { activity: "Feed", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", portfolio: "Portfolio", audit: "Audit", outbox: "Outbox", settings: "⚙" }[t],
+      { activity: "Feed", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", portfolio: "Portfolio", audit: "Audit", outbox: "Outbox", settings: "⚙", news: "Newsletter", signin: "Sign in" }[t].replace(/^Agent$/, visitor ? "Team" : "Agent"),
       t === "outbox" && outbox.count ? h("span", { class: "badge quiet" }, String(outbox.count)) : null,
       t === "audit" && audit.count ? h("span", { class: "badge" }, String(audit.count)) : null,
-      t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null,
-      t === "watchlist" && watchlist.count ? h("span", { class: "badge quiet" }, String(watchlist.count)) : null)));
+      !visitor && t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null,
+      !visitor && t === "watchlist" && watchlist.count ? h("span", { class: "badge quiet" }, String(watchlist.count)) : null)));
   writeHash();
   // Swap the panel only on a real tab change: re-attaching an element resets its scroll.
-  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, portfolio: portfolioRoot, audit: auditRoot, outbox: outboxRoot, settings: settingsRoot }[tab];
+  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, portfolio: portfolioRoot, audit: auditRoot, outbox: outboxRoot, settings: settingsRoot, news: newsRoot, signin: signinRoot }[tab];
   if (panelRoot.firstElementChild !== panel) panelRoot.replaceChildren(panel);
 }
 
@@ -221,6 +244,20 @@ function renderViews() {
 }
 
 function renderHeader() {
+  if (visitor) {   // no spend, no desk: just whether the office is open
+    const working = [...state.agents.values()].filter((a) => a.status === "working").length;
+    statusPill.textContent = state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
+    statusPill.dataset.state = state.clockedOut ? "closed" : working ? "busy" : "open";
+    demoBadge.classList.toggle("hidden", !state.demo);
+    const pv = portfolio.view;
+    const scored = !!pv && pv.return !== null && pv.priced;
+    scorePill.classList.toggle("hidden", !scored);
+    if (pv && scored) {
+      scorePill.textContent = `Portfolio ${signedPct(pv.return)} · S&P ${signedPct(pv.benchmark_return)}`;
+      scorePill.dataset.state = pv.vs_benchmark !== null && pv.vs_benchmark >= 0 ? "ahead" : "behind";
+    }
+    return;
+  }
   const pct = Math.min(100, (state.spend.today / Math.max(state.spend.cap, 0.01)) * 100);
   spendFill.style.width = `${pct}%`;
   spendFill.dataset.level = pct > 90 ? "high" : pct > 60 ? "mid" : "low";
@@ -264,6 +301,8 @@ function frame() {
       if (tab === "audit") { audit.render(); audit.maybeRefresh(); }
       if (tab === "outbox") outbox.render();
       if (tab === "portfolio") { portfolio.render(); portfolio.maybeRefresh(); }
+      if (tab === "news") news.render();
+      if (tab === "signin") signin.render();
     }
   }
   requestAnimationFrame(frame);
@@ -271,13 +310,13 @@ function frame() {
 
 // ---- data -----------------------------------------------------------------------------------
 async function loadState() {
-  const snap: Snapshot = await (await fetch("/api/state")).json();
+  const snap: Snapshot = await (await fetch(visitor ? "/api/public/state" : "/api/state")).json();
   state.load(snap);
   approvals.items = (snap as any).approvals ?? [];
   watchlist.refresh();
-  audit.refresh();
-  outbox.refresh();
   portfolio.refresh();
+  if (visitor) news.refresh();
+  else { audit.refresh(); outbox.refresh(); }
   scene?.sync();
   render();
 }
@@ -286,7 +325,16 @@ function connect() {
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.onmessage = (m) => {
     const ev: OfficeEvent = JSON.parse(m.data);
-    if (ev.type === "roster_updated") { loadState(); }
+    if (ev.type === "ping") return;   // keep-alive only
+    if (ev.type === "roster_updated" && !visitor) { loadState(); }
+    if (visitor) {   // a visitor's stream carries movement and nudges only; refetch the public views
+      if (ev.type === "roster_updated") loadState();
+      if (ev.type === "watchlist_added" || ev.type === "watchlist_status") watchlist.refresh();
+      if (ev.type === "portfolio_changed") portfolio.refresh();
+      if (ev.type === "outbox_status") news.refresh();
+      state.apply(ev); scene?.handle(ev); dirty = true;
+      return;
+    }
     if (["approval_requested", "approval_decided", "audit_resolved", "audit_review"].includes(ev.type)) { approvals.refresh(); }
     if (ev.type === "watchlist_added" || ev.type === "watchlist_status") { watchlist.refresh(); }
     if (OUTBOX_EVENTS.has(ev.type)) { outbox.refresh(); }
@@ -309,6 +357,16 @@ function connect() {
 state.on(() => { dirty = true; });
 
 async function boot() {
+  const session = await (await fetch("/api/session")).json().catch(() => ({ role: "captain", public: false }));
+  publicSite = !!session.public;
+  visitor = session.role === "visitor";
+  if (visitor) {
+    TABS = VISITOR_TABS;
+    tab = "agent";
+    document.body.classList.add("visitor");
+    watchlist.readOnly = portfolio.readOnly = agentPanel.readOnly = true;
+  }
+  signOut.classList.toggle("hidden", !publicSite || visitor);
   await loadState();
   readHash();
   const overlay = new Overlay(overlayLayer, state, () => scene);

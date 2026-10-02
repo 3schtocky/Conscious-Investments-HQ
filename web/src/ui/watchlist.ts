@@ -17,6 +17,8 @@ export class WatchlistPanel {
   private open = new Set<number>();
   private busy = new Set<number>();
   private loadedAt = 0;
+  /** A visitor on the public site: the sanitized list, and nothing to click. */
+  readOnly = false;
 
   constructor(private root: HTMLElement, private state: OfficeState, private onChange: () => void) {}
 
@@ -29,7 +31,7 @@ export class WatchlistPanel {
     this.inFlight = true;
     this.loadedAt = Date.now();   // throttle even if this fetch fails
     try {
-      const res = await fetch("/api/watchlist");
+      const res = await fetch(this.readOnly ? "/api/public/watchlist" : "/api/watchlist");
       if (!res.ok) return;
       this.items = await res.json();
       this.onChange();
@@ -88,7 +90,7 @@ export class WatchlistPanel {
         h("div", {}, h("span", { class: "muted small" }, "Since flagged"), h("strong", { class: tone(w.return) }, pct(w.return))),
         h("div", {}, h("span", { class: "muted small" }, "vs S&P 500"), h("strong", { class: tone(w.vs_spy) }, pct(w.vs_spy)))),
       h("div", { class: "muted small" }, `Added by ${w.added_by_name}`),
-      h("div", { class: "row" },
+      this.readOnly ? null : h("div", { class: "row" },
         w.pitch ? h("button", { class: "btn ghost", onclick: toggle }, this.open.has(w.id) ? "Hide pitch" : "Read pitch") : null,
         sent ? null : h("button", { class: "btn", disabled: this.busy.has(w.id), onclick: research },
           this.busy.has(w.id) ? "Sending…" : "Send to research (via Juno)"),

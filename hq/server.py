@@ -13,7 +13,7 @@ import contextlib
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -65,6 +65,10 @@ class Decision(BaseModel):
 class MemoryDecision(BaseModel):
     decision: str                 # approved | rejected
 
+
+class Login(BaseModel):
+    password: str
+
 MAX_MESSAGE = 8000
 
 # The office has no login: it trusts whoever can reach it, which is why it only listens on this
@@ -73,6 +77,7 @@ MAX_MESSAGE = 8000
 # stream, must come from the office's own page (blocks cross-site requests and socket hijacking).
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 EXTRA_HOSTS: set[str] = set()   # tests add their client's host name here
+LOGIN_DELAY = 1.0               # seconds a wrong password costs the caller
 
 
 def _hostname(value: str | None) -> str:
@@ -90,22 +95,70 @@ def _local(value: str | None) -> bool:
     return _hostname(value) in LOCAL_HOSTS | EXTRA_HOSTS
 
 
-def request_allowed(method: str, headers) -> bool:
-    """Whether a request may be served: local Host always; for anything that changes state, or
-    the event stream, also a local Origin (browsers attach Origin to every cross-site write)."""
-    if not _local(headers.get("host")):
+def request_allowed(method: str, headers, public_hosts: frozenset[str] = frozenset()) -> bool:
+    """Whether a request may be served at all: addressed to a name the office answers to; and
+    for anything that changes state, or the event stream, sent by the office's own page
+    (browsers attach Origin to every cross-site write). In public mode the site's own host
+    names count as well as the local ones."""
+    known = LOCAL_HOSTS | EXTRA_HOSTS | public_hosts
+    host = _hostname(headers.get("host"))
+    if host not in known:
         return False
     if method in ("GET", "HEAD", "OPTIONS"):
         return True
     origin = headers.get("origin")
     if origin is not None:
-        return origin != "null" and _local(origin)
+        if origin == "null" or _hostname(origin) not in known:
+            return False
+        # On the public site the page and the server are one origin: nothing else may write.
+        return _hostname(origin) == host or host not in public_hosts
     return headers.get("sec-fetch-site") in (None, "same-origin", "none")   # non-browser clients
 
 
+VISITOR_PRIVATE = ("/api/", "/files/", "/outbox/", "/ws")
+
+
+def visitor_allowed(method: str, path: str) -> bool:
+    """What someone who isn't signed in may ask for in public mode. Deny by default: a new
+    endpoint is private until it is listed here."""
+    if method == "POST":
+        return path == "/api/login"
+    if method not in ("GET", "HEAD"):
+        return False
+    if path == "/api/session" or path.startswith(("/api/public/", "/public/", "/avatars/")):
+        return True
+    return not path.startswith(VISITOR_PRIVATE)   # the page itself and its assets
+
+
+def security_headers(hosts: frozenset[str]) -> dict[str, str]:
+    sockets = " ".join(f"wss://{h}" for h in sorted(hosts))
+    return {
+        "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
+        "Referrer-Policy": "same-origin",
+        "Content-Security-Policy": (
+            "default-src 'self'; script-src 'self'; img-src 'self' data: blob:; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com data:; "
+            f"connect-src 'self' {sockets}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"),
+    }
+
+
 def create_app(*, demo: bool = False, demo_speed: float = 1.0,
-               office_factory=None) -> FastAPI:
+               office_factory=None, public: bool = False) -> FastAPI:
+    """`public` puts the office on the open internet (behind a tunnel): the Captain signs in,
+    everyone else is a read-only visitor served only the sanitized views in `hq.public`."""
+    from hq import public as pub
+
     state: dict = {}
+    public_hosts = frozenset(pub.hosts()) if public else frozenset()
+    sessions, limiter = pub.Sessions(), pub.LoginLimiter()
+    visitors: dict = {}   # visitor socket -> the address it came from
+
+    def address_of(conn) -> str:
+        return conn.headers.get("cf-connecting-ip") or (conn.client.host if conn.client else "?")
+
+    def is_captain(cookies) -> bool:
+        return not public or sessions.valid(cookies.get(pub.COOKIE))
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -163,18 +216,94 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-    app = FastAPI(title="Conscious Investments HQ", lifespan=lifespan)
+    # No generated API docs: they would describe every private endpoint to anyone who asked.
+    app = FastAPI(title="Conscious Investments HQ", lifespan=lifespan, docs_url=None, redoc_url=None,
+                  openapi_url=None)
 
     @app.middleware("http")
-    async def same_machine_only(request, call_next):
-        if not request_allowed(request.method, request.headers):
-            return JSONResponse({"detail": "The office only answers its own page on this machine."},
-                                status_code=403)
-        return await call_next(request)
+    async def gatekeeper(request, call_next):
+        if not request_allowed(request.method, request.headers, public_hosts):
+            return JSONResponse({"detail": "The office only answers its own page."}, status_code=403)
+        if not is_captain(request.cookies) and not visitor_allowed(request.method, request.url.path):
+            return JSONResponse({"detail": "Sign in as the Captain to do that."}, status_code=401)
+        response = await call_next(request)
+        if public:
+            for k, v in security_headers(public_hosts).items():
+                response.headers.setdefault(k, v)
+            if request.url.path.startswith("/api/"):
+                response.headers["Cache-Control"] = "no-store"
+        return response
 
     def office() -> Office:
         return state["office"]
 
+    # ---- sign-in and the visitor's views -------------------------------------------------
+    @app.get("/api/session")
+    async def session(request: Request) -> JSONResponse:
+        return JSONResponse({"public": public, "demo": demo,
+                             "role": "captain" if is_captain(request.cookies) else "visitor"})
+
+    @app.post("/api/login")
+    async def login(req: Login, request: Request) -> JSONResponse:
+        if not public:
+            raise HTTPException(404)
+        address = address_of(request)
+        if limiter.locked(address):
+            raise HTTPException(429, "Too many wrong passwords. Sign-in is locked for fifteen minutes.")
+        if not pub.password_matches(req.password[:200]):
+            limiter.failed(address)
+            await asyncio.sleep(LOGIN_DELAY)
+            raise HTTPException(401, "That isn't the Captain's password.")
+        limiter.succeeded(address)
+        response = JSONResponse({"role": "captain"})
+        response.set_cookie(pub.COOKIE, sessions.create(), max_age=pub.SESSION_SECONDS, httponly=True,
+                            samesite="strict", path="/",
+                            secure=_hostname(request.headers.get("host")) in public_hosts)
+        return response
+
+    @app.post("/api/logout")
+    async def logout(request: Request) -> JSONResponse:
+        sessions.drop(request.cookies.get(pub.COOKIE))
+        response = JSONResponse({"role": "visitor"})
+        response.delete_cookie(pub.COOKIE, path="/")
+        return response
+
+    @app.get("/api/public/state")
+    async def public_state() -> JSONResponse:
+        return JSONResponse(pub.state(office(), demo=demo))
+
+    async def _watchlist_prices() -> dict:
+        from hq import quotes
+
+        rows = office().store.watchlist()
+        tickers = sorted({w["ticker"] for w in rows} | {"SPY"})
+        return await asyncio.to_thread(quotes.latest, tickers) if rows else {}
+
+    async def _portfolio_prices(extra: list[str] | None = None) -> dict:
+        from hq import portfolio
+
+        return await portfolio.fetch_prices(office(), extra)
+
+    @app.get("/api/public/watchlist")
+    async def public_watchlist() -> JSONResponse:
+        return JSONResponse(pub.watchlist(office(), await _watchlist_prices()))
+
+    @app.get("/api/public/portfolio")
+    async def public_portfolio() -> JSONResponse:
+        return JSONResponse(pub.portfolio(office(), await _portfolio_prices()))
+
+    @app.get("/api/public/newsletters")
+    async def public_newsletters() -> JSONResponse:
+        return JSONResponse(pub.newsletters(office()))
+
+    @app.get("/public/newsletters/{issue_id}/{name}")
+    async def public_newsletter_file(issue_id: str, name: str) -> FileResponse:
+        path = pub.newsletter_file(office(), issue_id, name)
+        if path is None:
+            raise HTTPException(404)
+        return FileResponse(path)
+
+    # ---- the Captain's office ------------------------------------------------------------
     @app.get("/api/state")
     async def get_state() -> JSONResponse:
         snap = office().snapshot()
@@ -232,12 +361,7 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
 
     @app.get("/api/watchlist")
     async def watchlist() -> JSONResponse:
-        from hq import quotes
-
-        rows = office().store.watchlist()
-        tickers = sorted({w["ticker"] for w in rows} | {"SPY"})
-        prices = await asyncio.to_thread(quotes.latest, tickers) if rows else {}
-        return JSONResponse(office().watchlist_view(prices))
+        return JSONResponse(office().watchlist_view(await _watchlist_prices()))
 
     @app.post("/api/watchlist/{watch_id}/research")
     async def watch_research(watch_id: int) -> JSONResponse:
@@ -335,11 +459,6 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
     async def approvals(status: str | None = None) -> JSONResponse:
         return JSONResponse(office().store.approvals(status=status))
 
-    async def _portfolio_prices(extra: list[str] | None = None) -> dict:
-        from hq import portfolio
-
-        return await portfolio.fetch_prices(office(), extra)
-
     @app.get("/api/portfolio")
     async def portfolio_view() -> JSONResponse:
         return JSONResponse(office().portfolio_view(await _portfolio_prices()))
@@ -417,19 +536,37 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:
-        if not request_allowed("WEBSOCKET", socket.headers):   # another site must not listen in
+        if not request_allowed("WEBSOCKET", socket.headers, public_hosts):   # another site must not listen in
             await socket.close(code=1008)
             return
-        await socket.accept()
-        q = office().bus.subscribe()
+        captain = is_captain(socket.cookies)
+        address = address_of(socket)
+        if not captain:
+            mine = sum(1 for a in visitors.values() if a == address)
+            if len(visitors) >= pub.MAX_VISITOR_SOCKETS or mine >= pub.MAX_SOCKETS_PER_ADDRESS:
+                await socket.close(code=1013)   # busy: no one visitor may take every seat
+                return
+            visitors[socket] = address          # counted before the handshake, so bursts can't overshoot
+        q = None
         try:
+            await socket.accept()
+            q = office().bus.subscribe()
             while True:
-                event = await q.get()
-                await socket.send_json(event.as_dict())
+                try:
+                    event = (await asyncio.wait_for(q.get(), pub.SOCKET_PING_SECONDS)).as_dict()
+                except TimeoutError:
+                    event = {"type": "ping"}    # a quiet office still notices a visitor who left
+                if not captain and event["type"] != "ping":   # a visitor's stream: movement, never words
+                    event = pub.event(office(), event)
+                    if event is None:
+                        continue
+                await socket.send_json(event)
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:
-            office().bus.unsubscribe(q)
+            visitors.pop(socket, None)
+            if q is not None:
+                office().bus.unsubscribe(q)
 
     if WEB_DIST.is_dir():
         app.mount("/", StaticFiles(directory=WEB_DIST, html=True), name="web")
@@ -442,8 +579,13 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
     return app
 
 
-def serve(*, demo: bool, port: int, speed: float) -> None:
+def serve(*, demo: bool, port: int, speed: float, public: bool = False) -> None:
     import uvicorn
 
-    uvicorn.run(create_app(demo=demo, demo_speed=speed), host="127.0.0.1", port=port,
+    if public:
+        from hq import public as pub
+
+        pub.check_ready()
+    # Always this machine only: in public mode the tunnel connects here, nothing else can.
+    uvicorn.run(create_app(demo=demo, demo_speed=speed, public=public), host="127.0.0.1", port=port,
                 log_level="warning")

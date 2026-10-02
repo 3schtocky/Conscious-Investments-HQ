@@ -20,6 +20,7 @@ You are building (and later maintaining) an AI-run stock-picking office for **Co
 - Client Relations: Wren drafts and Harbor finalizes the weekly newsletter and client memos into `outbox/`. `hq/outbox.py: check_issue` is the code gate (only approved numbers, watchlist names as ideas only, no hype or advice); a failing issue can't be finalized. `hq/publish.py` holds the Publisher interface; the only publisher writes ready-to-paste files and never posts anything.
 - Paper portfolio (`hq/portfolio.py`): only approved Outperform names, sized 3, 5 or 8 percent; a paper fill at the latest price when the Captain approves; code raises exit cards (base target reached, rating below Outperform, down 25 percent) and the Captain decides. Mark-to-market and the scoreboard against SPY are plain code on free Yahoo quotes. No real money moves.
 - Nothing is published or entered into the paper portfolio without the Captain's approval.
+- Public mode (`hq serve --public`, behind a Cloudflare Tunnel): the Captain signs in with `HQ_CAPTAIN_PASSWORD`; everyone else is a visitor who gets only the sanitized views in `hq/public.py` (floor movement, watchlist, portfolio scoreboard, approved newsletters). Visitor access is deny-by-default: a new endpoint is private unless added to `visitor_allowed`, and `tests/test_public.py` checks every route and plants secrets to prove nothing leaks. In local mode the server only answers its own page on this machine (`request_allowed`).
 
 ## Conventions
 - Python 3.12 via `uv`; run everything with `uv run ...`.

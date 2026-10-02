@@ -39,6 +39,28 @@ Other commands: `uv run hq smoke` (tiny key check), `uv run hq run-agent Quill "
 
 The office uses the Anthropic API, which is billed separately from a Claude subscription. Set a monthly spend limit in the Anthropic Console as a backstop to the office's own daily cap.
 
+## Putting the office on a public website
+The office can be watched live by anyone while staying under your control. It keeps running on your own machine; a Cloudflare Tunnel publishes it. Your API key, database and research never leave the machine.
+
+**What visitors get:** the office floor live (who is working, who walks where), the watchlist, the paper portfolio scoreboard and newsletters you approved. They can never change anything, start work or spend anything. **What stays private:** the agents' reasoning and conversations, drafts, models and research files, approval cards, audit findings, spend, memory and everything you write. The server refuses everything else to a visitor by default (`hq/public.py`, `visitor_allowed` in `hq/server.py`).
+
+```bash
+uv run hq captain-password          # creates your sign-in password in .env and shows it once
+uv run hq serve --public            # same office, now with visitors and a sign-in
+```
+Set the site's host names under `public.hosts` in `config/office.yaml`. Then, once, with a Cloudflare account that manages the domain:
+
+```bash
+brew install cloudflared
+cloudflared tunnel login                                   # opens Cloudflare in your browser
+cloudflared tunnel create conscious-hq
+cloudflared tunnel route dns conscious-hq consciousinvestments.org
+cloudflared tunnel run --url http://127.0.0.1:8750 conscious-hq
+```
+The site is live while both `hq serve --public` and the tunnel are running and the machine is awake. To sign in, open the site, choose **Sign in** and enter the Captain's password. Five wrong passwords from one address lock sign-in for fifteen minutes.
+
+Before going live: keep `api.enabled: false` until you want real runs, keep a spend limit in the Anthropic Console as a backstop, and never put the API key or the Captain's password into Cloudflare or the repository.
+
 ## Status
 All eight build phases are in place: engine, office UI, the Captain's channel, Equity Research and Quant, Screening, Audit, Client Relations, and the paper portfolio. Everything has been verified in demo mode and with mocked tests; real agent runs happen only when the Captain switches the API on. See `CLAUDE.md`.
 

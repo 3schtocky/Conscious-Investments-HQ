@@ -60,7 +60,7 @@ def test_another_website_cannot_drive_or_read_the_office(client):
 
 def test_the_live_stream_is_closed_to_other_origins(client):
     with client.websocket_connect("/ws", headers={"Origin": "http://127.0.0.1:8750"}) as ws:
-        client.office.bus.publish("status", "er_lead", None, status="working")
+        client.portal.call(lambda: client.office.bus.publish("status", "er_lead", None, status="working"))
         assert ws.receive_json()["type"] == "status"
     with pytest.raises(WebSocketDisconnect), client.websocket_connect("/ws", headers={"Origin": "https://evil.example"}) as ws:
         ws.receive_json()
