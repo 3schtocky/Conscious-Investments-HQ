@@ -103,12 +103,18 @@ export class ApprovalsPanel {
     const agent = inc.agent ? this.state.agents.get(inc.agent) : undefined;
     const ack = async () => { await fetch(`/api/incidents/${inc.id}/resolve`, { method: "POST" }); };
     const unpause = async () => { await fetch(`/api/agents/${inc.agent}/resume`, { method: "POST" }); await ack(); };
+    const resumable = ["turn_cap", "tool_loop", "task_cost_cap", "api_credit", "api_auth", "api_rate", "api_busy"].includes(inc.kind);
+    const resume = async () => {
+      const r = await fetch(`/api/incidents/${inc.id}/resume`, { method: "POST" });
+      if (!r.ok) alert((await r.json()).detail ?? "Could not resume.");
+    };
     return h("div", { class: "approval incident" },
       h("div", { class: "approval-head" }, h("span", { class: "chip warn" }, "🚨 Incident"), h("span", { class: "chip" }, inc.kind),
         h("span", { class: "feed-time" }, timeAgo(inc.ts))),
       h("p", { class: "approval-summary" }, `${this.state.name(inc.agent)}: ${inc.detail}`),
       h("div", { class: "row" },
         agent?.paused ? h("button", { class: "btn", onclick: unpause }, `Unpause ${agent.nickname}`) : null,
+        resumable ? h("button", { class: "btn", onclick: resume }, inc.kind.startsWith("api_") ? "Resume work" : "Resume task") : null,
         h("button", { class: "btn ghost", onclick: ack }, "Acknowledge")));
   }
 }

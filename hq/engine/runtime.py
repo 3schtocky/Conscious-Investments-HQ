@@ -49,6 +49,9 @@ class Office:
         from hq.outbox import OUTBOX_DIR
         self.outbox_dir = outbox_dir or OUTBOX_DIR   # Client Relations' ready-to-publish files
         self._running: set[asyncio.Task] = set()
+        self.reported: set[int] = set()   # tasks that already sent the Captain a report
+        # task id -> (turns, spend) at the moment the Captain resumed it: the limits start afresh
+        self.allowance: dict[int, tuple[int, float]] = {}
         # The Captain's tone filter: "llm" (Haiku, billed to Juno) or "rules" (free, demo).
         self.tone_engine = tone or office().get("tone", {}).get("engine", "llm")
         cast = roster()
@@ -194,6 +197,8 @@ class Office:
         return task_id
 
     async def report_to_captain(self, sender: str, text: str, task_id: int | None = None) -> None:
+        if task_id is not None:
+            self.reported.add(task_id)
         self.store.add_chat(channel=f"dm:{CAPTAIN}|{sender}", sender=sender,
                             recipients=[CAPTAIN], text=text, task_id=task_id)
         self.bus.publish("captain_report", sender, task_id, text=text)
@@ -218,7 +223,9 @@ class Office:
             juno = "chief_of_staff"
             body = (f"{self.captain_name} sent a message to the whole office:\n\n{text}\n\n"
                     "Route it: use assign_task to give the right lead(s) a clear assignment (goal, "
-                    "deliverable, any deadline), or answer it yourself if it's a question for you. "
+                    "deliverable, any deadline). If it applies to several wings, assign them all in one "
+                    "call (a list of leads, or \"all_leads\"). If it is a question for you, check "
+                    "read_office and answer it yourself with report_to_captain. "
                     f"Then tell {self.captain_name} in one line who is on it.")
             task_id = self.store.create_task(assignee=juno, assigned_by=CAPTAIN, kind="assignment",
                                              title=_title(text), body=body)
@@ -974,6 +981,81 @@ class Office:
         if not self.clocked_out:
             self.clocked_out = True
             self.bus.publish("office_status", None, None, status="clocked_out", detail=detail)
+
+    # stuck work -------------------------------------------------------------------------
+    RESUMABLE = ("turn_cap", "tool_loop", "task_cost_cap", "api_off", "api_credit", "api_auth",
+                 "api_rate", "api_busy", "cancelled")
+
+    def api_problem(self, agent: str, task_id: int, kind: str, detail: str) -> None:
+        """The Anthropic account or service refused a call. One incident per kind covers every
+        task it stops; resuming from that incident restarts them all."""
+        if not any(i["kind"] == kind for i in self.store.incidents()):
+            self.raise_incident(agent, task_id, kind, detail)
+
+    def resume_task(self, task_id: int) -> int:
+        """The Captain restarts a task the guards or an API problem paused. It carries on from
+        where it stopped, with a fresh allowance of turns and spend."""
+        t = self.store.task(task_id)
+        if t is None:
+            raise KeyError(f"No task {task_id}.")
+        if t["status"] != "paused":
+            raise ValueError(f"Task {task_id} is {t['status']}, not paused.")
+        if t["kind"] == "delegation":
+            raise ValueError("That was a delegated job; its lead has already moved on. Ask the lead "
+                             "to hand it over again.")
+        reason = (t["status_reason"] or "").split(":")[0]
+        if reason == "context_cap":
+            raise ValueError("That conversation grew too long to continue. Give the work again as a "
+                             "new assignment.")
+        if reason not in self.RESUMABLE:
+            raise ValueError(f"Task {task_id} can't be resumed from here ({t['status_reason']}).")
+        if not self.api_available():
+            raise ValueError("The API is switched off (api.enabled), so nothing can run yet.")
+        saved = self.store.conversation(task_id)
+        turns = sum(1 for m in saved[1] if m["role"] == "assistant") if saved else 0
+        self.allowance[task_id] = (turns, self.store.spend_for_root(t["root_id"]))
+        self.store.set_task_status(task_id, "queued", reason="resumed by the Captain")
+        self.bus.publish("task_resumed", t["assignee"], task_id, title=t["title"])
+        self._schedule(t["assignee"], task_id)
+        return task_id
+
+    def resume_from_incident(self, incident_id: int) -> list[int]:
+        """Restart what an incident stopped, then close it. An API incident restarts every task
+        it paused; any other restarts its one task."""
+        inc = next((i for i in self.store.incidents() if i["id"] == incident_id), None)
+        if inc is None:
+            raise KeyError(f"No open incident {incident_id}.")
+        if inc["kind"].startswith("api_"):
+            ids = [t["id"] for t in self.store.tasks("paused")
+                   if t["kind"] != "delegation" and (t["status_reason"] or "").startswith(inc["kind"])]
+        else:
+            ids = [inc["task_id"]] if inc["task_id"] else []
+        resumed = [self.resume_task(i) for i in ids]
+        if not ids:
+            raise ValueError("Nothing is waiting to be resumed for this incident.")
+        self.resolve_incident(incident_id)
+        return resumed
+
+    def office_report(self) -> dict:
+        """A plain snapshot of the office for Juno: who is doing what, what is waiting or stuck,
+        and what waits on the Captain. No costs: the ledger is the Captain's."""
+        people = []
+        for a in self.agents.values():
+            task = self.store.task(a.current_task) if a.current_task else None
+            people.append({"name": a.nickname, "id": a.id, "role": a.role,
+                           "wing": self.wing_name(a.wing), "status": a.status,
+                           "working_on": task["title"] if task else None})
+        work = [{"task": t["id"], "who": self.name(t["assignee"]), "title": t["title"],
+                 "status": t["status"], "why": t["status_reason"]}
+                for t in self.store.open_tasks()[-25:]]
+        cards = [{"approval": c["id"], "kind": c["kind"], "title": c["title"],
+                  "from": self.name(c["agent"]) if c["agent"] in self.agents else c["agent"]}
+                 for c in self.store.approvals("pending")]
+        problems = [{"incident": i["id"], "kind": i["kind"], "detail": i["detail"]}
+                    for i in self.store.incidents()]
+        return {"office_paused_by_captain": self.held, "clocked_out_for_the_day": self.clocked_out,
+                "colleagues": people, "unfinished_work": work,
+                "waiting_on_captain": cards, "open_incidents": problems}
 
     def resume_budget_paused(self) -> list[int]:
         """Restart tasks paused by the budget, if today's budget has room (new day or cap

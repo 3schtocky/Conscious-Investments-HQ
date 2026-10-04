@@ -316,7 +316,9 @@ async def test_truncated_tool_call_is_not_run(make_office):
     turn.stop_reason = "max_tokens"
     llm.script("Quill", turn, text_turn("ok"))
     await _run(office, "Quill", "x")
-    assert office.store.chat() == [office.store.chat()[0]]   # only the Captain's assignment
+    # The cut-off call never reached Ledger; the only reply is Quill's own answer to the Captain.
+    assert [(m["sender"], m["text"]) for m in office.store.chat()
+            if m["recipients"] != ["er_lead"]] == [("er_lead", "ok")]
     results = [c for c in llm.calls if c["who"] == "Quill"][1]["params"]["messages"][-1]
     assert results["content"][0]["is_error"] is True
 

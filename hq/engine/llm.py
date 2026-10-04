@@ -112,6 +112,27 @@ def require_api() -> None:
             "on only for an approved real run.")
 
 
+def api_problem(exc: Exception) -> tuple[str, str] | None:
+    """Recognize an Anthropic account or service problem, and say it in plain words. Returns
+    (kind, message) or None for anything else. Such a task is paused, not failed: it can be
+    resumed once the cause is fixed."""
+    status = getattr(exc, "status_code", None)
+    text = str(exc).lower()
+    if "credit balance is too low" in text:
+        return ("api_credit", ("The Anthropic account is out of credit. Add credits in the "
+                               "Anthropic Console (Plans & Billing), then resume the work here."))
+    if status == 401 or "authentication_error" in text or "invalid x-api-key" in text:
+        return ("api_auth", ("Anthropic rejected the API key. Check ANTHROPIC_API_KEY in .env, "
+                             "then resume the work here."))
+    if status == 429 or "rate_limit_error" in text:
+        return ("api_rate", ("Anthropic is rate limiting this key. Wait a minute, then resume "
+                             "the work here."))
+    if (isinstance(status, int) and status >= 500) or "overloaded" in text:
+        return ("api_busy", ("Anthropic is overloaded or down right now. Try resuming in a "
+                             "few minutes."))
+    return None
+
+
 class AnthropicClient:
     """Real client: AsyncAnthropic streaming. Every call passes `require_api()` first."""
 

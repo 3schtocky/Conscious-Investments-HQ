@@ -194,7 +194,7 @@ def test_tool_lists_by_role(make_office):
     from hq.tools.office import tools_for
 
     names = lambda tier, aid: [t.name for t in tools_for(tier, aid)]
-    assert names("associate", "chief_of_staff") == ["send_message", "assign_task",
+    assert names("associate", "chief_of_staff") == ["send_message", "assign_task", "read_office",
                                                     "report_to_captain", "request_approval",
                                                     "post_to_group"]
     assert names("lead", "er_lead") == ["send_message", "delegate", "report_to_captain",

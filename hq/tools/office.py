@@ -212,36 +212,66 @@ REPORT_TO_CAPTAIN = Tool(
 
 # assign_task (Chief of Staff) -------------------------------------------------------------
 async def _assign_task(ctx: ToolContext, inp: dict) -> str:
-    to = ctx.office.resolve(_str(inp, "to", max_len=100))
+    to = inp.get("to")
+    office = ctx.office
+    if to == "all_leads":
+        targets = [a.id for a in office.agents.values() if a.tier == "lead"]
+    else:
+        names = [to] if isinstance(to, str) else to
+        if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names):
+            raise GuardBlock("`to` must be a lead's id or nickname, a list of them, or \"all_leads\".")
+        targets = list(dict.fromkeys(office.resolve(n) for n in names))
     title = _str(inp, "title", max_len=120)
     brief = _str(inp, "brief", max_len=8000)
-    target = ctx.office.agents[to]
-    if target.tier != "lead":
-        raise GuardBlock(f"{target.nickname} is an associate. Assign work to department leads; "
-                         "they delegate to their associates.")
-    ctx.agent.guard.on_delegate()   # fan-out counts against the same per-task limit
-    task_id = ctx.office.assign(to, brief, title=title, by=ctx.agent.id, parent=ctx.task)
-    ctx.office.bus.publish("move", ctx.agent.id, ctx.task["id"], to=f"desk:{to}")
-    ctx.office.bus.publish("move", ctx.agent.id, ctx.task["id"], to=f"desk:{ctx.agent.id}")
-    return f"Assigned to {target.nickname} (task #{task_id})."
+    for t in targets:
+        if office.agents[t].tier != "lead":
+            raise GuardBlock(f"{office.agents[t].nickname} is an associate. Assign work to department "
+                             "leads; they delegate to their associates.")
+    ctx.agent.guard.on_delegate()   # one fan-out counts once against the per-task limit
+    sent = []
+    for t in targets:
+        task_id = office.assign(t, brief, title=title, by=ctx.agent.id, parent=ctx.task)
+        office.bus.publish("move", ctx.agent.id, ctx.task["id"], to=f"desk:{t}")
+        sent.append(f"{office.agents[t].nickname} (task #{task_id})")
+    office.bus.publish("move", ctx.agent.id, ctx.task["id"], to=f"desk:{ctx.agent.id}")
+    return "Assigned to " + ", ".join(sent) + "."
 
 
 ASSIGN_TASK = Tool(
     name="assign_task",
     description=(
-        "Give a department lead a new assignment on {captain}'s behalf. State the goal, the "
+        "Give department leads a new assignment on {captain}'s behalf. State the goal, the "
         "deliverable, and any deadline or constraint {captain} gave, without dropping or "
-        "changing any of it. One lead per call; call again for other wings."),
+        "changing any of it. `to` is one lead, a list of leads (the same brief goes to each), or "
+        "\"all_leads\" when the instruction applies to every department."),
     input_schema={
         "type": "object",
         "properties": {
-            "to": {"type": "string", "description": "Lead id or nickname."},
+            "to": {"description": "A lead id or nickname, a list of them, or \"all_leads\".",
+                   "anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
             "title": {"type": "string", "description": "Short task title."},
             "brief": {"type": "string", "description": "The assignment, complete and specific."},
         },
         "required": ["to", "title", "brief"],
     },
     handler=_assign_task,
+)
+
+
+# read_office (Chief of Staff) -------------------------------------------------------------
+async def _read_office(ctx: ToolContext, inp: dict) -> str:
+    return json.dumps(ctx.office.office_report(), indent=1)
+
+
+READ_OFFICE = Tool(
+    name="read_office",
+    description=(
+        "See what is happening across the office right now: what each colleague is doing, work "
+        "that is waiting, paused or failed, decisions waiting on {captain}, and open incidents. "
+        "Use it before answering {captain}'s questions about progress or status, and before "
+        "assigning work, so you don't duplicate something already under way."),
+    input_schema={"type": "object", "properties": {}},
+    handler=_read_office,
 )
 
 
@@ -418,7 +448,8 @@ def tools_for(tier: str, agent_id: str, wing: str | None = None) -> list[Tool]:
 
 def _office_tools(tier: str, agent_id: str) -> list[Tool]:
     if agent_id == "chief_of_staff":
-        return [SEND_MESSAGE, ASSIGN_TASK, REPORT_TO_CAPTAIN, REQUEST_APPROVAL, POST_TO_GROUP]
+        return [SEND_MESSAGE, ASSIGN_TASK, READ_OFFICE, REPORT_TO_CAPTAIN, REQUEST_APPROVAL,
+                POST_TO_GROUP]
     if tier == "associate":
         return [SEND_MESSAGE, SUBMIT_RESULT, POST_TO_GROUP]
     return [SEND_MESSAGE, DELEGATE, REPORT_TO_CAPTAIN, REQUEST_APPROVAL, POST_TO_GROUP]

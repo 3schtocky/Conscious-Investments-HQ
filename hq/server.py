@@ -544,6 +544,15 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         office().resolve_incident(incident_id)
         return JSONResponse({"ok": True})
 
+    @app.post("/api/incidents/{incident_id}/resume")
+    async def resume_incident(incident_id: int) -> JSONResponse:
+        try:
+            return JSONResponse({"resumed": office().resume_from_incident(incident_id)})
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:
         if not request_allowed("WEBSOCKET", socket.headers, public_hosts):   # another site must not listen in

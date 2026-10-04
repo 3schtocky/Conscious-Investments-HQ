@@ -245,6 +245,12 @@ class Store:
             return self._all("SELECT * FROM tasks WHERE status=? ORDER BY id", (status,))
         return self._all("SELECT * FROM tasks ORDER BY id")
 
+    def open_tasks(self) -> list[dict]:
+        """Work that is not finished: waiting, running, paused or failed (delegations excluded:
+        their lead tracks them)."""
+        return self._all("SELECT * FROM tasks WHERE kind != 'delegation' AND status IN "
+                         "('queued','running','paused','paused_budget','error') ORDER BY id")
+
     def set_task_status(self, task_id: int, status: str, reason: str | None = None,
                         result: str | None = None) -> None:
         self._exec(

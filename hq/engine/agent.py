@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from hq.config import ROOT, mission, model_config, office
 from hq.engine.guards import GuardBlock, GuardTripped, TaskGuard
 from hq.engine.ledger import BudgetExhausted
-from hq.engine.llm import ApiDisabled, TurnResult, request_params, web_tools
+from hq.engine.llm import ApiDisabled, TurnResult, api_problem, request_params, web_tools
 from hq.tools.office import ToolContext, definitions, tool_map, tools_for
 
 if TYPE_CHECKING:
@@ -138,14 +138,16 @@ class Agent:
         else:
             guard = TaskGuard(max_turns=cfg["limits"]["max_turns_per_task"],
                               cost_cap=cfg["budget"]["per_task_cap_usd"])
-        guard.turns = sum(1 for m in messages if m["role"] == "assistant")
+        base_turns, _ = self.office.allowance.get(task["id"], (0, 0.0))   # a resume starts afresh
+        guard.turns = max(0, sum(1 for m in messages if m["role"] == "assistant") - base_turns)
         return guard
 
     def _task_spend(self, task: dict) -> float:
         store = self.office.store
         if task["kind"] == "delegation":
             return store.spend_for_task(task["id"])
-        return store.spend_for_root(task["root_id"])
+        _, base_spend = self.office.allowance.get(task["id"], (0, 0.0))
+        return max(0.0, store.spend_for_root(task["root_id"]) - base_spend)
 
     async def _run(self, task_id: int) -> dict:
         office_ = self.office
@@ -196,6 +198,7 @@ class Agent:
                             "{captain}", office_.captain_name)}]
                     if follow_up is None:
                         final = _final_text(messages[-1])
+                        await self._report_unreported(task, final)
                         return self._finish(task, result=final)
                     messages.append({"role": "user", "content": follow_up})
                     store.save_conversation(task_id, system, messages)
@@ -254,6 +257,13 @@ class Agent:
             store.set_task_status(task_id, "paused", reason="cancelled")
             raise
         except Exception as e:   # API errors after SDK retries, bugs: never crash the office
+            problem = api_problem(e)
+            if problem:   # an account or service problem: pause in plain words, resumable
+                kind, detail = problem
+                store.set_task_status(task_id, "paused", reason=f"{kind}: {detail}")
+                bus.publish("task_paused", self.id, task_id, reason=kind, detail=detail)
+                office_.api_problem(self.id, task_id, kind, detail)
+                return {"status": "paused", "reason": kind, "detail": detail}
             log.exception("task %s failed", task_id)
             store.set_task_status(task_id, "error", reason=f"{type(e).__name__}: {e}")
             bus.publish("task_error", self.id, task_id, error=f"{type(e).__name__}: {e}")
@@ -317,6 +327,13 @@ class Agent:
         text = _final_text(message)
         if text and "report_to_captain" not in used:
             await self.office.report_to_captain(self.id, text, task_id=task["id"])
+
+    async def _report_unreported(self, task: dict, final: str) -> None:
+        """A task the Captain gave directly must never end in silence: if the agent finished with
+        a plain-text answer and sent no report, that answer is delivered to him."""
+        if (final and task["kind"] == "assignment" and task["assigned_by"] == "captain"
+                and task["id"] not in self.office.reported):
+            await self.office.report_to_captain(self.id, final, task_id=task["id"])
 
     async def _run_tool(self, ctx: ToolContext, block: dict, by_name: dict) -> dict:
         bus = self.office.bus
