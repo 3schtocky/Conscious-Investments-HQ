@@ -68,7 +68,8 @@ export class Replayer {
     this.state.replaying = true;
     this.idx = 0;
     const day = data.from ? new Date(data.from * 1000).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }) : "";
-    this.say(STATIC ? `Replay of the office at work${day ? `, ${day}` : ""}. Click a colleague or a wing to look around.`
+    this.say(STATIC ? (this.state.demo ? "Demo replay: the real engine running a scripted workday, with no API calls. Click a colleague or a wing to look around."
+      : `Replay of the office at work${day ? `, ${day}` : ""}. Click a colleague or a wing to look around.`)
       : `Replay of recent work${day ? `, ${day}` : ""}. The office is quiet right now; this goes live the moment it isn't.`);
     this.step();
   }

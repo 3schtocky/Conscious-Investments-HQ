@@ -799,9 +799,9 @@ SCENES = [scene_gem_hunt, scene_memo, scene_quant_model, scene_audit, scene_port
           scene_lobby_sync, scene_newsletter]
 
 
-async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0) -> None:
-    """Loop the scenes forever, one at a time, with a breather between them."""
-    for scene in itertools.cycle(SCENES):
+async def run_demo(office: Office, llm: DemoLLM, pause: float = 6.0, rounds: int | None = None) -> None:
+    """Loop the scenes forever (or `rounds` times through), one at a time, with a breather between them."""
+    for scene in itertools.cycle(SCENES) if rounds is None else SCENES * rounds:
         # Scenes repeat word for word; without a fresh guard the near-duplicate check would
         # (correctly) block every scripted message from the second loop on.
         office.conversations = ConversationGuard()

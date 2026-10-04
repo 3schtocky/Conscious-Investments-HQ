@@ -208,13 +208,13 @@ REPLAY_MAX = 150         # events in one replay
 REPLAY_SESSION_GAP = 6 * 3600   # a longer silence ends the stretch of work being replayed
 
 
-def replay(office: Office, now: float | None = None) -> dict:
+def replay(office: Office, now: float | None = None, max_events: int = REPLAY_MAX) -> dict:
     """The most recent stretch of real floor activity, for the page to play back when the office
     is quiet. Every event passes through `event()`, the same filter as the live stream, so a
     replay can never show a visitor more than watching live would: movement and who works, never
     words. Oldest first."""
     now = now or time.time()
-    rows = office.store.events_where(types=REPLAY_TYPES, start=now - REPLAY_DAYS * 24 * 3600, limit=600)
+    rows = office.store.events_where(types=REPLAY_TYPES, start=now - REPLAY_DAYS * 24 * 3600, limit=max(600, max_events * 3))
     safe = []
     for r in rows:
         ev = event(office, {"id": r["id"], "ts": r["ts"], "type": r["type"], "agent": r["agent"],
@@ -226,7 +226,7 @@ def replay(office: Office, now: float | None = None) -> dict:
         if session and session[-1]["ts"] - ev["ts"] > REPLAY_SESSION_GAP:
             break
         session.append(ev)
-        if len(session) >= REPLAY_MAX:
+        if len(session) >= max_events:
             break
     session.reverse()
     return {"events": session, "from": session[0]["ts"] if session else None,

@@ -174,6 +174,9 @@ def main() -> None:
     p_exp.add_argument("--db", help="database to export (default data/office.db)")
     p_exp.add_argument("--out", help="output folder (default web/public/data)")
     p_exp.add_argument("--outbox", help="outbox folder holding approved issues")
+    p_exp.add_argument("--max-events", type=int, default=400, help="replay length")
+    p_exp.add_argument("--showcase", action="store_true",
+                       help="first record every demo scene into a fresh database, then export that")
     p_exp.add_argument("--offline", action="store_true", help="skip live price lookups")
     sub.add_parser("go-live", help="checklist: what is ready for the public site, and what to do next")
     p_reh = sub.add_parser("rehearse", help="try the public site on your phone through a throwaway "
@@ -215,8 +218,11 @@ def main() -> None:
 
         from hq import static_site
 
-        static_site.export(Path(args.db) if args.db else None, Path(args.out) if args.out else None,
-                           outbox=Path(args.outbox) if args.outbox else None, offline=args.offline)
+        db, outbox = Path(args.db) if args.db else None, Path(args.outbox) if args.outbox else None
+        if args.showcase:
+            db, outbox = static_site.build_showcase(), static_site.DATA_DIR / "showcase-outbox"
+        static_site.export(db, Path(args.out) if args.out else None, outbox=outbox, offline=args.offline,
+                           max_events=args.max_events)
         sys.exit(0)
     if args.cmd == "go-live":
         from hq import deploy
