@@ -24,3 +24,6 @@ web/dist/
 # OS
 .DS_Store
 dist-site/
+
+# The guest site's published replay data (demo only, sanitized)
+!web/public/data/
