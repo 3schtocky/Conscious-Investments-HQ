@@ -14,6 +14,7 @@ import { AuditPanel } from "./ui/audit";
 import { OutboxPanel } from "./ui/outbox";
 import { PortfolioPanel, pct as signedPct } from "./ui/portfolio";
 import { NewsPanel, SignInPanel } from "./ui/visitor";
+import { Replayer } from "./ui/replay";
 
 type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings" | "news" | "signin";
 let TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "portfolio", "audit", "outbox", "settings"];
@@ -80,6 +81,8 @@ const cardsRoot = h("div", { class: "cards" });
 const tabsBar = h("nav", { class: "tabs" });
 const panelRoot = h("div", { class: "panel" });
 const bossBar = h("div", { class: "boss" });
+// Visitors only: plays back recent work when the floor is quiet (see ui/replay.ts).
+const replay = new Replayer(state, () => scene, () => loadState().catch(() => {}));
 
 // The sidebar's left edge is a handle: drag it (or focus it and use the arrow keys) to trade
 // office floor for reading room. Double-click resets. The width is remembered per browser.
@@ -88,7 +91,7 @@ const resizer = h("div", { class: "resizer", role: "separator", tabindex: 0, "ar
   "aria-label": "Resize the sidebar", title: "Drag to resize the sidebar (double-click to reset)" });
 const aside = h("aside", {}, resizer, tabsBar, panelRoot, bossBar);
 const mainEl = h("main", {},
-  h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons), cardsRoot),
+  h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons, replay.banner), cardsRoot),
   aside);
 document.getElementById("app")!.append(header, mainEl);
 
@@ -254,8 +257,8 @@ function renderViews() {
 function renderHeader() {
   if (visitor) {   // no spend, no desk: just whether the office is open
     const working = [...state.agents.values()].filter((a) => a.status === "working").length;
-    statusPill.textContent = state.held ? "⏸ Paused" : state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
-    statusPill.dataset.state = state.held || state.clockedOut ? "closed" : working ? "busy" : "open";
+    statusPill.textContent = state.replaying ? "↻ Replay" : state.held ? "⏸ Paused" : state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
+    statusPill.dataset.state = state.replaying ? "open" : state.held || state.clockedOut ? "closed" : working ? "busy" : "open";
     demoBadge.classList.toggle("hidden", !state.demo);
     const pv = portfolio.view;
     const scored = !!pv && pv.return !== null && pv.priced;
@@ -346,6 +349,7 @@ function connect() {
       if (ev.type === "watchlist_added" || ev.type === "watchlist_status") watchlist.refresh();
       if (ev.type === "portfolio_changed") portfolio.refresh();
       if (ev.type === "outbox_status") news.refresh();
+      replay.live(ev);
       state.apply(ev); scene?.handle(ev); dirty = true;
       return;
     }

@@ -387,3 +387,7 @@ body.office-held .stage-wrap::after { content: "Office paused"; position: absolu
 body.office-held .boss::before { content: "The office is paused. A message to one colleague is answered right away; messages to the office or to everyone wait until you resume."; display: block; width: 100%; font-size: 12px; color: var(--text-2); background: color-mix(in srgb, var(--gold) 14%, transparent); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }
 .card[data-status="held"] .pill { background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); }
 .tag[data-status="held"] .tag-name { background: var(--gold); }
+
+/* A visitor's idle floor: the banner that says what they are watching */
+.replay-banner { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 6; max-width: min(560px, calc(100% - 24px)); padding: 8px 14px; border-radius: 999px; background: var(--surface); color: var(--ink); border: 1px solid var(--grid); box-shadow: var(--shadow); font-size: 12.5px; line-height: 1.35; text-align: center; pointer-events: none; }
+.replay-banner.hidden { display: none; }

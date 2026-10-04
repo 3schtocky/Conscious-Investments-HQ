@@ -56,8 +56,8 @@ def test_every_route_is_private_unless_listed(site):
     endpoint added later is private until someone decides otherwise."""
     visitor, _ = site
     open_to_visitors = {"/api/session", "/api/login", "/api/public/state", "/api/public/watchlist",
-                        "/api/public/portfolio", "/api/public/newsletters",
-                        "/public/newsletters/{issue_id}/{name}", "/avatars/{name}"}
+                        "/api/public/portfolio", "/api/public/newsletters", "/api/public/replay",
+                        "/api/public/health", "/public/newsletters/{issue_id}/{name}", "/avatars/{name}"}
     checked = 0
     for route in visitor.app.routes:
         if not isinstance(route, APIRoute) or route.path in open_to_visitors:
@@ -141,7 +141,8 @@ async def test_a_visitor_is_never_handed_anything_private(site):
     seen = [e for e in (pub.event(office, e) for e in raw) if e is not None]   # the server's own filter
     stream = json.dumps(seen)
     pages = "".join(visitor.get(p).text for p in ("/api/public/state", "/api/public/watchlist",
-                                                  "/api/public/portfolio", "/api/public/newsletters"))
+                                                  "/api/public/portfolio", "/api/public/newsletters",
+                                                  "/api/public/replay", "/api/public/health"))
     for secret in SECRETS:
         assert secret not in stream and secret not in pages, secret
     assert any(secret in captain.get("/api/chat").text for secret in SECRETS)   # the Captain still sees it all
@@ -287,3 +288,52 @@ def test_captain_password_is_written_privately_and_replaces_the_old_one(tmp_path
     value = lines[1].split("=", 1)[1]
     assert lines[1].startswith("HQ_CAPTAIN_PASSWORD=") and len(value) >= 32 and value in capsys.readouterr().out
     assert env.stat().st_mode & 0o777 == 0o600 and [p.name for p in tmp_path.iterdir()] == [".env"]
+
+
+async def test_the_replay_is_the_live_stream_replayed_and_leaks_nothing(site):
+    visitor, _ = site
+    office = visitor.office
+    assert visitor.get("/api/public/replay").json() == {"events": [], "from": None, "to": None}
+    await _busy_office(office, visitor.llm)
+    office.bus.publish("office_status", None, None, status="open", detail="SECRET-CAPTAIN-WORDS")
+    body = visitor.get("/api/public/replay")
+    for secret in SECRETS:
+        assert secret not in body.text, secret
+    data = body.json()
+    events = data["events"]
+    assert events and data["from"] == events[0]["ts"] and data["to"] == events[-1]["ts"]
+    assert [e["ts"] for e in events] == sorted(e["ts"] for e in events)
+    assert {e["type"] for e in events} <= {"status", "move", "meeting", "chat", "delegated", "task_started", "task_done"}
+    assert {e["text"] for e in events if e["type"] == "chat"} == {"…"}
+    assert {"An assignment from Stott", "RMBS memo"} <= {e["title"] for e in events if e["type"] == "task_started"}
+    assert all(e["task_id"] is None and e["agent"] in office.agents for e in events)
+
+
+def test_replay_takes_only_the_latest_stretch_of_work(make_office):
+    office, _ = make_office()
+    now = 1_000_000_000.0
+    for ts, agent in ((now - 3 * 24 * 3600, "er_lead"), (now - 3 * 24 * 3600 + 60, "er_lead"),
+                      (now - 600, "quant_lead"), (now - 300, "quant_lead")):
+        eid = office.store.add_event("status", agent, None, {"status": "working"})
+        office.store._exec("UPDATE events SET ts=? WHERE id=?", (ts, eid))
+    old = office.store.add_event("status", "er_lead", None, {"status": "idle"})
+    office.store._exec("UPDATE events SET ts=? WHERE id=?", (now - 9 * 24 * 3600, old))
+    got = pub.replay(office, now=now)["events"]
+    assert [e["agent"] for e in got] == ["quant_lead", "quant_lead"]   # an older burst and a stale one are left out
+
+
+def test_replay_is_capped(make_office):
+    office, _ = make_office()
+    now = 1_000_000_000.0
+    for i in range(300):
+        eid = office.store.add_event("move", "er_lead", None, {"to": "desk:quant_lead"})
+        office.store._exec("UPDATE events SET ts=? WHERE id=?", (now - 300 + i, eid))
+    got = pub.replay(office, now=now)["events"]
+    assert len(got) == pub.REPLAY_MAX and got[-1]["ts"] == now - 1
+
+
+def test_health_says_only_whether_the_office_answers(site):
+    visitor, captain = site
+    assert visitor.get("/api/public/health").json() == {"ok": True, "paused": False, "clocked_out": False}
+    captain.office.hold()
+    assert visitor.get("/api/public/health").json()["paused"] is True

@@ -272,6 +272,14 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
     async def public_state() -> JSONResponse:
         return JSONResponse(pub.state(office(), demo=demo))
 
+    @app.get("/api/public/replay")
+    async def public_replay() -> JSONResponse:
+        return JSONResponse(pub.replay(office()))
+
+    @app.get("/api/public/health")
+    async def public_health() -> JSONResponse:
+        return JSONResponse(pub.health(office()))
+
     async def _watchlist_prices() -> dict:
         from hq import quotes
 

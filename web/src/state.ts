@@ -67,6 +67,7 @@ export class OfficeState {
   demo = false;
   clockedOut = false;
   held = false;   // the Captain paused the whole office
+  replaying = false;   // a visitor's page is playing back recent work, not showing live activity
   wings: Record<string, string> = {};
   captain: { nickname: string; avatar?: AvatarSpec } = { nickname: "Captain" };
   models: Record<string, string> = {};

@@ -202,6 +202,43 @@ def event(office: Office, ev: dict[str, Any]) -> dict | None:
     return None
 
 
+REPLAY_TYPES = ["status", "move", "meeting", "chat", "delegated", "task_started", "task_done"]
+REPLAY_DAYS = 7          # how far back a replay may reach
+REPLAY_MAX = 150         # events in one replay
+REPLAY_SESSION_GAP = 6 * 3600   # a longer silence ends the stretch of work being replayed
+
+
+def replay(office: Office, now: float | None = None) -> dict:
+    """The most recent stretch of real floor activity, for the page to play back when the office
+    is quiet. Every event passes through `event()`, the same filter as the live stream, so a
+    replay can never show a visitor more than watching live would: movement and who works, never
+    words. Oldest first."""
+    now = now or time.time()
+    rows = office.store.events_where(types=REPLAY_TYPES, start=now - REPLAY_DAYS * 24 * 3600, limit=600)
+    safe = []
+    for r in rows:
+        ev = event(office, {"id": r["id"], "ts": r["ts"], "type": r["type"], "agent": r["agent"],
+                            "task_id": r["task_id"], **r["payload"]})
+        if ev is not None:
+            safe.append(ev)
+    session: list[dict] = []
+    for ev in reversed(safe):   # newest back to the first long silence
+        if session and session[-1]["ts"] - ev["ts"] > REPLAY_SESSION_GAP:
+            break
+        session.append(ev)
+        if len(session) >= REPLAY_MAX:
+            break
+    session.reverse()
+    return {"events": session, "from": session[0]["ts"] if session else None,
+            "to": session[-1]["ts"] if session else None}
+
+
+def health(office: Office) -> dict:
+    """Just enough for an uptime monitor or the page itself: the office answers, and whether it
+    is taking work. Nothing about what it is doing."""
+    return {"ok": True, "paused": office.held, "clocked_out": office.clocked_out}
+
+
 def watchlist(office: Office, prices: dict) -> list[dict]:
     keep = ("id", "ticker", "added", "source", "thesis", "price_at_add", "status", "price_now",
             "return", "spy_return", "vs_spy", "added_by_name")
