@@ -1,3 +1,4 @@
+import { STATIC } from "./static";
 // Conscious Investments HQ: the office UI.
 import Phaser from "phaser";
 import "./style.css";
@@ -20,7 +21,7 @@ type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "portfoli
 let TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "portfolio", "audit", "outbox", "settings"];
 // On the public site a visitor (anyone who hasn't signed in as the Captain) gets a read-only
 // office: the floor, the team, the watchlist, the scoreboard and published newsletters.
-const VISITOR_TABS: Tab[] = ["agent", "watchlist", "portfolio", "news", "signin"];
+const VISITOR_TABS: Tab[] = STATIC ? ["agent", "watchlist", "portfolio", "news"] : ["agent", "watchlist", "portfolio", "news", "signin"];
 let visitor = false;
 let publicSite = false;
 const OUTBOX_EVENTS = new Set(["outbox_draft", "outbox_ready", "outbox_status"]);

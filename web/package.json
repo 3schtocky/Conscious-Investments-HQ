@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:static": "tsc --noEmit && VITE_STATIC=1 vite build --outDir dist-site",
+    "deploy": "npm run build:static && wrangler pages deploy dist-site --project-name conscious-investments-hq",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

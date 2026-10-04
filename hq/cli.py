@@ -170,6 +170,11 @@ def main() -> None:
     p_run.add_argument("--title")
     sub.add_parser("spend", help="today's spend by agent and model")
     sub.add_parser("captain-password", help="create the Captain's sign-in password for public mode")
+    p_exp = sub.add_parser("export-static", help="write the public views as JSON for the Cloudflare Pages site")
+    p_exp.add_argument("--db", help="database to export (default data/office.db)")
+    p_exp.add_argument("--out", help="output folder (default web/public/data)")
+    p_exp.add_argument("--outbox", help="outbox folder holding approved issues")
+    p_exp.add_argument("--offline", action="store_true", help="skip live price lookups")
     sub.add_parser("go-live", help="checklist: what is ready for the public site, and what to do next")
     p_reh = sub.add_parser("rehearse", help="try the public site on your phone through a throwaway "
                                             "Cloudflare address, with the scripted demo office")
@@ -205,6 +210,14 @@ def main() -> None:
         sys.exit(spend())
     if args.cmd == "captain-password":
         sys.exit(captain_password())
+    if args.cmd == "export-static":
+        from pathlib import Path
+
+        from hq import static_site
+
+        static_site.export(Path(args.db) if args.db else None, Path(args.out) if args.out else None,
+                           outbox=Path(args.outbox) if args.outbox else None, offline=args.offline)
+        sys.exit(0)
     if args.cmd == "go-live":
         from hq import deploy
 

@@ -3,10 +3,11 @@
 // activity stops the replay at once and puts the floor back to what is true right now.
 import type { OfficeScene } from "../office/scene";
 import type { OfficeEvent, OfficeState } from "../state";
+import { STATIC } from "../static";
 import { h } from "./dom";
 
-const IDLE_MS = 12_000;        // quiet this long before a replay starts
-const LOOP_PAUSE_MS = 25_000;  // rest between replays
+const IDLE_MS = STATIC ? 1_500 : 12_000;        // quiet this long before a replay starts
+const LOOP_PAUSE_MS = STATIC ? 6_000 : 25_000;  // rest between replays
 const RETRY_MS = 90_000;       // nothing to replay: look again later
 const MIN_GAP = 450, MAX_GAP = 3200, SPEED_UP = 8;
 // What counts as the office really being busy: anything that moves a colleague.
@@ -67,7 +68,8 @@ export class Replayer {
     this.state.replaying = true;
     this.idx = 0;
     const day = data.from ? new Date(data.from * 1000).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }) : "";
-    this.say(`Replay of recent work${day ? `, ${day}` : ""}. The office is quiet right now; this goes live the moment it isn't.`);
+    this.say(STATIC ? `Replay of the office at work${day ? `, ${day}` : ""}. Click a colleague or a wing to look around.`
+      : `Replay of recent work${day ? `, ${day}` : ""}. The office is quiet right now; this goes live the moment it isn't.`);
     this.step();
   }
 

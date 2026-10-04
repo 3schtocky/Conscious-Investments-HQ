@@ -1,0 +1,4 @@
+# Cloudflare Pages: the guest site (a looping replay of the office). See deploy/PAGES.md.
+name = "conscious-investments-hq"
+pages_build_output_dir = "web/dist-site"
+compatibility_date = "2026-10-01"
