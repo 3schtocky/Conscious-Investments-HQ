@@ -127,10 +127,18 @@ DELEGATE = Tool(
 
 # submit_result ----------------------------------------------------------------------------
 _CONFIDENCE = {"high", "medium", "low"}
+FINDINGS_MAX = 16000   # a refused result costs a whole rewrite, so the limit is generous
+
+
+def _flat(item: Any) -> str:
+    """A question an agent wrote as an object ({"question": ..., "why": ...}) as one line."""
+    if isinstance(item, dict):
+        return "; ".join(f"{v}" for v in item.values() if v)
+    return str(item)
 
 
 async def _submit_result(ctx: ToolContext, inp: dict) -> str:
-    findings = _str(inp, "findings", max_len=8000)
+    findings = _str(inp, "findings", max_len=FINDINGS_MAX)
     figures = inp.get("figures") or []
     if not isinstance(figures, list):
         raise GuardBlock("`figures` must be a list.")
@@ -142,8 +150,11 @@ async def _submit_result(ctx: ToolContext, inp: dict) -> str:
         clean_figures.append({k: f.get(k) for k in ("label", "value", "unit", "period", "source")
                               if f.get(k) is not None})
     open_q = inp.get("open_questions") or []
-    if not isinstance(open_q, list) or not all(isinstance(q, str) for q in open_q):
+    if isinstance(open_q, str):
+        open_q = [open_q]   # one question written as plain text
+    if not isinstance(open_q, list):
         raise GuardBlock("`open_questions` must be a list of strings.")
+    open_q = [q if isinstance(q, str) else _flat(q) for q in open_q if q]
     confidence = inp.get("confidence")
     if confidence not in _CONFIDENCE:
         raise GuardBlock("`confidence` must be high, medium or low.")
@@ -157,7 +168,7 @@ SUBMIT_RESULT = Tool(
     description=(
         "Finish a delegated job by returning your result to the lead who assigned it. Call this "
         "once, as your last action. The lead sees only this result, so `findings` must contain "
-        "the deliverable itself (the list, table or draft), not a summary of it. Every figure needs a source (filing, model output or URL); "
+        "the deliverable itself (the list, table or draft), not a summary of it; aim for under 6,000 characters. Every figure needs a source (filing, model output or URL); "
         "if you could not source one, include it with source \"[VERIFY]\". Put anything unclear "
         "in open_questions instead of guessing."),
     input_schema={
@@ -165,7 +176,8 @@ SUBMIT_RESULT = Tool(
         "properties": {
             "findings": {"type": "string",
                          "description": "The deliverable itself: the requested list, table, "
-                                        "draft or answer, in full but concise."},
+                                        "draft or answer, in full but concise (under "
+                                        "6,000 characters if you can)."},
             "figures": {
                 "type": "array",
                 "items": {

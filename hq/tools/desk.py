@@ -13,6 +13,7 @@ Nothing here calls the Anthropic API; erb's data tools use SEC EDGAR and Yahoo (
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import re
 import sys
@@ -24,6 +25,9 @@ from hq.tools.office import Tool, ToolContext, _str
 
 TICKER = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 MAX_READ_LINES = 400
+MAX_READ_CHARS = 20_000   # one read returns at most this much text: long filings eat context fast
+BINARY = (".xlsx", ".docx", ".pdf", ".png")
+SEARCH_HITS = 25
 MAX_WRITE_CHARS = 60_000
 ER_WRITABLE = re.compile(r"^(brief|sources|memo)\.md$|^notes/[\w\-]+\.md$")
 SCREEN_WRITABLE = re.compile(r"^pitch\.md$|^notes/[\w\-]+\.md$")
@@ -42,10 +46,34 @@ def coverage_dir(ticker: str) -> Path:
     return ERB_DIR / "coverage" / ticker
 
 
+def _relative(ticker: str, rel: str) -> str:
+    """Agents often write 'EOSE/facts/facts.md' or 'coverage/EOSE/facts/facts.md': both mean
+    'facts/facts.md' inside the ticker's folder."""
+    rel = rel.strip().lstrip("/")
+    for prefix in (f"coverage/{ticker}/", f"{ticker}/", "coverage/"):
+        if rel.startswith(prefix):
+            return rel[len(prefix):]
+    return rel
+
+
+def _readable_files(ctx: ToolContext, ticker: str) -> list[str]:
+    """Paths this agent can read for a ticker, as read_file wants them."""
+    roots = [("", coverage_dir(ticker))]
+    if ctx.agent.wing in ("quant", "audit"):
+        roots.append(("quant/", ctx.office.quant_dir / ticker))
+    names = []
+    for prefix, root in roots:
+        if root.is_dir():
+            names += [prefix + p.relative_to(root).as_posix() for p in sorted(root.rglob("*"))
+                      if p.is_file() and not p.name.startswith(".")
+                      and p.suffix.lower() not in BINARY]
+    return names
+
+
 def _resolve(ctx: ToolContext, ticker: str, rel: str) -> Path:
     """Map a path like 'brief.md', 'facts/facts.md' or 'quant/notes/x.md' into the ticker's
     folders and refuse anything that escapes them."""
-    rel = rel.strip().lstrip("/")
+    rel = _relative(ticker, rel)
     if rel.startswith("quant/") and ctx.agent.wing not in ("quant", "audit"):
         raise GuardBlock("Quant's working files are private until a model is approved; read the "
                          "approved numbers with get_model.")
@@ -106,23 +134,73 @@ async def _list_files(ctx: ToolContext, inp: dict) -> str:
 
 async def _read_file(ctx: ToolContext, inp: dict) -> str:
     t = _ticker(inp)
-    path = _resolve(ctx, t, _str(inp, "path", max_len=300))
+    given = _str(inp, "path", max_len=300)
+    path = _resolve(ctx, t, given)
     if not path.is_file():
-        raise GuardBlock(f"No file {inp['path']!r} for {t}. Use list_files.")
-    if path.suffix.lower() in (".xlsx", ".docx", ".pdf", ".png"):
+        names = _readable_files(ctx, t)
+        if not names:
+            raise GuardBlock(f"No file {given!r}: there are no files for {t} yet (run erb_facts first).")
+        close = difflib.get_close_matches(_relative(t, given), names, n=3, cutoff=0.5)
+        raise GuardBlock(f"No file {given!r} for {t}."
+                         + (f" Closest: {', '.join(close)}." if close else "")
+                         + f" Files you can read: {', '.join(names[:40])}"
+                         + (f" (and {len(names) - 40} more; use list_files)" if len(names) > 40 else ""))
+    if path.suffix.lower() in BINARY:
         raise GuardBlock("That's a binary file; read the model with get_model or the .md/.csv/.yaml files.")
     start = max(int(inp.get("offset") or 0), 0)
     count = min(int(inp.get("lines") or 200), MAX_READ_LINES)
     lines = path.read_text(errors="replace").splitlines()
-    chunk = lines[start:start + count]
-    more = f"\n… {len(lines) - start - count} more lines (offset {start + count})" \
-        if start + count < len(lines) else ""
-    return "\n".join(f"{start + i + 1:>5}  {line}" for i, line in enumerate(chunk)) + more
+    out, used, shown = [], 0, 0
+    for i, line in enumerate(lines[start:start + count]):
+        row = f"{start + i + 1:>5}  {line}"
+        if used + len(row) > MAX_READ_CHARS and out:
+            break
+        out.append(row)
+        used += len(row) + 1
+        shown += 1
+    end = start + shown
+    more = ""
+    if end < len(lines):
+        more = f"\n… {len(lines) - end} more lines (continue at offset {end})"
+        if end < start + count:
+            more += f"; this read stopped at {MAX_READ_CHARS:,} characters"
+    return "\n".join(out) + more
+
+
+async def _search_file(ctx: ToolContext, inp: dict) -> str:
+    t = _ticker(inp)
+    pattern = _str(inp, "pattern", max_len=200)
+    try:
+        rx = re.compile(pattern, re.IGNORECASE)
+    except re.error:   # plain words with brackets or stars in them: match them literally
+        rx = re.compile(re.escape(pattern), re.IGNORECASE)
+    given = str(inp.get("path") or "").strip()
+    if given:
+        path = _resolve(ctx, t, given)
+        if not path.is_file():
+            raise GuardBlock(f"No file {given!r} for {t}. Leave `path` out to search every file, or "
+                             "use list_files.")
+        files = [_relative(t, given)]
+    else:
+        files = _readable_files(ctx, t)
+    hits, total = [], 0
+    for rel in files:
+        text = _resolve(ctx, t, rel).read_text(errors="replace")
+        for n, line in enumerate(text.splitlines(), 1):
+            if rx.search(line):
+                total += 1
+                if len(hits) < SEARCH_HITS:
+                    hits.append(f"{rel}:{n}: {line.strip()[:300]}")
+    if not hits:
+        return f"No lines match {pattern!r} in {len(files)} file(s) for {t}. Try a shorter or different word."
+    more = f"\n… {total - len(hits)} more matches; use a narrower pattern or name a path." \
+        if total > len(hits) else ""
+    return ("\n".join(hits) + more + "\nRead around a hit with read_file (offset = line minus 5).")
 
 
 async def _write_file(ctx: ToolContext, inp: dict) -> str:
     t = _ticker(inp)
-    rel = _str(inp, "path", max_len=200).lstrip("/")
+    rel = _relative(t, _str(inp, "path", max_len=200))
     content = inp.get("content")
     if not isinstance(content, str) or not content.strip():
         raise GuardBlock("`content` must be the full file text.")
@@ -189,7 +267,8 @@ async def _draft_assumptions(ctx: ToolContext, inp: dict) -> str:
                 "write_file (keep a `# why:` reason on every change). Pass overwrite=true to redraft.")
     code, out = await run_erb("model", t, "--init", *(["--force"] if inp.get("overwrite") else []))
     if code or not path.exists():
-        raise GuardBlock(f"Drafting failed for {t} (run erb_facts first?):\n{_brief(out, 1500)}")
+        raise GuardBlock(_erb_failure(f"Drafting assumptions for {t}", out)
+                         + " (Has erb_facts been run for it?)")
     return f"Drafted assumptions.yaml for {t} from the facts pack (starts at the Street).\n{_brief(out, 2500)}"
 
 
@@ -426,6 +505,13 @@ READ_FILE = Tool(
     _schema({**TICK, "path": {"type": "string"}, "offset": {"type": "integer"},
              "lines": {"type": "integer", "description": f"max {MAX_READ_LINES}"}}, ["ticker", "path"]),
     _read_file)
+SEARCH_FILE = Tool(
+    "search_file", "Find lines mentioning a word or phrase (case-insensitive; a regex works too) in one "
+    "file or, with no path, in every file for the ticker. Returns file:line: text. Far cheaper than "
+    "paging through a long filing: search first, then read_file around the hit.",
+    _schema({**TICK, "pattern": {"type": "string"},
+             "path": {"type": "string", "description": "Optional: one file, e.g. facts/filings/10-K_..."}},
+            ["ticker", "pattern"]), _search_file)
 WRITE_FILE = Tool(
     "write_file", "Write a whole text file for a ticker. Research: brief.md, sources.md, memo.md, "
     "notes/*.md. Quant: assumptions.yaml (keep a `# why:` reason on every change), quant/notes/*.md.",
@@ -490,22 +576,22 @@ GET_MODEL = Tool(
 def desk_tools(wing: str, tier: str) -> list[Tool]:
     """Work tools by wing. Everyone can read the approved model."""
     if wing == "equity_research":
-        tools = [ERB_FACTS, ERB_PEERS, LIST_FILES, READ_FILE, WRITE_FILE, GET_MODEL]
+        tools = [ERB_FACTS, ERB_PEERS, LIST_FILES, READ_FILE, SEARCH_FILE, WRITE_FILE, GET_MODEL]
         if tier == "lead":
             tools += [ERB_MEMO, ERB_LINT]
         return tools
     if wing == "quant":
-        return [LIST_FILES, READ_FILE, WRITE_FILE, DRAFT_ASSUMPTIONS, BUILD_MODEL, RUN_SIMULATIONS,
-                GET_MODEL]
+        return [LIST_FILES, READ_FILE, SEARCH_FILE, WRITE_FILE, DRAFT_ASSUMPTIONS, BUILD_MODEL,
+                RUN_SIMULATIONS, GET_MODEL]
     if wing == "screening":
-        tools = [READ_SCREEN, PITCH_MEMO, LIST_FILES, READ_FILE, WRITE_FILE, GET_MODEL]
+        tools = [READ_SCREEN, PITCH_MEMO, LIST_FILES, READ_FILE, SEARCH_FILE, WRITE_FILE, GET_MODEL]
         if tier == "lead":
             tools = [RUN_SCREEN, *tools, ADD_TO_WATCHLIST]
         return tools
     if wing == "client_relations":
         from hq.tools.client import client_tools
-        return [*client_tools(tier), LIST_FILES, READ_FILE, GET_MODEL]
+        return [*client_tools(tier), LIST_FILES, READ_FILE, SEARCH_FILE, GET_MODEL]
     if wing == "audit":   # Audit reads everything (Quant's drafts included) and writes nothing
         from hq.tools.audit import audit_tools
-        return [*audit_tools(tier), LIST_FILES, READ_FILE, GET_MODEL]
+        return [*audit_tools(tier), LIST_FILES, READ_FILE, SEARCH_FILE, GET_MODEL]
     return [GET_MODEL]

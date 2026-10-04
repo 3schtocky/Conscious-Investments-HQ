@@ -16,6 +16,10 @@ from difflib import SequenceMatcher
 from hq.config import office
 
 LEADERSHIP = {"captain", "chief_of_staff"}   # messages from these reset a ping-pong thread
+# After one of these runs the world has changed, so an identical earlier call (rebuilding a model
+# after editing its assumptions, re-reading a file just written) is progress, not a loop.
+STATE_CHANGING = {"write_file", "draft_assumptions", "erb_facts", "save_newsletter",
+                  "finalize_newsletter", "run_screen", "pitch_memo"}
 
 
 class GuardBlock(Exception):
@@ -65,6 +69,9 @@ class TaskGuard:
     def on_tool_call(self, name: str, tool_input: dict) -> None:
         key = name + ":" + json.dumps(tool_input, sort_keys=True, default=str)
         self._tool_calls[key] += 1
+        if name in STATE_CHANGING:
+            for other in [k for k in self._tool_calls if not k.startswith(name + ":")]:
+                del self._tool_calls[other]
         if self._tool_calls[key] >= self.repeat_tool_calls:
             raise GuardTripped("tool_loop",
                                f"Called {name} with identical input {self._tool_calls[key]} times.")
