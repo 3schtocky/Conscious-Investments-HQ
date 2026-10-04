@@ -391,3 +391,4 @@ body.office-held .boss::before { content: "The office is paused. A message to on
 /* A visitor's idle floor: the banner that says what they are watching */
 .replay-banner { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 6; max-width: min(560px, calc(100% - 24px)); padding: 8px 14px; border-radius: 999px; background: var(--surface); color: var(--ink); border: 1px solid var(--grid); box-shadow: var(--shadow); font-size: 12.5px; line-height: 1.35; text-align: center; pointer-events: none; }
 .replay-banner.hidden { display: none; }
+.replay-banner.link { bottom: auto; top: 14px; background: var(--gold); color: #fff; border-color: transparent; }

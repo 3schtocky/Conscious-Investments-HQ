@@ -83,6 +83,8 @@ const panelRoot = h("div", { class: "panel" });
 const bossBar = h("div", { class: "boss" });
 // Visitors only: plays back recent work when the floor is quiet (see ui/replay.ts).
 const replay = new Replayer(state, () => scene, () => loadState().catch(() => {}));
+// Shown when the live connection drops (the office restarting, a flaky phone connection).
+const linkBanner = h("div", { class: "replay-banner link hidden", role: "status" }, "Reconnecting to the office…");
 
 // The sidebar's left edge is a handle: drag it (or focus it and use the arrow keys) to trade
 // office floor for reading room. Double-click resets. The width is remembered per browser.
@@ -91,7 +93,7 @@ const resizer = h("div", { class: "resizer", role: "separator", tabindex: 0, "ar
   "aria-label": "Resize the sidebar", title: "Drag to resize the sidebar (double-click to reset)" });
 const aside = h("aside", {}, resizer, tabsBar, panelRoot, bossBar);
 const mainEl = h("main", {},
-  h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons, replay.banner), cardsRoot),
+  h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons, replay.banner, linkBanner), cardsRoot),
   aside);
 document.getElementById("app")!.append(header, mainEl);
 
@@ -369,7 +371,11 @@ function connect() {
       structural = structural || tab === "activity" || tab === "chat";
     }
   };
-  ws.onclose = () => setTimeout(async () => { await loadState().catch(() => {}); connect(); }, 1500);
+  ws.onopen = () => linkBanner.classList.add("hidden");
+  ws.onclose = () => {
+    linkBanner.classList.remove("hidden");
+    setTimeout(async () => { await loadState().catch(() => {}); connect(); }, 1500);
+  };
 }
 
 state.on(() => { dirty = true; });

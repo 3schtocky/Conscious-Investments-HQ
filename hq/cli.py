@@ -170,6 +170,15 @@ def main() -> None:
     p_run.add_argument("--title")
     sub.add_parser("spend", help="today's spend by agent and model")
     sub.add_parser("captain-password", help="create the Captain's sign-in password for public mode")
+    sub.add_parser("go-live", help="checklist: what is ready for the public site, and what to do next")
+    p_reh = sub.add_parser("rehearse", help="try the public site on your phone through a throwaway "
+                                            "Cloudflare address, with the scripted demo office")
+    p_reh.add_argument("--port", type=int, default=8753)
+    p_reh.add_argument("--speed", type=float, default=1.0)
+    p_svc = sub.add_parser("service-files", help="write the macOS launch files that keep the office and "
+                                                 "tunnel running (nothing is installed)")
+    p_svc.add_argument("--port", type=int, default=8750)
+    p_svc.add_argument("--tunnel", default="conscious-hq", help="Cloudflare tunnel name")
     p_serve = sub.add_parser("serve", help="open the office in your browser")
     p_serve.add_argument("--demo", action="store_true",
                          help="scripted demo office: zero API cost, separate database")
@@ -196,6 +205,21 @@ def main() -> None:
         sys.exit(spend())
     if args.cmd == "captain-password":
         sys.exit(captain_password())
+    if args.cmd == "go-live":
+        from hq import deploy
+
+        text, ready = deploy.report()
+        print(text)
+        sys.exit(0 if ready else 1)
+    if args.cmd == "rehearse":
+        from hq import deploy
+
+        sys.exit(deploy.rehearse(port=args.port, speed=args.speed))
+    if args.cmd == "service-files":
+        from hq import deploy
+
+        print(deploy.write_service_files(port=args.port, tunnel=args.tunnel)[1])
+        sys.exit(0)
     if args.cmd == "serve":
         from hq.server import serve
 

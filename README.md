@@ -48,21 +48,15 @@ The office can be watched live by anyone while staying under your control. It ke
 uv run hq captain-password          # creates your sign-in password in .env and shows it once
 uv run hq serve --public            # same office, now with visitors and a sign-in
 ```
-Set the site's host names under `public.hosts` in `config/office.yaml`. Then, once, with a Cloudflare account that manages the domain:
+Set the site's host names under `public.hosts` in `config/office.yaml`. The step-by-step guide is in
+[`deploy/README.md`](deploy/README.md):
 
 ```bash
-brew install cloudflared
-cloudflared tunnel login                                   # opens Cloudflare in your browser
-cloudflared tunnel create conscious-hq
-cloudflared tunnel route dns conscious-hq consciousinvestments.org
-cloudflared tunnel run --url http://127.0.0.1:8750 conscious-hq
+uv run hq go-live         # checklist: what is ready, what to do next
+uv run hq rehearse        # try the public site on your phone through a throwaway address first
+uv run hq service-files   # launch files that keep the office and tunnel running and the Mac awake
 ```
-The site is live while both `hq serve --public` and the tunnel are running and the machine is awake. To sign in, open the site, choose **Sign in** and enter the Captain's password. Five wrong passwords from one address lock sign-in for fifteen minutes.
-
-Before going live: keep `api.enabled: false` until you want real runs, keep a spend limit in the Anthropic Console as a backstop, and never put the API key or the Captain's password into Cloudflare or the repository.
-
-## Status
-All eight build phases are in place: engine, office UI, the Captain's channel, Equity Research and Quant, Screening, Audit, Client Relations, and the paper portfolio. Everything has been verified in demo mode and with mocked tests; real agent runs happen only when the Captain switches the API on. See `CLAUDE.md`.
-
-## License
-MIT. Research output is for informational purposes and is not investment advice.
+When the floor is quiet, visitors watch a replay of the most recent real work (movement only, never words). The
+site is live while both `hq serve --public` and the tunnel are running and the machine is awake. To sign in,
+open the site, choose **Sign in** and enter the Captain's password. Five wrong passwords from one address lock
+sign-in for fifteen minutes.

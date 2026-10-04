@@ -77,6 +77,9 @@ MAX_MESSAGE = 8000
 # stream, must come from the office's own page (blocks cross-site requests and socket hijacking).
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 EXTRA_HOSTS: set[str] = set()   # tests add their client's host name here
+# `hq rehearse` only: a throwaway tunnel address (random.trycloudflare.com) is accepted as the
+# public site for that run, so the whole public experience can be tried before the real domain.
+REHEARSAL_SUFFIX = ""
 LOGIN_DELAY = 1.0               # seconds a wrong password costs the caller
 
 
@@ -95,23 +98,28 @@ def _local(value: str | None) -> bool:
     return _hostname(value) in LOCAL_HOSTS | EXTRA_HOSTS
 
 
+def is_site_host(host: str, public_hosts: frozenset[str]) -> bool:
+    """Whether this name is the public site: a configured host, or in a rehearsal the tunnel's."""
+    return host in public_hosts or bool(REHEARSAL_SUFFIX and host.endswith(REHEARSAL_SUFFIX))
+
+
 def request_allowed(method: str, headers, public_hosts: frozenset[str] = frozenset()) -> bool:
     """Whether a request may be served at all: addressed to a name the office answers to; and
     for anything that changes state, or the event stream, sent by the office's own page
     (browsers attach Origin to every cross-site write). In public mode the site's own host
     names count as well as the local ones."""
-    known = LOCAL_HOSTS | EXTRA_HOSTS | public_hosts
+    known = lambda name: name in LOCAL_HOSTS | EXTRA_HOSTS or is_site_host(name, public_hosts)
     host = _hostname(headers.get("host"))
-    if host not in known:
+    if not known(host):
         return False
     if method in ("GET", "HEAD", "OPTIONS"):
         return True
     origin = headers.get("origin")
     if origin is not None:
-        if origin == "null" or _hostname(origin) not in known:
+        if origin == "null" or not known(_hostname(origin)):
             return False
         # On the public site the page and the server are one origin: nothing else may write.
-        return _hostname(origin) == host or host not in public_hosts
+        return _hostname(origin) == host or not is_site_host(host, public_hosts)
     return headers.get("sec-fetch-site") in (None, "same-origin", "none")   # non-browser clients
 
 
@@ -131,7 +139,8 @@ def visitor_allowed(method: str, path: str) -> bool:
 
 
 def security_headers(hosts: frozenset[str]) -> dict[str, str]:
-    sockets = " ".join(f"wss://{h}" for h in sorted(hosts))
+    sockets = " ".join([f"wss://{h}" for h in sorted(hosts)]
+                       + ([f"wss://*{REHEARSAL_SUFFIX}"] if REHEARSAL_SUFFIX else []))
     return {
         "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
         "Referrer-Policy": "same-origin",
@@ -258,7 +267,7 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         response = JSONResponse({"role": "captain"})
         response.set_cookie(pub.COOKIE, sessions.create(), max_age=pub.SESSION_SECONDS, httponly=True,
                             samesite="strict", path="/",
-                            secure=_hostname(request.headers.get("host")) in public_hosts)
+                            secure=is_site_host(_hostname(request.headers.get("host")), public_hosts))
         return response
 
     @app.post("/api/logout")
