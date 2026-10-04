@@ -166,7 +166,7 @@ async def test_demo_agents_answer_during_a_pause_without_losing_their_script(mak
     office.assign("Quill", "Draft a memo (demo)")
     office.captain_send("Quill", "Where are you on this?")
     await asyncio.sleep(0.3)
-    assert office.store.chat("dm:captain|er_lead")[-1]["text"].startswith("(demo) Paused where I am on:")
+    assert office.store.chat("dm:captain|er_lead")[-1]["text"].startswith("Paused where I am on:")
     assert len(llm.scripts["er_lead"]) == 1                                     # the scene's script is intact
     office.release()
     await office.idle()

@@ -277,7 +277,7 @@ async def test_demo_portfolio_scene_uses_the_real_rules(make_office, monkeypatch
     await office.idle()
     scene_portfolio(office, llm)                       # held now: Quill reports the scoreboard
     await office.idle()
-    assert office.store.chat("dm:captain|er_lead")[-1]["text"].startswith("Portfolio check (demo): Paper portfolio since")
+    assert office.store.chat("dm:captain|er_lead")[-1]["text"].startswith("Portfolio check: Paper portfolio since")
     types = {e["type"] for e in office.store.events(limit=3000)}
     assert "guard_block" not in types and "task_error" not in types
     assert all(t["status"] == "done" for t in office.store.tasks())

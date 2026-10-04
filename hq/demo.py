@@ -2,7 +2,9 @@
 
 `hq serve --demo` uses this so the office UI can be toured and tuned for free. Everything
 downstream is authentic (tasks, guards, delegation, chat, spend accounting); only the model's
-words are scripted. Companies in the scenes are fictional and marked (demo).
+words are scripted. Spoken lines carry no "(demo)" tag (the DEMO pill says it once); anything a
+visitor could mistake for real work, such as a newsletter, a watchlist thesis or a card title,
+keeps its tag, and the companies in the made-up scenes are fictional.
 """
 
 from __future__ import annotations
@@ -65,6 +67,106 @@ def _route(text: str) -> str:
     return "er_lead"
 
 
+_NOT_TICKERS = {"A", "AI", "AM", "API", "ASAP", "CAGR", "CEO", "CFO", "DCF", "EPS", "ER", "ETF", "FY",
+                "FYI", "IPO", "LBO", "OK", "PM", "PT", "QA", "ROIC", "SEC", "TBD", "US", "USA", "WACC",
+                "YOY", "ALL", "AND", "FOR", "NOW", "THE", "YES"}
+_STATUS = re.compile(r"\b(how(?:'s| is| are| did)|status|progress|update me|going on|where (?:are|do) we|"
+                     r"what(?:'s| is| are) (?:happening|everyone|you working)|working on)\b", re.IGNORECASE)
+_DIRECTIVE = re.compile(r"\b(only|focus|priority|prioriti[sz]e|stand down|hold off|pause|stop|"
+                        r"until i say|for now|from now on)\b", re.IGNORECASE)
+_THANKS = re.compile(r"\b(thanks|thank you|great work|well done|nice work|good job)\b", re.IGNORECASE)
+
+_ANNOUNCE_LINES = {
+    "equity_research": ["I'll check the memos in progress against this today.",
+                        "noted; I'll line the coverage up with it and flag any conflict.",
+                        "understood, and I'll tell Ledger before the next pull.",
+                        "clear. I'll bring any question to you before I act on it."],
+    "quant": ["I'll check which models this touches before the next build.",
+              "noted; any model it affects gets rebuilt and re-checked first.",
+              "understood. I'll flag it if the numbers say otherwise.",
+              "clear, and Delta will work to it from the next run."],
+    "screening": ["I'll keep it in mind for the next screen and the shortlist.",
+                  "noted; it changes how I sanity-check the names.",
+                  "understood. Pip will work to it from the next pitch.",
+                  "clear. I'll raise anything that conflicts with the screen."],
+    "audit": ["I'll add it to what the checks look for.",
+              "noted; Tally will watch for it in the logs.",
+              "understood, and I'll hold work to it when I review.",
+              "clear. I'll flag anything that drifts from it."],
+    "client_relations": ["I'll reflect it in the next newsletter draft.",
+                         "noted; Wren will write to it from today.",
+                         "understood. I'll make sure nothing we send contradicts it.",
+                         "clear, and I'll check the Outbox against it."],
+    "executive": ["I'll keep the leads pointed at it.",
+                  "noted; I'll fold it into this week's plan.",
+                  "understood. I'll follow up with anyone it affects.",
+                  "clear. I'll raise any clash with you straight away."],
+}
+
+
+def _tickers(text: str) -> list[str]:
+    found: list[str] = []
+    for m in re.finditer(r"\b[A-Z]{2,5}\b", text):
+        if m.group(0) not in _NOT_TICKERS and m.group(0) not in found:
+            found.append(m.group(0))
+    return found[:3]
+
+
+def _is_status(text: str) -> bool:
+    return bool(_STATUS.search(text))
+
+
+def _is_directive(text: str) -> bool:
+    """A change of priorities or a standing instruction: acknowledged, not 'worked on'."""
+    return bool(_DIRECTIVE.search(text))
+
+
+def _task_title(first: str) -> str:
+    """The title of a task from its first message ('New assignment from X: **Title**')."""
+    m = re.match(r"New assignment from [^:]+: \*\*(.+?)\*\*", first, re.DOTALL)
+    return " ".join((m.group(1) if m else first.strip().splitlines()[0] if first.strip() else "the task").split())
+
+
+def _is_thanks(text: str) -> bool:
+    return bool(_THANKS.search(text))
+
+
+def _one_line(text: str, n: int) -> str:
+    line = " ".join(text.split())
+    return line if len(line) <= n else line[: n - 1] + "…"
+
+
+def _last_tool_text(params: dict) -> str:
+    """The text of the first tool result in the latest user turn."""
+    for block in params["messages"][-1]["content"]:
+        if isinstance(block, dict) and block.get("type") == "tool_result":
+            return str(block.get("content", ""))
+    return ""
+
+
+def _office_summary(raw: str) -> str:
+    """Juno's answer to 'what's going on', written from the real read_office result."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return "I couldn't read the office board just now. Ask me again in a moment."
+    busy = [f"{c['name']} is working on \"{c['working_on']}\"" for c in data["colleagues"]
+            if c.get("working_on") and c["status"] not in ("idle", "held")]
+    parts = [("Right now " + "; ".join(busy[:4]) + ".") if busy else "The floor is quiet: nobody is mid-task."]
+    stuck = [w for w in data["unfinished_work"] if w["status"] in ("paused", "error", "paused_budget")]
+    if stuck:
+        parts.append(f"{len(stuck)} piece{'s' if len(stuck) != 1 else ''} of work "
+                     f"{'are' if len(stuck) != 1 else 'is'} paused: "
+                     + ", ".join(f"\"{w['title'][:40]}\" ({w['who']})" for w in stuck[:3]) + ".")
+    cards = data["waiting_on_captain"]
+    if cards:
+        parts.append(f"{len(cards)} decision{'s' if len(cards) != 1 else ''} waiting on you, "
+                     f"starting with \"{cards[0]['title'][:60]}\".")
+    elif not stuck:
+        parts.append("Nothing is waiting on you.")
+    return " ".join(parts)
+
+
 def _text_of(content) -> str:
     if isinstance(content, str):
         return content
@@ -80,67 +182,144 @@ class DemoLLM:
 
     def __init__(self, speed: float = 1.0, office: Office | None = None):
         self.scripts: dict[str, deque] = defaultdict(deque)
+        self._said: dict[str, int] = defaultdict(int)   # announcements answered, per agent
         self.speed = speed
         self.office = office
 
     def improvise(self, who: str, params: dict) -> TurnResult:
+        """Say something sensible when no scene scripted this turn: the demo office answers
+        whatever the Captain types, using the real tools and real office data where it can."""
         msgs = params["messages"]
         first = _text_of(msgs[0]["content"])
-        title = first.strip().splitlines()[0][:80] if first.strip() else "the task"
-        office = self.office
         if who == "audit_lead" and "code checks flagged" in first:
             return self._improvise_review(first, msgs, params)
         if len(msgs) == 1:
-            if first.startswith("[Announcement from") or "[Announcement from" in first:
-                group = "juno" if 'group "juno"' in first else "stott"
-                role = office.agents[who].role if office and who in office.agents else "my work"
-                replies = ["I'll fold it into today's work.", "noted, adjusting my plan now.",
-                           "clear, I'll flag anything that conflicts.", "on it, no blockers.",
-                           "understood, will confirm when it's in place."]
-                pick = replies[next(_ids) % len(replies)]
-                return think("An announcement: one short reply in the group.", None,
-                             ("post_to_group", {"group": group,
-                                                "text": f"Got it (demo #{next(_ids)}). For "
-                                                        f"{role}: {pick}"}))(params)
-            if who == "chief_of_staff" and "to the whole office:" in first:
-                ask = first.split("to the whole office:", 1)[1].split("\n\nRoute it:", 1)[0].strip()
-                lead = _route(ask)
-                return think(f"This is for {office.agents[lead].nickname if office else lead}'s "
-                             "wing. I'll assign it with every detail kept.", None,
-                             ("assign_task", {"to": lead, "title": _title(ask, 60),
-                                              "brief": ask}))(params)
-            if first.startswith("Delegated job from"):
-                job = first.split("\n\n")[1] if "\n\n" in first else first
-                return think("Working through the job step by step.", None,
-                             ("submit_result", {"findings": f"(demo) First pass done: {job[:200]}",
-                                                "figures": [], "open_questions": [],
-                                                "confidence": "medium"}))(params)
-            agent = office.agents.get(who) if office else None
-            associate = next((a.id for a in (office.agents.values() if office else [])
-                              if agent and a.wing == agent.wing and a.tier == "associate"), None)
-            if first.startswith("New assignment from") and agent and agent.tier == "lead" \
-                    and associate:
+            return self._opening(who, first, params)
+        return self._followup(who, msgs, params)
+
+    # the first turn of an unscripted task -----------------------------------------------------
+    def _opening(self, who: str, first: str, params: dict) -> TurnResult:
+        office = self.office
+        agent = office.agents.get(who) if office else None
+        captain = office.captain_name if office else "Stott"
+        if "[Announcement from" in first:
+            return self._announcement_reply(who, agent, first, params)
+        if who == "chief_of_staff" and "to the whole office:" in first:
+            ask = first.split("to the whole office:", 1)[1].split("\n\nRoute it:", 1)[0].strip()
+            return self._route_for_juno(ask, params)
+        if first.startswith("Delegated job from"):
+            job = " ".join(first.split("\n\n")[1].split()) if "\n\n" in first else first
+            return think("A narrow job with a clear return. I'll work through it and report.", None,
+                         ("submit_result", {"findings": f"Worked through the job: {job[:220]}. I kept to "
+                                            "the scope given and sourced what I could from the files "
+                                            "on hand; nothing is left open.",
+                                            "figures": [], "open_questions": [],
+                                            "confidence": "medium"}))(params)
+        if "your request" in first and "approval #" in first:
+            return think("A decision on my card. I'll act on it.",
+                         f"Thanks, {captain}. Understood, and I'm acting on it now.")(params)
+        m = re.match(r"New assignment from ([^:]+): \*\*(.+?)\*\*\n\n(.*)", first, re.DOTALL)
+        if m and agent is not None:
+            who_from, title, body = m.group(1), m.group(2), m.group(3).strip()
+            ask = f"{title} {body}"
+            if who_from == captain and _is_status(ask):
+                return think("The Captain wants to know where I am. I'll check my own record "
+                             "and answer plainly.", None,
+                             ("report_to_captain", {"text": self._my_status(who)}))(params)
+            if who_from == captain and _is_thanks(ask):
+                return think("A kind word. Keep it short.",
+                             f"Thank you, {captain}. Glad it's useful; send me the next one "
+                             "whenever you're ready.")(params)
+            associate = next((a.id for a in office.agents.values()
+                              if a.wing == agent.wing and a.tier == "associate"), None)
+            if who_from != captain and _is_directive(ask):
+                lines = _ANNOUNCE_LINES.get(agent.wing, _ANNOUNCE_LINES["executive"])
+                self._said[who] += 1
+                return think("A change of direction from the Chief of Staff. I adjust my plan; "
+                             "there is nothing to research.", "Understood: "
+                             + lines[self._said[who] % len(lines)])(params)
+            if agent.tier == "lead" and associate:
+                names = ", ".join(_tickers(ask)) or "this request"
                 return think("I'll frame the approach and hand the legwork to my associate.",
                              "On it.",
-                             ("delegate", {"to": associate, "job": f"(demo) Legwork for: {title}"})
-                             )(params)
-            if "your request" in first and "approval #" in first:
-                return think("Noted the decision.", "Thanks, understood. Acting on it (demo).")(
-                    params)
-            return think("Reading the message.", "Noted (demo).")(params)
-        # After tool results: finish the loop sensibly.
+                             ("delegate", {"to": associate,
+                                           "job": f"For {names}: {_one_line(body, 240)} Return what you "
+                                                  "find, with a source for every figure."}))(params)
+            return think("Clear enough. I'll take it from here.",
+                         f"On it, {captain}. I'll come back when there is something to show.")(params)
+        return think("A colleague's message. Acknowledge if it needs it.",
+                     "Thanks, that helps. I'll fold it into what I'm doing.")(params)
+
+    def _announcement_reply(self, who: str, agent, first: str, params: dict) -> TurnResult:
+        group = "juno" if 'group "juno"' in first else "stott"
+        said = first.split("]: ", 1)[1].split("\n\nReply once", 1)[0] if "]: " in first else ""
+        gist = " ".join(said.split()[:6]).rstrip(".,:;")
+        lines = _ANNOUNCE_LINES.get(agent.wing if agent else "", _ANNOUNCE_LINES["executive"])
+        self._said[who] += 1   # consecutive announcements get this agent different replies
+        line = lines[self._said[who] % len(lines)]
+        return think("An announcement: one short reply in the group, then back to work.", None,
+                     ("post_to_group", {"group": group,
+                                        "text": f'On "{gist}": {line}' if gist else line}))(params)
+
+    def _route_for_juno(self, ask: str, params: dict) -> TurnResult:
+        office = self.office
+        if _is_status(ask):
+            return think("A question about the office. I'll look before I answer.", None,
+                         ("read_office", {}))(params)
+        names = ", ".join(_tickers(ask))
+        brief = ask if not names else f"{ask}\n\n(Tickers mentioned: {names}.)"
+        if re.search(r"\b(everyone|everybody|team|all of you|whole office|all leads|every wing|"
+                     r"every department)\b", ask, re.IGNORECASE):
+            return think("This applies to every department, so every lead hears it from me.", None,
+                         ("assign_task", {"to": "all_leads", "title": _title(ask, 60),
+                                          "brief": ask}))(params)
+        lead = _route(ask)
+        nick = office.agents[lead].nickname if office else lead
+        return think(f"This is for {nick}'s wing. I'll assign it with every detail kept.", None,
+                     ("assign_task", {"to": lead, "title": _title(ask, 60), "brief": brief}))(params)
+
+    def _my_status(self, who: str) -> str:
+        """An honest status from the office's own record: the last assignment and what waits."""
+        office = self.office
+        agent = office.agents[who]
+        mine = [t for t in office.store.tasks()
+                if t["assignee"] == who and t["kind"] == "assignment" and t["id"] != agent.current_task]
+        cards = [c for c in office.store.approvals("pending") if c["agent"] == who]
+        verb = {"done": "is finished", "paused": "is paused", "error": "stopped on an error",
+                "queued": "is next in my queue", "running": "is under way"}
+        if not mine:
+            return ("Nothing is on my desk right now. Send me a ticker or a question and I'll "
+                    "start straight away.")
+        last = mine[-1]
+        out = f'My latest assignment was "{last["title"]}" and it {verb.get(last["status"], last["status"])}.'
+        if cards:
+            c = cards[-1]
+            out += f' Your decision is still waiting on "{c["title"]}" (approval #{c["id"]}).'
+        return out
+
+    # after a tool has answered ---------------------------------------------------------------
+    def _followup(self, who: str, msgs: list, params: dict) -> TurnResult:
+        title = _task_title(_text_of(msgs[0]["content"]))[:80]
         prev = msgs[-2]["content"] if len(msgs) >= 2 else []
         used = [b.get("name") for b in prev if isinstance(b, dict) and b.get("type") == "tool_use"]
+        result = _last_tool_text(params)
+        if "read_office" in used:
+            return think("That's the full picture. A short, plain summary for the Captain.", None,
+                         ("report_to_captain", {"text": _office_summary(result)}))(params)
         if "assign_task" in used:
+            who_got = re.findall(r"([A-Z][a-z]+) \(task #", result)
+            names = ", ".join(who_got) or "the right lead"
             return think("Assigned. A one-line heads-up to the Captain.", None,
-                         ("report_to_captain", {"text": "(demo) Routed your message to the right "
-                                                "lead. They're on it."}))(params)
+                         ("report_to_captain", {"text": f"Passed to {names}, with your wording intact. "
+                                                "They are on it."}))(params)
         if "delegate" in used:
             return think("The associate's first pass is back. Reporting.", None,
-                         ("report_to_captain", {"text": f"(demo) First pass on \"{title[:60]}\" "
-                                                "is done. Real research tools arrive with the "
-                                                "live office in Phase 4."}))(params)
-        return think("That's everything.", "Done (demo).")(params)
+                         ("report_to_captain", {"text": f'First pass on "{title[:60]}" is back from '
+                                                "my associate and looks sound. Tell me if you want "
+                                                "it taken to a brief."}))(params)
+        if "report_to_captain" in used:
+            return think("Reported.", "Reported.")(params)
+        return think("That's everything.", "Done.")(params)
 
     def _improvise_review(self, first: str, msgs: list, params: dict) -> TurnResult:
         """Vera reviewing flags nobody scripted (e.g. raised by the Captain's own demo chat)."""
@@ -151,10 +330,10 @@ class DemoLLM:
         if len(msgs) == 3:
             return think("The check stands on what I can see. Closing each with a reason.", None,
                          *[("resolve_finding", {"finding": i, "verdict": "upheld",
-                                                "note": "(demo) Confirmed against the log; the "
+                                                "note": "Confirmed against the log; the "
                                                         "colleague has been asked to fix it."})
                            for i in ids])(params)
-        return think("Ruled.", "Review done (demo).")(params)
+        return think("Ruled.", "Review done.")(params)
 
     def script(self, agent_id: str, *turns: Callable) -> None:
         self.scripts[agent_id].extend(turns)
@@ -169,7 +348,7 @@ class DemoLLM:
             # scene's script untouched so the work picks up where it stopped on resume.
             first = _text_of(params["messages"][0]["content"]).strip().splitlines()[0][:90]
             result = think("The office is paused and the Captain is asking me directly. I stop and answer.",
-                           f"(demo) Paused where I am on: {first} Happy to walk you through it; nothing "
+                           f"Paused where I am on: {first} Happy to walk you through it; nothing "
                            "moves until you resume.")(params)
         elif self.scripts[who]:
             result = self.scripts[who].popleft()(params)
@@ -250,44 +429,61 @@ def scene_gem_hunt(office: Office, llm: DemoLLM) -> None:
                                                   + ", ".join(f"{r['ticker']} (coverage/{r['ticker']}/pitch.md)"
                                                               for r in picks),
                                                   "confidence": "medium"}))(p))
-    office.assign("Scout", "Run the Gems hunt on today's screen (demo dry run, real tools).",
+    office.assign("Scout", "Run the Gems hunt on today's screen.",
                   title="Gems hunt (demo, real tools)")
 
 
+# Fictional companies for the memo scene, so the loop does not repeat word for word.
+_COMPANIES = [
+    {"name": "Northwind Storage", "ticker": "NWST", "short": "Northwind",
+     "thesis": "the contract pipeline converts in 12 to 18 months", "gap": "section 2"},
+    {"name": "Halcyon Grid Systems", "ticker": "HLCG", "short": "Halcyon",
+     "thesis": "utility orders for grid software turn into recurring revenue within two years",
+     "gap": "the backlog table"},
+    {"name": "Pinecrest Robotics", "ticker": "PNRB", "short": "Pinecrest",
+     "thesis": "the warehouse pilot customers roll out to full fleets in the next four quarters",
+     "gap": "the customer list"},
+]
+_memo_no = itertools.count()
+_last_memo: dict = {"short": "Northwind"}
+
+
 def scene_memo(office: Office, llm: DemoLLM) -> None:
+    co = _COMPANIES[next(_memo_no) % len(_COMPANIES)]
+    _last_memo["short"] = co["short"]
+    name, short = co["name"], co["short"]
     llm.script("er_lead",
                think("A one-page memo needs the snapshot, the thesis, the valuation vs history and "
-                     "the Street view. Ledger can pull the facts pack and the draft model while I "
-                     "frame the thesis.", "Starting the Northwind memo.",
-                     ("delegate", {"to": "Ledger", "job": "Pull the facts pack and draft model for "
-                                   "Northwind Storage (demo). Return the snapshot table with a "
+                     f"the Street view. Ledger can pull the facts pack and the draft model while I "
+                     f"frame the thesis for {short}.", f"Starting the {short} memo.",
+                     ("delegate", {"to": "Ledger", "job": f"Pull the facts pack and draft model for "
+                                   f"{name}. Return the snapshot table with a "
                                    "source for every figure."})),
                think("Ledger's pack is clean and sourced. Before this goes to the Captain, Vera "
                      "should spot-check the sourcing.", None,
                      ("send_message", {"to": ["Vera"], "text": "Could you spot-check the "
-                                       "sourcing on the Northwind memo draft (demo)?"})),
+                                       f"sourcing on the {short} memo draft?"})),
                think("Vera's on it. I'll report the draft.", None,
-                     ("request_approval", {"kind": "brief", "title": "Northwind Storage memo "
-                                           "(demo)", "ticker": "NWST",
-                                           "summary": "Thesis: the contract pipeline converts in "
-                                           "12 to 18 months. Audit is spot-checking sources. "
-                                           "Please review the draft before it goes to Quant."})),
+                     ("request_approval", {"kind": "brief", "title": f"{name} memo (demo)",
+                                           "ticker": co["ticker"],
+                                           "summary": f"Thesis: {co['thesis']}. Audit is "
+                                           "spot-checking sources. Please review the draft before "
+                                           "it goes to Quant."})),
                think("Wrapped.", "Memo drafted and sent for audit."))
     llm.script("er_associate",
                think("Pulling the 10-K, the latest 10-Q and the XBRL facts. Then the draft model "
                      "from the facts pack.", None,
-                     ("submit_result", {"findings": "Snapshot table assembled (demo). Every "
+                     ("submit_result", {"findings": "Snapshot table assembled. Every "
                                         "figure is sourced to the 10-K or the model.",
                                         "figures": [], "open_questions": [],
                                         "confidence": "high"})))
     llm.script("audit_lead",
                think("Checking that each figure in the memo traces to a filing, model.json or a "
-                     "logged URL. Two items lack sources.", None,
-                     ("send_message", {"to": ["Quill"], "text": "Two figures in section 2 need "
+                     f"logged URL. Two items lack sources in {co['gap']}.", None,
+                     ("send_message", {"to": ["Quill"], "text": f"Two figures in {co['gap']} need "
                                        "sources; tag them [VERIFY] or cite the 10-Q."})),
                think("Feedback sent.", "Sourcing check done: two fixes requested."))
-    office.assign("Quill", "Draft a one-page memo on Northwind Storage (demo).",
-                  title="Northwind memo (demo)")
+    office.assign("Quill", f"Draft a one-page memo on {name}.", title=f"{short} memo (demo)")
 
 
 def scene_lobby_sync(office: Office, llm: DemoLLM) -> None:
@@ -298,7 +494,7 @@ def scene_lobby_sync(office: Office, llm: DemoLLM) -> None:
                                        "text": "Quick Lobby sync: one line each on this week's "
                                                "priority and any blocker."})),
                think("Collected. I'll summarize for the Captain.", None,
-                     ("report_to_captain", {"text": "Monday sync (demo): ER is on the Northwind "
+                     ("report_to_captain", {"text": f"Monday sync: ER is on the {_last_memo['short']} "
                                             "memo, Screening refreshes Gems on Friday, and Client "
                                             "Relations has the newsletter in draft. No blockers."})),
                think("Done.", "Sync summarized for the Captain."))
@@ -308,7 +504,7 @@ def scene_lobby_sync(office: Office, llm: DemoLLM) -> None:
         llm.script(lead, think("Juno wants one line.", None,
                                ("send_message", {"to": ["Juno"], "text": line})),
                    think("Sent.", "Replied to Juno."))
-    office.assign("Juno", "Run a quick Monday sync with the leads (demo).",
+    office.assign("Juno", "Run a quick Monday sync with the leads.",
                   title="Monday sync (demo)")
 
 
@@ -382,7 +578,7 @@ def scene_newsletter(office: Office, llm: DemoLLM) -> None:
     llm.script("cr_lead",
                think("This week's note. Wren drafts from what is publishable; I check the voice and "
                      "the numbers, then finalize.", None,
-                     ("delegate", {"to": "Wren", "job": "Draft this week's newsletter (demo): start "
+                     ("delegate", {"to": "Wren", "job": "Draft this week's newsletter: start "
                                    "from newsletter_material, lead with how we screen, list the "
                                    "watchlist as ideas only, and save it with save_newsletter. Return "
                                    "the issue id."})),
@@ -397,7 +593,7 @@ def scene_newsletter(office: Office, llm: DemoLLM) -> None:
                think("First, what are we actually allowed to publish this week?", None,
                      ("newsletter_material", {})),
                wren_drafts, wren_returns)
-    office.assign("Harbor", "Prepare this week's newsletter (demo).", title="Newsletter (demo)")
+    office.assign("Harbor", "Prepare this week's newsletter.", title="Newsletter (demo)")
 
 
 def scene_audit(office: Office, llm: DemoLLM) -> None:
@@ -412,19 +608,19 @@ def scene_audit(office: Office, llm: DemoLLM) -> None:
                      "for Quant. A message is enough here, nobody needs pausing.", None,
                      *[("resolve_finding", {"finding": i, "verdict": "upheld",
                                             "note": "The card states a $48.00 price target; NWST "
-                                                    "has no approved model (demo)."}) for i in ids],
+                                                    "has no approved model."}) for i in ids],
                      ("send_message", {"to": ["Scout"], "text": "Your Northwind card states a "
                                        "$48.00 price target, and there is no approved model for "
                                        "it. Please take the target out and describe the setup "
                                        "only; Quant values it if Stott sends it to research "
-                                       "(demo)."}))(params)
+                                       "."}))(params)
 
     llm.script("screen_lead",
                think("A short card for the Captain on Northwind, and two notes for my desk.", None,
                      ("note_to_self", {"note": "Lead a pitch with the catalyst, then the "
-                                       "acceleration evidence (demo)."}),
+                                       "acceleration evidence."}),
                      ("note_to_self", {"note": "Northwind looks worth $48 a share, about 40% "
-                                       "upside (demo)."}),
+                                       "upside."}),
                      ("request_approval", {"kind": "other", "ticker": "NWST",
                                            "title": "Northwind Storage pitch (demo)",
                                            "summary": "The contract pipeline should convert "
@@ -442,10 +638,10 @@ def scene_audit(office: Office, llm: DemoLLM) -> None:
                think("One more thing worth keeping for everyone.", None,
                      ("propose_wiki", {"entry": "Screening cards and pitches never state a price "
                                        "target or rating; valuation waits for Quant's approved "
-                                       "model (demo)."})),
+                                       "model."})),
                think("Done.", "Flag upheld, fix requested, wiki entry proposed."))
     office.assign("Scout", "Put Northwind Storage in front of the Captain as a research "
-                  "candidate (demo).", title="Northwind pitch card (demo)")
+                  "candidate.", title="Northwind pitch card (demo)")
 
 
 DEMO_HOLDING = "RMBS"   # a real ticker, so the paper fill and the scoreboard use real prices
@@ -493,7 +689,7 @@ def scene_portfolio(office: Office, llm: DemoLLM) -> None:
         if held or waiting:
             line = board.get("summary", "") if held else f"The {t} entry is still waiting for your decision."
             return think("Nothing new to propose. The scoreboard speaks for itself.", None,
-                         ("report_to_captain", {"text": f"Portfolio check (demo): {line}"}))(params)
+                         ("report_to_captain", {"text": f"Portfolio check: {line}"}))(params)
         return think(f"{t} has an approved model rated Outperform, and we don't hold it. A middle "
                      "conviction size until the next earnings report.", None,
                      ("propose_position", {"ticker": t, "size_pct": 5,
@@ -507,7 +703,7 @@ def scene_portfolio(office: Office, llm: DemoLLM) -> None:
                      None, ("read_portfolio", {})),
                quill_acts,
                think("Done.", "Portfolio reviewed."))
-    office.assign("Quill", "Review the paper portfolio and propose an entry if one qualifies (demo).",
+    office.assign("Quill", "Review the paper portfolio and propose an entry if one qualifies.",
                   title="Portfolio review (demo)")
 
 
@@ -536,7 +732,7 @@ def scene_quant_model(office: Office, llm: DemoLLM) -> None:
                think("Our thesis and assumptions for META are in coverage/META. Quant owns the "
                      "model, so I hand the assumptions over instead of building a valuation.", None,
                      ("send_message", {"to": ["Sigma"], "text": f"{t} assumptions are ready in "
-                                       f"coverage/{t} (demo dry run, real tools). Please build the "
+                                       f"coverage/{t}. Please build the "
                                        "model."})),
                think("Handed off.", "Assumptions sent to Quant."))
     llm.script("quant_lead",
@@ -556,8 +752,7 @@ def scene_quant_model(office: Office, llm: DemoLLM) -> None:
                think("Built and checked. Now the Monte Carlo and the value drivers.", None,
                      ("run_simulations", {"ticker": t, "runs": 1000})),
                lambda p: _delta_reports(p, t))
-    office.assign("Quill", f"Hand the {t} assumptions to Quant for the model (demo dry run with "
-                  "real tools).", title=f"{t} to Quant (demo, real tools)")
+    office.assign("Quill", f"Hand the {t} assumptions to Quant for the model.", title=f"{t} to Quant (demo, real tools)")
 
 
 def _delta_reports(params: dict, t: str) -> TurnResult:
