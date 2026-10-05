@@ -47,10 +47,7 @@ textarea { resize: vertical; width: 100%; }
 header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--grid); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 9px; font-family: var(--pixel); font-size: 17px; letter-spacing: .2px; }
 .brand b { color: var(--clay); }
-.brand-mark { width: 22px; height: 22px; border-radius: 5px; background:
-  linear-gradient(var(--slate), var(--slate)) 4px 12px / 3px 6px no-repeat,
-  linear-gradient(var(--clay), var(--clay)) 9.5px 8px / 3px 10px no-repeat,
-  linear-gradient(var(--sage), var(--sage)) 15px 4px / 3px 14px no-repeat, #2E2C29; }
+.brand-mark { width: 32px; height: 32px; flex: none; background: var(--ink); -webkit-mask: url(/logo-mark.png) center / contain no-repeat; mask: url(/logo-mark.png) center / contain no-repeat; }
 .crumbs { color: var(--text-2); font-size: 13px; margin-left: 6px; }
 .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; background: var(--paper); color: var(--text-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .pill.demo { background: var(--clay); color: #fff; font-weight: 700; letter-spacing: .5px; }
