@@ -109,8 +109,9 @@ def _sentence(office: Office, people: list[dict], blockers: list[str], waiting: 
         elif p["status"] in ("paused", "held"):
             parts.append(f"{p['name']} is {p['status']}")
     if not parts:
-        parts.append("nobody here has work in hand")
-    text = "; ".join(parts) + "."
+        parts.append("nothing is in progress here")
+    text = "; ".join(parts)
+    text = text[0].upper() + text[1:] + "."
     if blockers:
         text += " Blocked: " + "; ".join(blockers) + "."
     if waiting:

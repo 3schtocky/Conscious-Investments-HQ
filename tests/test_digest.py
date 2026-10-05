@@ -33,7 +33,7 @@ async def test_digest_reads_a_lead_mid_task_without_a_model_call(make_office):
 async def test_digest_idle_wing_and_no_costs(make_office):
     office, _ = make_office()
     wing = wing_digest(office, "screening")
-    assert wing["state"] == "idle" and "nobody here has work in hand" in wing["headline"]
+    assert wing["state"] == "idle" and "Nothing is in progress here" in wing["headline"]
     assert "$" not in str(office_digest(office))
 
 

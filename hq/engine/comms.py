@@ -51,8 +51,7 @@ class Comms:
     # answers without a model --------------------------------------------------------------
     def code_answer(self, wing: str) -> str:
         """Where the wing stands, read out from the digest. Free; works while paused."""
-        d = wing_digest(self.office, wing)
-        return f"{d['name']}: {d['headline']}"
+        return wing_digest(self.office, wing)["headline"]
 
     def can_think(self) -> bool:
         """Whether a delegate may take a model turn right now."""

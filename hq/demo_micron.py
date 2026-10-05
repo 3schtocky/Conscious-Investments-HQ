@@ -23,11 +23,20 @@ T = "MU"
 RECORD_DB = DATA_DIR / "micron-demo.db"
 RECORD_DIR = DATA_DIR / "micron-demo"
 
-OPENING = ("Juno, we should initiate coverage on Micron (MU). I want the full report, a bull, base and "
-           "bear model for it, and Quill and Sigma working together on it.")
-APPROVE_NOTE = ("Approved. Have Vera check the report against that model, and ask Harbor for a short "
-                "note to clients on it.")
-WRAP_REQUEST = "Thank you all. Juno, pull the leads together for a one-line wrap."
+def opening(office: Office) -> str:
+    n = office.name
+    return (f"{n('chief_of_staff')}, we should initiate coverage on Micron (MU). I want the full report, a "
+            f"bull, base and bear model for it, and {n('er_lead')} and {n('quant_lead')} working together on it.")
+
+
+def approve_note(office: Office) -> str:
+    n = office.name
+    return (f"Approved. Have {n('audit_lead')} check the report against that model, and ask {n('cr_lead')} "
+            "for a short note to clients on it.")
+
+
+def wrap_request(office: Office) -> str:
+    return f"Thank you all. {office.name('chief_of_staff')}, pull the leads together for a one-line wrap."
 
 
 # ---- the newsletter (400 to 600 words; every number is the approved model's or a filing's) ------
@@ -87,7 +96,7 @@ def _model_card(params: dict) -> object:
 
 def _juno_wrap(params: dict) -> object:
     m = _last_tool_json(params)
-    pt, ret = m.get("price_targets", {}), m.get("total_returns", {})
+    pt = m.get("price_targets", {})
     text = (f"Micron is done. The report, the model and the client note are in. Rating {m.get('rating')}: base "
             f"${pt.get('base', 0):,.2f}, bear ${pt.get('bear', 0):,.2f}, bull ${pt.get('bull', 0):,.2f} "
             f"({m.get('cite_as')}). Audit tied the report to the model, and the note passed the "
@@ -249,15 +258,15 @@ async def _pending_card(office: Office, kind: str) -> dict:
 
 async def run(office: Office, llm: DemoLLM) -> None:
     script(office, llm)
-    office.captain_send("office", OPENING)
+    office.captain_send("office", opening(office))
     card = await _pending_card(office, "model")          # Research and Quant work in parallel
     await office.idle()
     office.decide(card["id"], "approved", "Approved for the demo.")
-    office.captain_send("office", APPROVE_NOTE)
+    office.captain_send("office", approve_note(office))
     note = await _pending_card(office, "newsletter")     # Audit and Client Relations in parallel
     await office.idle()
     office.decide(note["id"], "approved", "Approved for the demo.")
-    office.captain_send("office", WRAP_REQUEST)
+    office.captain_send("office", wrap_request(office))
     await office.idle()
 
 

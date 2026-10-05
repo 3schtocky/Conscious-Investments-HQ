@@ -87,7 +87,7 @@ async def test_ask_delegate_reads_out_the_digest_with_no_model_call_when_paused(
     office, llm = make_office()
     office.hold()
     answer = await office.comms.ask("quant_associate", "chief_of_staff", "Where is Quant?")
-    assert answer.startswith("Quant:") and "nobody here has work in hand" in answer
+    assert answer.startswith("Nothing is in progress here")
     assert llm.calls == []   # a paused office takes no model turn
 
 
