@@ -201,6 +201,10 @@ def _text_of(content) -> str:
     return "\n".join(b.get("text", "") or str(b.get("content", "")) for b in content)
 
 
+def _is_comms(params: dict) -> bool:
+    return "Your role: your wing's communications head" in params["system"]
+
+
 class DemoLLM:
     """Streams scripted turns word by word, so the office looks alive.
 
@@ -224,6 +228,28 @@ class DemoLLM:
         if len(msgs) == 1:
             return self._opening(who, first, params)
         return self._followup(who, msgs, params)
+
+    def improvise_comms(self, who: str, params: dict) -> TurnResult:
+        """A delegate on the comms desk: answers from its wing's live digest, speaks for the wing
+        in announcements, and never needs its lead's time."""
+        office = self.office
+        agent = office.agents.get(who)
+        msgs = params["messages"]
+        first = _text_of(msgs[0]["content"])
+        if len(msgs) > 1:
+            return think("Done: that is passed on.", "Passed on.")(params)
+        if "[Announcement from" in first:
+            return self._announcement_reply(who, agent, first, params)
+        m = re.match(r"\[(?:Message|Question) from [^(]+\((\w+)\)\]: (.*)", first, re.DOTALL)
+        sender = m.group(1) if m else ""
+        asker = office.agents.get(sender)
+        if asker is not None and asker.wing != agent.wing:
+            line = office.comms.code_answer(agent.wing)
+            return think(f"{asker.nickname} wants to know where we are. My lead's live activity "
+                         "answers it, so I don't need to interrupt them.", None,
+                         ("send_message", {"to": [sender], "text": line}))(params)
+        return think("My lead is telling me something for the record. Nothing else to do.",
+                     "Noted.")(params)
 
     # the first turn of an unscripted task -----------------------------------------------------
     def _opening(self, who: str, first: str, params: dict) -> TurnResult:
@@ -378,6 +404,12 @@ class DemoLLM:
             result = think("The office is paused and the Captain is asking me directly. I stop and answer.",
                            f"Paused where I am on: {first} Happy to walk you through it; nothing "
                            "moves until you resume.")(params)
+        elif _is_comms(params):
+            # A delegate on the comms desk runs beside its job: scripted under "comms:<id>" so it
+            # never takes a turn meant for the job.
+            key = f"comms:{who}"
+            result = (self.scripts[key].popleft()(params) if self.scripts[key]
+                      else self.improvise_comms(who, params))
         elif self.scripts[who]:
             result = self.scripts[who].popleft()(params)
         else:
@@ -759,10 +791,19 @@ def scene_quant_model(office: Office, llm: DemoLLM) -> None:
     llm.script("er_lead",
                think("Our thesis and assumptions for META are in coverage/META. Quant owns the "
                      "model, so I hand the assumptions over instead of building a valuation.", None,
-                     ("send_message", {"to": ["quant_lead"], "text": f"{t} assumptions are ready in "
-                                       f"coverage/{t}. Please build the "
+                     ("send_message", {"to": ["er_associate"], "text": f"{t} assumptions are ready in "
+                                       f"coverage/{t}. Quant should build the "
                                        "model."})),
-               think("Handed off.", "Assumptions sent to Quant."))
+               think("Handed off.", "Assumptions handed to {er_associate} for Quant."))
+    llm.script("comms:er_associate",
+               think("{er_lead} is handing over the assumptions. Quant builds the model, so this goes "
+                     "to {quant_lead} as a request.", None,
+                     ("relay_request", {"to": "quant_lead", "need": f"Build the {t} model from "
+                                        f"coverage/{t}/assumptions.yaml",
+                                        "why": f"Research has the {t} thesis and assumptions ready.",
+                                        "deliverable": "A model on an approval card for Stott; "
+                                                       "tell me when it is filed."})),
+               think("Sent.", "Request sent to Quant."))
     llm.script("quant_lead",
                think("DCF with a CAPM cost of capital, the multiples blend, bull/base/bear, then a "
                      "Monte Carlo. {quant_associate} builds and checks; I review and sign off.", None,
@@ -770,10 +811,22 @@ def scene_quant_model(office: Office, llm: DemoLLM) -> None:
                                    "then run_simulations. Return the version, price targets, the "
                                    "formula-check result and the top value drivers."})),
                lambda p: _sigma_files_for_approval(p, t),
-               think("{er_lead} needs to know it's with the Captain.", None,
-                     ("send_message", {"to": ["er_lead"], "text": f"{t} model is with Stott for "
-                                       "approval. Hold any figures until it's approved."})),
+               think("{er_lead}'s wing needs to know it's with the Captain. {quant_associate} passes "
+                     "it on.", None,
+                     ("send_message", {"to": ["quant_associate"], "text": f"{t} model is with Stott "
+                                       "for approval. Research should hold any figures until it is "
+                                       "approved."})),
                think("Done.", "Model sent for approval."))
+    llm.script("comms:quant_associate",
+               think("{quant_lead} filed the model. Research needs to hear it from me.", None,
+                     ("send_message", {"to": ["er_associate"], "text": f"{t} model is with Stott "
+                                       "for approval; hold any figures until it is approved."})),
+               think("Passed on.", "Told {er_associate}."))
+    llm.script("comms:er_associate",
+               think("Quant's model is with Stott. {er_lead} should hold figures.", None,
+                     ("send_message", {"to": ["er_lead"], "text": f"{t} model is with Stott for "
+                                       "approval; hold figures until it is approved."})),
+               think("Passed on.", "Told {er_lead}."))
     llm.script("quant_associate",
                think("Building the workbook from assumptions.yaml, then the formula check.", None,
                      ("build_model", {"ticker": t})),

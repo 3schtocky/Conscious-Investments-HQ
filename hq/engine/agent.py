@@ -78,8 +78,11 @@ class Agent:
         return not self.gate.is_set()
 
     # prompts ----------------------------------------------------------------------------
-    def system_prompt(self) -> str:
-        role_file = "chief_of_staff.md" if self.id == "chief_of_staff" else f"{self.tier}.md"
+    def system_prompt(self, role_file: str | None = None, extra: str = "") -> str:
+        """The frozen system prompt. `role_file` swaps in another role (the delegate's comms desk);
+        `extra` is live text appended at the end (the wing digest a comms turn answers from)."""
+        role_file = role_file or ("chief_of_staff.md" if self.id == "chief_of_staff"
+                                  else f"{self.tier}.md")
         team = "\n".join(
             f"- {a.nickname} (`{a.id}`): {a.role}, {self.office.wing_name(a.wing)}"
             for a in self.office.agents.values() if a.id != self.id)
@@ -93,8 +96,12 @@ class Agent:
              f"{self.office.wing_name(self.wing)} wing.\n\n{self.persona}"),
             f"# Your colleagues\n{team}",
             *self._memory_sections(),
+            *([extra] if extra else []),
         ])]
         text = parts[0].replace("{captain}", self.office.captain_name)
+        lead, delegate = self.office.lead_of(self.wing), self.office.delegate_of(self.wing)
+        text = text.replace("{my_lead}", lead.nickname if lead else "your lead")
+        text = text.replace("{my_delegate}", delegate.nickname if delegate else "your delegate")
         for other in self.office.agents.values():   # {screen_lead} -> that colleague's nickname
             text = text.replace("{" + other.id + "}", other.nickname)
         return text

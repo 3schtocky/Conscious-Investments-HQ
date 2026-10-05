@@ -14,6 +14,7 @@ from pathlib import Path
 
 from hq.config import DATA_DIR, ROOT, office, roster
 from hq.engine.agent import Agent
+from hq.engine.comms import Comms, is_delegate
 from hq.engine.events import EventBus
 from hq.engine.guards import ConversationGuard, GuardBlock
 from hq.engine.ledger import BudgetExhausted, Ledger
@@ -41,6 +42,7 @@ class Office:
         self._llm = llm
         self.slots = asyncio.Semaphore(office()["limits"]["max_concurrent_agents"])
         self.conversations = ConversationGuard()
+        self.comms = Comms(self)   # the delegates' comms desk (hq/engine/comms.py)
         self.clocked_out = False
         self.quant_dir = quant_dir or ROOT / "Quant"   # the Quant Department's model files
         self._model_locks: dict[str, asyncio.Lock] = {}
@@ -49,6 +51,7 @@ class Office:
         from hq.outbox import OUTBOX_DIR
         self.outbox_dir = outbox_dir or OUTBOX_DIR   # Client Relations' ready-to-publish files
         self._running: set[asyncio.Task] = set()
+        self.bulletin: dict[str, list[str]] = {}   # announcements a lead hears with its next task
         self.reported: set[int] = set()   # tasks that already sent the Captain a report
         # task id -> (turns, spend) at the moment the Captain resumed it: the limits start afresh
         self.allowance: dict[int, tuple[int, float]] = {}
@@ -91,10 +94,26 @@ class Office:
         raise KeyError(f"No colleague called {who!r}. Colleagues: "
                        + ", ".join(f"{a.nickname} ({a.id})" for a in self.agents.values()))
 
+    def lead_of(self, wing: str) -> Agent | None:
+        return next((a for a in self.agents.values() if a.wing == wing and a.tier == "lead"), None)
+
+    def delegate_of(self, wing: str) -> Agent | None:
+        """The wing's delegate: its associate, who is also the wing's head of communication."""
+        return next((a for a in self.agents.values()
+                     if a.wing == wing and a.tier == "associate"), None)
+
     def name(self, who: str) -> str:
         return self.captain_name if who == CAPTAIN else self.agents[who].nickname
 
     def render_task(self, task: dict) -> str:
+        text = self._render_task(task)
+        agent = self.agents.get(task["assignee"])
+        news = self.bulletin.pop(agent.wing, []) if agent and agent.tier == "lead" else []
+        if news and task["kind"] != "delegation":
+            text = "Office notes since you were last at work:\n" + "\n".join(news) + "\n\n" + text
+        return text
+
+    def _render_task(self, task: dict) -> str:
         by = task["assigned_by"]
         who = self.name(by) if by in self.agents or by == CAPTAIN else by
         if task["kind"] == "delegation":
@@ -167,7 +186,28 @@ class Office:
         for r in recipients:
             self._deliver(sender, r, text, channel)
 
+    def say(self, sender: str, recipients: list[str], text: str, task_id: int | None = None) -> None:
+        """Put a line in the chat and on the floor without delivering it to anyone's inbox: the
+        asker already has the answer (comms exchanges), so nothing new should wake a colleague."""
+        channel = _channel(sender, recipients, self.agents)
+        self.store.add_chat(channel=channel, sender=sender, recipients=recipients, text=text,
+                            task_id=task_id)
+        away = [r for r in recipients if self.agents[r].wing != self.agents[sender].wing]
+        if away and channel != "lobby":
+            self.bus.publish("move", sender, task_id, to=f"desk:{away[0]}")
+        self.bus.publish("chat", sender, task_id, channel=channel, recipients=recipients, text=text)
+        if away and channel != "lobby":
+            self.bus.publish("move", sender, task_id, to=f"desk:{sender}")
+
     def _deliver(self, sender: str, recipient: str, text: str, channel: str) -> None:
+        if is_delegate(self, recipient) and sender != CAPTAIN and self.comms.handle(
+                recipient, sender, text,
+                fallback=lambda: self._queue(sender, recipient, text, channel)):
+            return   # the delegate answers on its comms desk, beside any job in hand
+        self._queue(sender, recipient, text, channel)
+
+    def _queue(self, sender: str, recipient: str, text: str, channel: str) -> None:
+        """Hand a message to a colleague's inbox, or start a short task for them if idle."""
         agent = self.agents[recipient]
         note = f"[Message from {self.name(sender)} ({sender})]: {text}"
         if agent.current_task is not None or agent.desk.locked():
@@ -295,6 +335,19 @@ class Office:
         tasks = []
         for agent in self.agents.values():
             if agent.id == sender:
+                continue
+            if agent.tier == "lead" and agent.wing != "audit":
+                # A lead is not asked to reply: its delegate speaks for the wing. It still hears
+                # the announcement (now if it is working, else with its next assignment).
+                fyi = (f"[Announcement from {who} to the whole office]: {text}\n"
+                       "(Your delegate replies for the wing; you need not reply.)")
+                if agent.current_task is not None or agent.desk.locked():
+                    agent.inbox.append(fyi)
+                else:
+                    self.bulletin.setdefault(agent.wing, []).append(fyi)
+                continue
+            if is_delegate(self, agent.id) and agent.wing != "audit" and self.comms.handle(
+                    agent.id, sender, note):
                 continue
             if agent.current_task is not None or agent.desk.locked():
                 agent.inbox.append(note)

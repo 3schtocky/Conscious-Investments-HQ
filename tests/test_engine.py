@@ -6,7 +6,7 @@ import asyncio
 import json
 
 import pytest
-from conftest import TURN_COST, text_turn, tool_turn
+from conftest import TURN_COST, nick, text_turn, tool_turn
 
 
 async def test_simple_task_completes_and_is_logged(make_office):
@@ -70,21 +70,21 @@ def test_block_to_param_keeps_everything_the_api_returned():
 
 async def test_message_to_idle_colleague_becomes_their_task(make_office):
     office, llm = make_office()
-    llm.script("er_lead",
+    llm.script("chief_of_staff",
                tool_turn(("send_message", {"to": ["screen_lead"], "text": "Any semis on your list?"})),
                text_turn("Asked Scout."))
     llm.script("screen_lead", text_turn("Replied to nobody; noted."))
-    await _run(office, "er_lead", "Coordinate with Screening.")
+    await _run(office, "chief_of_staff", "Coordinate with Screening.")
 
-    chat = office.store.chat("dm:er_lead|screen_lead")
+    chat = office.store.chat("dm:chief_of_staff|screen_lead")
     assert chat[-1]["text"] == "Any semis on your list?"
     scout_tasks = [t for t in office.store.tasks() if t["assignee"] == "screen_lead"]
     assert len(scout_tasks) == 1 and scout_tasks[0]["kind"] == "message"
     assert "Any semis on your list?" in scout_tasks[0]["body"]
     assert scout_tasks[0]["status"] == "done"
-    # cross-wing message: Quill walked over and back
+    # cross-wing message: Juno walked over and back
     moves = [e for e in office.store.events() if e["type"] == "move"]
-    assert [m["payload"]["to"] for m in moves] == ["desk:screen_lead", "desk:er_lead"]
+    assert [m["payload"]["to"] for m in moves] == ["desk:screen_lead", "desk:chief_of_staff"]
 
 
 async def test_message_to_busy_colleague_lands_in_next_turn(make_office):
@@ -98,18 +98,18 @@ async def test_message_to_busy_colleague_lands_in_next_turn(make_office):
 
     llm2.script("screen_lead", scout_waits, text_turn("Got Quill's note, wrapping up."))
     llm2.script("screen_associate", text_turn("On it."))
-    llm2.script("er_lead", tool_turn(("send_message", {"to": ["screen_lead"], "text": "Need RMBS?"})),
+    llm2.script("chief_of_staff", tool_turn(("send_message", {"to": ["screen_lead"], "text": "Need RMBS?"})),
                 text_turn("Sent."))
     office2.assign("screen_lead", "Run the gem hunt.")
     await asyncio.sleep(0)
-    office2.assign("er_lead", "Ping Scout.")
+    office2.assign("chief_of_staff", "Ping Scout.")
     await asyncio.sleep(0.05)
     arrived.set()
     await office2.idle()
     scout_call = [c for c in llm2.calls if c["who"] == "screen_lead"][-1]
     last_user = scout_call["params"]["messages"][-1]["content"]
     texts = [b.get("text", "") for b in last_user if b["type"] == "text"]
-    assert any("[Message from Quill (er_lead)]: Need RMBS?" in t for t in texts)
+    assert any(f"[Message from {nick('chief_of_staff')} (chief_of_staff)]: Need RMBS?" in t for t in texts)
 
 
 async def test_delegation_returns_structured_result(make_office):
@@ -166,11 +166,11 @@ async def test_delegation_outside_wing_or_to_lead_is_refused(make_office):
 
 async def test_budget_cap_finishes_inflight_then_clocks_out(make_office):
     office, llm = make_office(daily_cap=0.006, audit_reserve=0.0)
-    llm.script("er_lead", tool_turn(("send_message", {"to": ["er_associate"], "text": "hi"})),
-               tool_turn(("send_message", {"to": ["er_associate"], "text": "a second, different note"})),
+    llm.script("chief_of_staff", tool_turn(("send_message", {"to": ["er_lead"], "text": "hi"})),
+               tool_turn(("send_message", {"to": ["er_lead"], "text": "a second, different note"})),
                text_turn("done"))
-    llm.script("er_associate", text_turn("ok"), text_turn("ok again"))
-    tid = await _run(office, "er_lead", "Work.")
+    llm.script("er_lead", text_turn("ok"), text_turn("ok again"))
+    tid = await _run(office, "chief_of_staff", "Work.")
     # Call 1 ($0.004) is under the cap, so call 2 starts; it finishes and is recorded even
     # though it takes the day to $0.008. After that nothing new starts: Quill and Ledger's
     # queued message tasks all pause on the budget.

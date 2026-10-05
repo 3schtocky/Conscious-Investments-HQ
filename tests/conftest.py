@@ -1,7 +1,8 @@
 """Shared fixtures: an Office wired to an in-memory store and a scripted fake model.
 
 The fake picks each agent's next scripted turn by the agent's role id in its system prompt, so
-tests read like a screenplay: {"er_lead": [turn, turn], "er_associate": [turn]}. Tests always name
+tests read like a screenplay: {"er_lead": [turn, turn], "er_associate": [turn]}. A delegate's comms
+desk (answering colleagues beside its job) is scripted apart, as "comms:er_associate". Tests always name
 agents by role id, never by nickname: the Captain can rename anyone in Settings. Every test runs
 on a pinned copy of the committed config (tests/fixtures/config), not the live config/ folder.
 """
@@ -60,6 +61,8 @@ class FakeLLM:
 
     async def turn(self, *, params, on_delta=None, on_block=None) -> TurnResult:
         who = re.search(r"You are \*\*.+?\*\* \(`(\w+)`\)", params["system"]).group(1)
+        if "Your role: your wing's communications head" in params["system"]:
+            who = f"comms:{who}"   # a delegate's comms desk is scripted apart from its jobs
         self.calls.append({"who": who, "params": copy.deepcopy(params)})
         if not self.scripts[who]:
             raise AssertionError(f"No scripted turn left for {who}")

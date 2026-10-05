@@ -110,7 +110,7 @@ async def test_consecutive_announcements_get_different_replies_per_role(demo_off
     for said in ("Memos need a Quant review.", "Newsletters go out on Thursdays."):
         office.captain_send("all", said)
         await office.idle()
-    replies = [m for m in office.store.chat("group:stott") if m["sender"] == "quant_lead"]
+    replies = [m for m in office.store.chat("group:stott") if m["sender"] == "quant_associate"]   # the delegate answers for the wing
     assert len(replies) == 2 and replies[0]["text"] != replies[1]["text"]
     assert replies[0]["text"].startswith('On "Memos need a Quant review"')
     assert all("(demo" not in m["text"] for m in office.store.chat("group:stott"))

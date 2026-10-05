@@ -26,6 +26,13 @@ class ToolContext:
     task: dict
     finished: dict | None = None   # set by submit_result: ends the task after this turn
     hold_turn: bool = False        # the office is paused and this turn only answers the Captain
+    depth: int = 0                 # comms only: 1 when another delegate is asking
+    comms_guard: Any = None        # comms only: its own limits, apart from the delegate's job
+
+    @property
+    def guard(self):
+        """The limits that apply here: the comms exchange's own, else the agent's task guard."""
+        return self.comms_guard or self.agent.guard
 
 
 Handler = Callable[[ToolContext, dict], Awaitable[str]]
@@ -65,6 +72,8 @@ async def _send_message(ctx: ToolContext, inp: dict) -> str:
     recipients = [ctx.office.resolve(t) for t in to]
     if ctx.agent.id in recipients:
         raise GuardBlock("You can't message yourself.")
+    from hq.tools.comms import check_route
+    check_route(ctx.office, ctx.agent.id, recipients)
     await ctx.office.send_message(ctx.agent.id, recipients, text, task_id=ctx.task["id"])
     names = ", ".join(ctx.office.agents[r].nickname for r in recipients)
     return f"Delivered to {names}. Replies arrive as new messages; don't wait by re-sending."
@@ -367,9 +376,9 @@ REQUEST_APPROVAL = Tool(
 async def _post_to_group(ctx: ToolContext, inp: dict) -> str:
     group = inp.get("group")
     text = _str(inp, "text", max_len=2000)
-    ctx.agent.guard.check_group_post()
+    ctx.guard.check_group_post()
     ctx.office.post_to_group(ctx.agent.id, group, text, task_id=ctx.task["id"])   # may refuse
-    ctx.agent.guard.record_group_post()
+    ctx.guard.record_group_post()
     if ctx.agent.id == "chief_of_staff" and group == "juno":
         return "Announced to the whole office. Replies will appear in the group."
     return "Posted in the group."
@@ -449,6 +458,11 @@ def tools_for(tier: str, agent_id: str, wing: str | None = None) -> list[Tool]:
     base = _office_tools(tier, agent_id)
     if wing is None:
         return base
+    if tier == "lead" and wing != "audit":   # the delegate speaks for the wing in group chats
+        base = [t for t in base if t.name != "post_to_group"]
+    if agent_id == "chief_of_staff":   # Juno walks the floor: she can read and ask any wing
+        from hq.tools.comms import ASK_DELEGATE, WING_STATUS
+        base = base + [WING_STATUS, ASK_DELEGATE]
     base = base + [NOTE_TO_SELF]
     if tier == "lead" or agent_id == "chief_of_staff":
         base = base + [PROPOSE_WIKI]
