@@ -2,7 +2,7 @@
 import Phaser from "phaser";
 import { drawSheet, ID_PRESET, FRAME_H, FRAME_W, imageOf, resolveParts, type AvatarSpec, type Dir } from "./avatar";
 import {
-  buildDesks, COLS, DOORS, PROPS, ROOMS, ROWS, SEATS, TABLE, TILE, walkable,
+  buildDesks, COLS, DOORS, PROPS, ROOMS, ROWS, SEATS, TABLE, TILE, visitSlots, walkable,
   type Desk, type Pt, type Rect,
 } from "./map";
 import { findPath } from "./path";
@@ -20,7 +20,7 @@ export interface SceneHooks {
   say: (id: string, text: string, ms: number) => void;
 }
 
-type Action = { type: "walk"; to: Pt } | { type: "say"; text: string } | { type: "wait"; ms: number };
+type Action = { type: "walk"; to: Pt } | { type: "visit"; owner: string } | { type: "say"; text: string } | { type: "wait"; ms: number };
 
 class Walker {
   tile: Pt;
@@ -31,6 +31,7 @@ class Walker {
   frameClock = 0;
   idleSince = 0;
   seat: number | null = null;
+  visit: { owner: string; at: Pt } | null = null;   // the spot reserved in front of someone's desk
   waitUntil = 0;
   image = false;
   specKey = "";
@@ -49,6 +50,7 @@ export class OfficeScene extends Phaser.Scene {
   private walkers = new Map<string, Walker>();
   private glows = new Map<string, Phaser.GameObjects.Rectangle>();
   private seatsTaken = new Set<number>();
+  private visitTaken = new Map<string, string>();   // "x,y" of a spot in front of a desk -> who holds it
   private focus: Focus = { kind: "floor" };
   private ready = false;
 
@@ -77,6 +79,7 @@ export class OfficeScene extends Phaser.Scene {
       this.applyFocus(false);
     });
     this.ready = true;
+    if (import.meta.env.DEV) (window as unknown as { __office?: OfficeScene }).__office = this;   // for browser checks
     this.sync();
     this.applyFocus(false);
   }
@@ -155,7 +158,13 @@ export class OfficeScene extends Phaser.Scene {
     switch (ev.type) {
       case "move": {
         if (!w) return;
-        const target = this.resolveTarget(ev.to, w);
+        const to = String(ev.to);
+        const owner = to.startsWith("desk:") ? to.slice(5) : "";
+        if (owner && owner !== w.id && this.desks.some((d) => d.owner === owner)) {
+          w.queue.push({ type: "visit", owner });   // the spot is picked when the walk begins
+          break;
+        }
+        const target = this.resolveTarget(to, w);
         if (target) w.queue.push({ type: "walk", to: target });
         break;
       }
@@ -199,8 +208,7 @@ export class OfficeScene extends Phaser.Scene {
     if (to.startsWith("desk:")) {
       const owner = to.slice(5);
       if (owner === w.id) { this.releaseSeat(w); return w.home; }
-      const d = this.desks.find((x) => x.owner === owner);
-      return d ? d.visitor : null;
+      return null;   // visits to other desks are `visit` actions
     }
     if (to === "lobby") return this.takeSeat(w);
     return null;
@@ -218,6 +226,27 @@ export class OfficeScene extends Phaser.Scene {
   private releaseSeat(w: Walker) {
     if (w.seat !== null) this.seatsTaken.delete(w.seat);
     w.seat = null;
+  }
+
+  private releaseVisit(w: Walker) {
+    if (w.visit) this.visitTaken.delete(`${w.visit.at.x},${w.visit.at.y}`);
+    w.visit = null;
+  }
+
+  /** Reserve a place for `w` to stand in front of `owner`'s desk. Visitors fan out side by side
+   *  instead of piling onto one tile; a visitor already standing there keeps their spot. */
+  private takeVisitSpot(w: Walker, owner: string): Pt | null {
+    if (w.visit?.owner === owner) return w.visit.at;
+    const desk = this.desks.find((d) => d.owner === owner);
+    if (!desk) return null;
+    this.releaseVisit(w);
+    const standing = (p: Pt) => [...this.walkers.values()].some(
+      (o) => o !== w && !o.path.length && o.tile.x === p.x && o.tile.y === p.y);
+    const at = visitSlots(desk, this.grid).find((p) => !this.visitTaken.has(`${p.x},${p.y}`) && !standing(p))
+      ?? desk.visitor;   // a full house: stand at the usual spot rather than nowhere
+    this.visitTaken.set(`${at.x},${at.y}`, w.id);
+    w.visit = { owner, at };
+    return at;
   }
 
   // ---- per-frame --------------------------------------------------------------------------
@@ -255,9 +284,16 @@ export class OfficeScene extends Phaser.Scene {
     const action = w.queue.shift();
     if (action) {
       w.idleSince = time;
-      if (action.type === "walk") {
-        const path = findPath(this.grid, w.tile, action.to);
-        if (path.length) { w.path = path; if (w.seat !== null && !SEATS.some((s) => s.x === action.to.x && s.y === action.to.y)) this.releaseSeat(w); }
+      if (action.type === "walk" || action.type === "visit") {
+        const to = action.type === "visit" ? this.takeVisitSpot(w, action.owner) : action.to;
+        const path = to ? findPath(this.grid, w.tile, to) : [];
+        if (path.length) {
+          w.path = path;
+          if (w.seat !== null && !SEATS.some((s) => s.x === to!.x && s.y === to!.y)) this.releaseSeat(w);
+        }
+        // Leaving a desk (or never getting there) frees the spot for the next visitor.
+        if (w.visit && action.type === "walk") this.releaseVisit(w);
+        else if (w.visit && !path.length && !(w.tile.x === w.visit.at.x && w.tile.y === w.visit.at.y)) this.releaseVisit(w);
       } else if (action.type === "say") {
         const ms = Math.min(9000, 2500 + action.text.length * 45);
         this.hooks.say(w.id, action.text, ms);

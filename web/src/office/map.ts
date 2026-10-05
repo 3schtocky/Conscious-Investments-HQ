@@ -94,6 +94,22 @@ export function buildDesks(agents: { id: string; wing: string; tier: string }[])
   return desks;
 }
 
+/** Where visitors can stand at a desk, best spot first: straight in front, then side by side to
+ *  the right and left along the same row, and only when that row is full a second row behind
+ *  (a back row would put speech bubbles over the people in front). Each desk's own `visitor`
+ *  tile is the first choice; the rest stay in the same room so nobody ends up in a neighbour's wing. */
+export function visitSlots(d: Desk, grid: boolean[][]): Pt[] {
+  const cands: { p: Pt; rank: number }[] = [];
+  for (let row = 0; row < 3; row++) {
+    for (const dx of [0, 1, -1, 2, -2]) {
+      const p = { x: d.visitor.x + dx, y: d.visitor.y + row };
+      if (!grid[p.y]?.[p.x] || roomAt(p)?.id !== d.room) continue;
+      cands.push({ p, rank: row * 10 + Math.abs(dx) * 1.1 + (dx < 0 ? 0.05 : 0) });
+    }
+  }
+  return cands.sort((a, b) => a.rank - b.rank).map((c) => c.p);
+}
+
 // Lobby meeting table (tiles) and the seats around it.
 export const TABLE: Rect = { x: 21, y: 15, w: 7, h: 3 };
 export const SEATS: Pt[] = [
