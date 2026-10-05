@@ -377,6 +377,8 @@ body.visitor .card-live { display: none; }
 
 /* Pause the whole office, next to the spend meter */
 .hold-btn { border: 1px solid var(--grid); background: var(--paper-light); color: var(--ink); border-radius: 8px; padding: 5px 12px; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.contact-btn { border: 1px solid var(--ink); background: var(--ink); color: var(--paper); border-radius: 8px; padding: 5px 14px; font-weight: 600; font-size: 13px; white-space: nowrap; text-decoration: none; }
+.contact-btn:hover { opacity: .85; }
 .hold-btn.held { background: var(--gold); border-color: var(--gold); color: #fff; }
 .hold-btn:disabled { opacity: .6; }
 body.visitor .hold-btn { display: none; }

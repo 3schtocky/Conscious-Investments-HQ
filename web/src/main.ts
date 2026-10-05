@@ -74,12 +74,13 @@ const holdBtn = h("button", { class: "hold-btn", onclick: async () => {
   await fetch(state.held ? "/api/office/release" : "/api/office/hold", { method: "POST" }).catch(() => null);
   holdBtn.disabled = false;
 } });
+const contactBtn = h("a", { class: "contact-btn", href: "mailto:stott@consciousinvestments.org", title: "Email stott@consciousinvestments.org" }, "Contact");
 const header = h("header", {},
   h("div", { class: "brand" }, h("span", { class: "brand-mark" }), h("span", {}, "Conscious Investments ", h("b", {}, "HQ"))),
   statusPill, demoBtn, awaiting, scorePill, crumbs,
   h("div", { class: "meter", title: "Today's API spend vs. the daily cap" }, h("div", { class: "meter-bar" }, spendFill), spendText),
   holdBtn,
-  signOut, themeBtn);
+  signOut, themeBtn, contactBtn);
 
 const stage = h("div", { class: "stage" });
 const overlayLayer = h("div", { class: "overlay" });
