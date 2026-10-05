@@ -1,0 +1,117 @@
+/* The iPhone layout. Everything here is behind `body.mobile`, set by ui/mobile.ts for visitors on a
+   narrow screen, so the desktop site is untouched. Loaded after style.css so it can override it. */
+
+/* Safe areas: the notch / Dynamic Island on top, the home indicator below. Kept in variables so the
+   layout can be checked at any inset. */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --m-ink: #ECEAE1;      /* the masthead is always dark, in light and dark mode alike */
+  --m-bar: #1b1a18;
+}
+
+/* Hidden everywhere except on a phone */
+.m-head, .m-tabs, .m-more, .m-hint { display: none; }
+
+body.mobile {
+  position: fixed; inset: 0; width: 100%; overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  background: var(--m-bar);   /* what shows through while the page loads, and behind the status bar */
+}
+body.mobile #app { height: 100%; background: var(--paper); }
+@supports (height: 100dvh) { body.mobile #app { height: 100dvh; } }
+body.mobile #app > header { display: none; }   /* the desktop header */
+
+/* the map and the app chrome are not text to select; panels and the reader stay selectable */
+body.mobile .stage-wrap, body.mobile .m-head, body.mobile .m-tabs { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* ---- masthead ---------------------------------------------------------------------------- */
+body.mobile .m-head {
+  display: block; flex: none;
+  padding: calc(var(--sat) + 8px) calc(var(--sar) + 16px) 10px calc(var(--sal) + 16px);
+  background: var(--m-bar); color: var(--m-ink);
+}
+.m-bar { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.m-brand { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; font-family: var(--pixel); font-size: 11px; letter-spacing: .1px; white-space: nowrap; }
+.m-brand b { color: var(--clay); }
+.m-mark { width: 26px; height: 26px; flex: none; background: var(--m-ink); -webkit-mask: url(/logo-mark.png) center / contain no-repeat; mask: url(/logo-mark.png) center / contain no-repeat; }
+.m-word { overflow: hidden; text-overflow: ellipsis; }
+.m-status { flex: none; }
+.m-status .pill { background: rgba(255, 255, 255, .09); color: var(--m-ink); font-size: 11px; padding: 3px 9px; }
+.m-status .office-status[data-state="busy"] { color: #6fd0ae; }
+.m-status .office-status[data-state="closed"] { color: #bba8e3; }
+.m-title { margin: 8px 0 0; font: 700 28px/1.15 var(--sans); letter-spacing: -.4px; }
+.m-back { flex: none; border: 0; background: none; color: #f0b27e; font: 600 16px/1 var(--sans); padding: 6px 8px 6px 0; margin-left: -2px; min-height: 36px; }
+.m-head.has-back .m-brand { display: none; }
+.m-head.has-back .m-bar { justify-content: space-between; }
+
+/* ---- content ----------------------------------------------------------------------------- */
+body.mobile main { display: flex; flex-direction: column; flex: 1; min-height: 0; grid-template-columns: none; }
+body.mobile .floor, body.mobile aside { flex: 1; min-height: 0; min-width: 0; }
+body.mobile aside { border: 0; background: var(--surface); }
+body.mobile aside .resizer, body.mobile aside .tabs, body.mobile aside .boss { display: none; }
+body.mobile .stage-wrap { min-height: 0; }
+body.mobile .cards { display: none; }
+
+/* One screen at a time. The floor is never display:none: a zero-size map canvas breaks WebGL
+   ("Framebuffer incomplete"), so off the Floor tab it stays laid out at full size, just invisible. */
+body.mobile main { position: relative; }
+body.mobile[data-mtab="floor"] aside { display: none; }
+body.mobile:not([data-mtab="floor"]) .floor { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+body.mobile[data-mtab="more"][data-msub=""] aside { display: none; }
+
+/* wing chips: one scrolling row across the top of the map */
+body.mobile .views {
+  left: 0; right: 0; top: 0; padding: 8px calc(var(--sar) + 12px) 8px calc(var(--sal) + 12px);
+  flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 6px;
+  background: linear-gradient(var(--stage) 55%, transparent);
+}
+body.mobile .views::-webkit-scrollbar { display: none; }
+body.mobile .view { flex: none; padding: 7px 13px; font-size: 13px; }
+
+/* ---- More ------------------------------------------------------------------------------- */
+body.mobile[data-mtab="more"][data-msub=""] .m-more {
+  display: block; position: absolute; inset: 0; z-index: 2; overflow-y: auto; padding: 14px calc(var(--sar) + 16px) 24px calc(var(--sal) + 16px);
+  background: var(--paper); -webkit-overflow-scrolling: touch;
+}
+.m-group { background: var(--surface); border-radius: 14px; overflow: hidden; border: 1px solid var(--grid); }
+.m-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 10px 14px; border: 0; background: none; text-align: left; color: var(--ink); text-decoration: none; }
+.m-row + .m-row { border-top: 1px solid var(--grid); }
+.m-row:active { background: var(--paper-light); }
+.m-row-main { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.m-row-label { font-size: 16px; font-weight: 600; }
+.m-row-hint { font-size: 12px; color: var(--muted); }
+.m-row-value { font-size: 14px; color: var(--text-2); }
+.m-row-chev { color: var(--muted); font-size: 22px; line-height: 1; }
+
+/* ---- bottom tab bar ---------------------------------------------------------------------- */
+body.mobile .m-tabs {
+  display: flex; flex: none; justify-content: space-around;
+  padding: 6px calc(var(--sar) + 4px) calc(var(--sab) + 4px) calc(var(--sal) + 4px);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(18px); backdrop-filter: saturate(180%) blur(18px);
+  border-top: 1px solid var(--grid);
+}
+.m-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 48px; padding: 4px 0 2px; border: 0; background: none; color: var(--muted); }
+.m-tab.active { color: var(--clay); }
+.m-tab-label { font-size: 10.5px; font-weight: 600; letter-spacing: .1px; }
+.m-icon { display: inline-flex; height: 26px; align-items: center; }
+
+/* ---- install hint ------------------------------------------------------------------------ */
+body.mobile .m-hint {
+  display: flex; align-items: center; gap: 10px; flex: none;
+  margin: 0 calc(var(--sar) + 12px) 8px calc(var(--sal) + 12px); padding: 10px 12px; border-radius: 12px;
+  background: var(--clay); color: #fff; font-size: 13px; line-height: 1.35;   /* brand colour: reads in light and dark */
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+}
+body.mobile .m-hint.hidden { display: none; }
+.m-hint-text { flex: 1; }
+.m-hint-x { flex: none; border: 0; border-radius: 8px; background: rgba(0, 0, 0, .22); color: #fff; padding: 7px 10px; font-size: 12px; font-weight: 600; }
+
+/* the office's own panels: scroll smoothly, and keep their content clear of the side safe areas */
+body.mobile .panel > * { -webkit-overflow-scrolling: touch; }

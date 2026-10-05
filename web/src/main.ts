@@ -2,6 +2,7 @@ import { STATIC } from "./static";
 // Conscious Investments HQ: the office UI.
 import Phaser from "phaser";
 import "./style.css";
+import "./mobile.css";
 import { OfficeScene, type Focus } from "./office/scene";
 import { OfficeState, type OfficeEvent, type Snapshot } from "./state";
 import { h, money } from "./ui/dom";
@@ -18,6 +19,8 @@ import { PortfolioPanel, pct as signedPct } from "./ui/portfolio";
 import { NewsPanel, SignInPanel } from "./ui/visitor";
 import { Replayer } from "./ui/replay";
 import { DemoTour } from "./ui/demoTour";
+import { MobileShell } from "./ui/mobile";
+import { isMobileLayout } from "./ui/mobileModel";
 
 type Tab = "activity" | "agent" | "chat" | "approvals" | "rounds" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings" | "news" | "signin" | "demo";
 let TABS: Tab[] = ["activity", "agent", "chat", "approvals", "rounds", "watchlist", "portfolio", "audit", "outbox", "settings"];
@@ -107,13 +110,23 @@ const mainEl = h("main", {},
   h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons, replay.banner, linkBanner), cardsRoot),
   aside);
 document.getElementById("app")!.append(header, demoTour.bar, mainEl);
+// The iPhone layout (ui/mobile.ts): a masthead and bottom tab bar around the same panels and map.
+// It switches on in boot() once we know the visitor is not the Captain.
+const mobile = new MobileShell(document.getElementById("app")!, mainEl, {
+  statusPill, desktopHeader: header,
+  showPanel: (t) => { tab = t; render(); },
+  startDemo: () => void demoTour.start(),
+  toggleTheme: () => themeBtn.click(),
+  themeLabel: () => { const t = document.documentElement.dataset.theme; return t === "dark" ? "Dark" : t === "light" ? "Light" : "Automatic"; },
+  contactHref: contactBtn.getAttribute("href") ?? "",
+});
 
 let game: Phaser.Game | null = null;
 /** Keep the office canvas exactly the size of its container. Phaser only re-measures when the
  *  window resizes, but the container also changes when the desk cards load or the sidebar is
  *  dragged; a canvas left taller than its container puts the floor off-centre and cut off. */
 function fitCanvas() {
-  if (!game) return;
+  if (!game || !stage.clientWidth || !stage.clientHeight) return;   // a zero-size canvas breaks WebGL
   game.scale.getParentBounds();
   game.scale.refresh();
 }
@@ -410,6 +423,10 @@ async function boot() {
     watchlist.readOnly = portfolio.readOnly = agentPanel.readOnly = true;
   }
   signOut.classList.toggle("hidden", !publicSite || visitor);
+  const forceMobile = new URLSearchParams(location.search).has("mobile");   // ?mobile=1: try the phone layout on a desktop
+  const fitLayout = () => mobile.setActive(isMobileLayout({ width: window.innerWidth, visitor, forced: forceMobile }));
+  fitLayout();
+  window.addEventListener("resize", fitLayout);
   await loadState();
   if (visitor) {   // a new visitor lands on recent activity, not an empty list
     const recent = await fetch("/api/public/replay").then((r) => (r.ok ? r.json() : { events: [] })).catch(() => ({ events: [] }));
