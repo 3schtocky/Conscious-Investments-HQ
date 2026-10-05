@@ -5,9 +5,10 @@ Three tools, none of which touches the internet or your Mac on its own:
 - `hq go-live` is a checklist: what is ready, what is missing, and the exact next command.
 - `hq rehearse` runs the demo office through a throwaway Cloudflare address, so the whole public
   experience (visitor page, replay, sign-in) can be tried on a phone before the real domain.
-- `hq service-files` writes the launchd files that start the office and the tunnel at login,
-  restart them if they stop, and stop the Mac sleeping while they run. It prints the commands to
-  install them; you run those yourself.
+- `hq service-files` writes the files that start the office and the tunnel at boot (launchd on a
+  Mac, a PowerShell installer for Task Scheduler on Windows), restart them if they stop, and stop
+  the machine sleeping while they run. It prints the commands to install them; you run those
+  yourself.
 """
 
 from __future__ import annotations
@@ -48,6 +49,15 @@ class Check:
         return out + (f"\n         -> {self.fix}" if self.fix and not self.ok else "")
 
 
+WINDOWS = sys.platform == "win32"
+CLOUDFLARED_INSTALL = "winget install Cloudflare.cloudflared" if WINDOWS else "brew install cloudflared"
+
+
+def _service_files_written() -> bool:
+    name = "install-windows.ps1" if WINDOWS else f"{LABEL_HQ}.plist"
+    return (SERVICE_DIR / name).is_file()
+
+
 def _port_free(port: int) -> bool:
     with socket.socket() as s:
         s.settimeout(0.5)
@@ -85,7 +95,7 @@ def checks(*, port: int = 8750) -> list[Check]:
               "web/dist is there" if (ROOT / "web" / "dist" / "index.html").is_file() else "web/dist is missing",
               "cd web && npm install && npm run build"),
         Check("cloudflared installed", bool(shutil.which("cloudflared")),
-              shutil.which("cloudflared") or "not found", "brew install cloudflared"),
+              shutil.which("cloudflared") or "not found", CLOUDFLARED_INSTALL),
         Check("Cloudflare login", _cloudflared_login_done(),
               "cert found" if _cloudflared_login_done() else "not logged in",
               "cloudflared tunnel login   (opens Cloudflare in your browser)"),
@@ -97,8 +107,8 @@ def checks(*, port: int = 8750) -> list[Check]:
         Check(f"Port {port} free", _port_free(port),
               "free" if _port_free(port) else "something is already listening (an office running?)",
               "stop the other office, or the service will take over once it is stopped", required=False),
-        Check("Keeps the Mac awake", (SERVICE_DIR / f"{LABEL_HQ}.plist").is_file(),
-              "service files written" if (SERVICE_DIR / f"{LABEL_HQ}.plist").is_file()
+        Check("Stays up and awake", _service_files_written(),
+              "service files written" if _service_files_written()
               else "no service files yet", "uv run hq service-files", required=False),
     ]
     api_on = bool(cfg.get("api", {}).get("enabled", False))
@@ -202,11 +212,74 @@ def service_plists(*, port: int = 8750, tunnel: str = TUNNEL_NAME) -> dict[str, 
     }
 
 
-def write_service_files(*, port: int = 8750, tunnel: str = TUNNEL_NAME) -> tuple[list[Path], str]:
-    """Write the plists under data/service/ (nothing is installed) and return the commands to
-    install, check and remove them."""
+def windows_installer(*, port: int = 8750, tunnel: str = TUNNEL_NAME) -> tuple[str, str]:
+    """PowerShell scripts for Windows: register the office and the tunnel as Task Scheduler tasks
+    that start at boot (whether or not anyone is logged in), restart if they stop, and keep the
+    PC from sleeping. Returns (install script, remove script)."""
+    hq = Path(sys.executable).parent / "hq.exe"
+    cf = shutil.which("cloudflared") or r"C:\Program Files (x86)\cloudflared\cloudflared.exe"
+    tasks = {
+        "ConsciousHQ-Office": (str(hq), f"serve --public --port {port}", "office.log"),
+        "ConsciousHQ-Tunnel": (cf, f"tunnel run --url http://127.0.0.1:{port} {tunnel}", "tunnel.log"),
+    }
+    blocks = []
+    for name, (exe, args, log) in tasks.items():
+        # cmd /c lets the task send both output streams to a log file
+        blocks.append(f"""$act = New-ScheduledTaskAction -Execute 'cmd.exe' -WorkingDirectory '{ROOT}' `
+    -Argument '/c ""{exe}" {args} >> "{LOG_DIR / log}" 2>&1"'
+Register-ScheduledTask -TaskName '{name}' -Action $act -Trigger $trigger -Principal $me `
+    -Settings $set -Force | Out-Null
+Start-ScheduledTask -TaskName '{name}'
+Write-Host 'Started {name}'""")
+    install = f"""# Run this in PowerShell as Administrator (right-click, Run as administrator).
+$ErrorActionPreference = 'Stop'
+New-Item -ItemType Directory -Force -Path '{LOG_DIR}' | Out-Null
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$me = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\\$env:USERNAME" -LogonType S4U -RunLevel Limited
+$set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+# The PC never sleeps or hibernates while plugged in; the screen may still turn off.
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0
+{chr(10).join(blocks)}
+Write-Host 'Done. The office and the tunnel now start at every boot and restart if they stop.'
+"""
+    remove = """# Run in PowerShell as Administrator.
+foreach ($n in 'ConsciousHQ-Office','ConsciousHQ-Tunnel') {
+    Stop-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $n -Confirm:$false -ErrorAction SilentlyContinue
+}
+Write-Host 'Removed.'
+"""
+    return install, remove
+
+
+def _write_windows_files(*, port: int, tunnel: str) -> tuple[list[Path], str]:
+    install, remove = windows_installer(port=port, tunnel=tunnel)
+    paths = [SERVICE_DIR / "install-windows.ps1", SERVICE_DIR / "remove-windows.ps1"]
+    paths[0].write_text(install, encoding="utf-8")
+    paths[1].write_text(remove, encoding="utf-8")
+    text = (f"Wrote {len(paths)} files to {SERVICE_DIR}. Nothing is installed yet.\n\n"
+            "To start the office and the tunnel now and at every boot, open PowerShell as "
+            "Administrator and run:\n\n"
+            f"    powershell -ExecutionPolicy Bypass -File \"{paths[0]}\"\n\n"
+            "Check them:  Get-ScheduledTask ConsciousHQ-*\n"
+            f"Logs:        {LOG_DIR}\n\n"
+            f"To stop and remove them:  powershell -ExecutionPolicy Bypass -File \"{paths[1]}\"\n\n"
+            "Notes: the PC is set never to sleep on mains power. Stop any `hq serve` you started by "
+            "hand first: the task needs the port.")
+    return paths, text
+
+
+def write_service_files(*, port: int = 8750, tunnel: str = TUNNEL_NAME,
+                        windows: bool | None = None) -> tuple[list[Path], str]:
+    """Write the service files under data/service/ (nothing is installed) and return the commands
+    to install, check and remove them. launchd plists on a Mac, PowerShell scripts on Windows."""
     SERVICE_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    if WINDOWS if windows is None else windows:
+        return _write_windows_files(port=port, tunnel=tunnel)
     paths = []
     for label, plist in service_plists(port=port, tunnel=tunnel).items():
         path = SERVICE_DIR / f"{label}.plist"

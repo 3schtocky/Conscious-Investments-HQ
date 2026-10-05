@@ -49,7 +49,7 @@ def test_each_missing_step_blocks_and_says_what_to_run(ready, monkeypatch, break
 def test_optional_notes_do_not_block(ready, monkeypatch):
     monkeypatch.setattr(deploy, "_port_free", lambda port: False)   # an office already running
     text, ok = deploy.report()
-    assert ok and "[note] Port 8750 free" in text and "[note] Keeps the Mac awake" in text
+    assert ok and "[note] Port 8750 free" in text and "[note] Stays up and awake" in text
 
 
 def test_the_api_switch_is_reported_plainly(ready, monkeypatch):
@@ -98,6 +98,19 @@ def test_service_files_keep_the_office_and_tunnel_running_and_awake(ready, tmp_p
         assert plist["WorkingDirectory"] == str(deploy.ROOT)
         assert plist["StandardOutPath"].startswith(str(tmp_path / "logs"))
     assert "Nothing is installed yet" in text and "launchctl bootstrap" in text and "bootout" in text
+
+
+def test_windows_installer_registers_both_tasks_at_boot_and_keeps_the_pc_awake(ready):
+    paths, text = deploy.write_service_files(port=9000, tunnel="my-tunnel", windows=True)
+    install = paths[0].read_text()
+    assert paths[0].name == "install-windows.ps1" and paths[1].name == "remove-windows.ps1"
+    for name in ("ConsciousHQ-Office", "ConsciousHQ-Tunnel"):
+        assert f"-TaskName '{name}'" in install and f"'{name}'" in paths[1].read_text()
+    assert "serve --public --port 9000" in install
+    assert "tunnel run --url http://127.0.0.1:9000 my-tunnel" in install
+    assert "-AtStartup" in install and "S4U" in install and "RestartCount 999" in install
+    assert "powercfg /change standby-timeout-ac 0" in install
+    assert "Nothing is installed yet" in text and "Administrator" in text
 
 
 # the offline page ----------------------------------------------------------------------------

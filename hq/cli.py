@@ -183,8 +183,9 @@ def main() -> None:
                                             "Cloudflare address, with the scripted demo office")
     p_reh.add_argument("--port", type=int, default=8753)
     p_reh.add_argument("--speed", type=float, default=1.0)
-    p_svc = sub.add_parser("service-files", help="write the macOS launch files that keep the office and "
-                                                 "tunnel running (nothing is installed)")
+    p_svc = sub.add_parser("service-files", help="write the launch files (macOS) or PowerShell installer "
+                                                 "(Windows) that keep the office and tunnel running; "
+                                                 "nothing is installed")
     p_svc.add_argument("--port", type=int, default=8750)
     p_svc.add_argument("--tunnel", default="conscious-hq", help="Cloudflare tunnel name")
     p_serve = sub.add_parser("serve", help="open the office in your browser")
