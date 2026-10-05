@@ -8,7 +8,9 @@ import { h } from "./dom";
 import { tap } from "./haptics";
 import type { MobileDemo } from "./mobileDemo";
 import type { MobileHome } from "./mobileHome";
-import { FLOOR_VIEWS, installHintDue, isIphone, MORE_ROWS, MTABS, neighbourView, swipeDir, titleFor, type MoreId, type MTab } from "./mobileModel";
+import { backDepth, installPlan, isSamsungBrowser, nextBack, platformOf, type InstallKind, type NavState } from "./androidModel";
+import { canPromptInstall, promptInstall, wasInstalled } from "./install";
+import { FLOOR_VIEWS, MORE_ROWS, MTABS, neighbourView, swipeDir, titleFor, type MoreId, type MTab } from "./mobileModel";
 
 export type PanelTab = "activity" | "portfolio" | "watchlist" | "news" | "agent" | "demo";
 
@@ -171,6 +173,24 @@ export class MobileShell {
     if (this.pill.textContent !== label) { this.pill.textContent = label; this.pill.classList.toggle("on", playing); }
   }
 
+  // ---- the system Back button (Android) ---------------------------------------------------------------
+  /** Where the visitor is, for deciding what Back should do (androidModel.ts). */
+  navState(): NavState {
+    return { sheet: this.hooks.sheet.isOpen, tab: this.tab, sub: this.sub, fileOpen: this.sub === "demo" && !this.hooks.files.onList() };
+  }
+
+  /** How many Back presses stay inside the app. */
+  get backDepth(): number { return this.active ? backDepth(this.navState()) : 0; }
+
+  /** One press of Back: peel one layer. */
+  stepBack() {
+    const step = nextBack(this.navState());
+    if (step === "sheet") this.hooks.sheet.close();
+    else if (step === "file") { this.hooks.files.back(); this.syncTitle(); }
+    else if (step === "sub") this.go("more", null);
+    else if (step === "floor") this.go("floor");
+  }
+
   // ---- the Floor tab: summary home or map ---------------------------------------------------------
   /** Once the first data is in: open on the summary if the office is quiet, the map if it is busy. */
   settle(quiet: boolean) {
@@ -230,10 +250,14 @@ export class MobileShell {
     this.more.append(h("div", { class: "m-group" }, ...rows));
   }
 
-  // ---- the one-time "Add to Home Screen" hint -------------------------------------------------
+  // ---- the one-time "Add to Home Screen" card ----------------------------------------------------
+  // iPhone: where the Share button is. Android: a real Install button when the browser has offered
+  // one, otherwise where its menu entry is (Samsung Internet's menu is different from Chrome's).
+  private hintText = h("span", { class: "m-hint-text" });
+  private hintGo = h("button", { class: "m-hint-go hidden", onclick: () => void this.install() }, "Install");
+
   private buildHint() {
-    this.hint.append(
-      h("span", { class: "m-hint-text" }, "Add this to your Home Screen: tap ", h("b", {}, "Share"), ", then ", h("b", {}, "Add to Home Screen"), "."),
+    this.hint.append(this.hintText, this.hintGo,
       h("button", { class: "m-hint-x", "aria-label": "Dismiss", onclick: () => this.dismissHint() }, "Not now"));
   }
 
@@ -244,10 +268,26 @@ export class MobileShell {
 
   private maybeHint() {
     if (this.hintShown || !this.active || !this.hooks.demo.inviteSettled || document.body.classList.contains("touring")) return;   // one card at a time, never over the demo
+    const ua = navigator.userAgent;
     const standalone = (navigator as unknown as { standalone?: boolean }).standalone === true || matchMedia("(display-mode: standalone)").matches;
-    if (!installHintDue({ iphone: isIphone(navigator.userAgent), standalone, dismissed: this.dismissed(), secondsOpen: (Date.now() - this.opened) / 1000 })) return;
+    const kind = installPlan({ platform: platformOf(ua), standalone: standalone || wasInstalled(), dismissed: this.dismissed(),
+      secondsOpen: (Date.now() - this.opened) / 1000, canPrompt: canPromptInstall(), samsung: isSamsungBrowser(ua) });
+    if (!kind) return;
+    const b = (t: string) => h("b", {}, t);
+    this.hintText.replaceChildren(...({
+      "ios-share": ["Add this to your Home Screen: tap ", b("Share"), ", then ", b("Add to Home Screen"), "."],
+      "android-prompt": ["Install ", b("CI HQ"), " on your phone for quick access."],
+      "android-menu": ["Add this to your Home screen: open the browser menu (", b("⋮"), "), then ", b("Install app"), " or ", b("Add to Home screen"), "."],
+      "samsung-menu": ["Add this to your Home screen: open the menu (", b("≡"), "), then ", b("Add page to"), " and ", b("Home screen"), "."],
+    } as Record<InstallKind, (string | HTMLElement)[]>)[kind]);
+    this.hintGo.classList.toggle("hidden", kind !== "android-prompt");
     this.hintShown = true;
     this.hint.classList.remove("hidden");
+  }
+
+  private async install() {
+    await promptInstall();   // the browser's own dialog; whatever the answer, we don't ask again
+    this.dismissHint();
   }
 
   private dismissHint() {

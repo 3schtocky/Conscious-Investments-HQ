@@ -6,7 +6,7 @@ let toggle: HTMLLabelElement | null = null;
 
 export function tap() {
   try {
-    if (typeof navigator.vibrate === "function") { navigator.vibrate(8); return; }   // Android
+    if (typeof navigator.vibrate === "function") { navigator.vibrate(10); return; }   // Android
     if (!toggle) {
       const input = document.createElement("input");
       input.type = "checkbox";

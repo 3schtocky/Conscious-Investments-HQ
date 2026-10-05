@@ -34,16 +34,6 @@ export function titleFor(tab: MTab, sub: MoreId | null): string {
   return tab === "floor" ? "" : MTABS.find((t) => t.id === tab)!.label;
 }
 
-/** The one-time "Add to Home Screen" hint: only on an iPhone, only in the browser (not once it
- *  is installed), only after the visitor has stayed a while, and never again once dismissed. */
-export function installHintDue(o: { iphone: boolean; standalone: boolean; dismissed: boolean; secondsOpen: number }): boolean {
-  return o.iphone && !o.standalone && !o.dismissed && o.secondsOpen >= 15;
-}
-
-export function isIphone(userAgent: string): boolean {
-  return /iPhone/.test(userAgent);
-}
-
 // ---- Floor views: swipe order, swipe detection, the quiet-state home ------------------------------
 
 /** Chips along the top of the Floor, in swipe order. */

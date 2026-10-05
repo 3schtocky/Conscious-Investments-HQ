@@ -25,6 +25,9 @@ import { Captions } from "./ui/captions";
 import { MobileHome } from "./ui/mobileHome";
 import { MobileDemo } from "./ui/mobileDemo";
 import { isMobileLayout, opensOnHome } from "./ui/mobileModel";
+import { AndroidBack } from "./ui/androidBack";
+import { platformOf } from "./ui/androidModel";
+import { watchInstall } from "./ui/install";
 
 type Tab = "activity" | "agent" | "chat" | "approvals" | "rounds" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings" | "news" | "signin" | "demo";
 let TABS: Tab[] = ["activity", "agent", "chat", "approvals", "rounds", "watchlist", "portfolio", "audit", "outbox", "settings"];
@@ -161,6 +164,11 @@ const mobile = new MobileShell(document.getElementById("app")!, mainEl, {
   onFloorVisible: (visible) => { if (visible) { game?.loop.wake(); fitCanvas(); } else game?.loop.sleep(); },
 });
 
+// Android: the system Back button walks back through the app instead of leaving it (ui/androidBack.ts).
+watchInstall();   // catches the browser's install offer early, for our own Install button
+const androidBack = platformOf(navigator.userAgent) === "android"
+  ? new AndroidBack({ depth: () => mobile.backDepth, stepBack: () => mobile.stepBack() }) : null;
+
 let game: Phaser.Game | null = null;
 /** Keep the office canvas exactly the size of its container. Phaser only re-measures when the
  *  window resizes, but the container also changes when the desk cards load or the sidebar is
@@ -286,6 +294,7 @@ function readHash() {
 }
 
 function writeHash() {
+  if (mobile.active) return;   // a phone keeps its place in the shell, not in the address; rewriting it would also disturb the Back history
   const p = new URLSearchParams();
   if (focus.kind === "agent") p.set("agent", focus.id);
   if (focus.kind === "wing") p.set("wing", focus.id);
@@ -378,7 +387,7 @@ let dirty = true;
 let structural = true;
 function render() { dirty = true; structural = true; }
 function frame() {
-  if (mobile.active) mobile.syncTitle();
+  if (mobile.active) { mobile.syncTitle(); androidBack?.sync(); }
   if (dirty) {
     dirty = false;
     renderHeader();
@@ -529,7 +538,7 @@ async function boot() {
   requestAnimationFrame(frame);
 }
 
-if (import.meta.env.DEV) (window as unknown as { __demoTour?: DemoTour }).__demoTour = demoTour;   // for browser checks
+if (import.meta.env.DEV) Object.assign(window, { __demoTour: demoTour, __mobile: mobile });   // for browser checks
 
 boot().catch((e) => {
   document.getElementById("app")!.replaceChildren(h("div", { class: "boot-error" },

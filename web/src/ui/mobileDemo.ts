@@ -43,7 +43,9 @@ export class MobileDemo {
   private ticks = h("div", { class: "mp-ticks" });
   private bar = h("div", { class: "mp-bar", role: "progressbar", "aria-label": "Demo progress" }, this.fill, this.ticks);
   private prev = h("button", { class: "mp-btn", "aria-label": "Previous act", onclick: () => this.skip(-1) }, "⏮");
-  private pause = h("button", { class: "mp-btn wide", onclick: () => { tap(); this.d.tour.togglePause(); } });
+  private pauseIcon = h("span", { "aria-hidden": "true" });
+  private pauseText = h("span", { class: "mp-pt" });   // the word is dropped on the narrowest phones, the icon stays
+  private pause = h("button", { class: "mp-btn wide", onclick: () => { tap(); this.d.tour.togglePause(); } }, this.pauseIcon, this.pauseText);
   private next = h("button", { class: "mp-btn", "aria-label": "Next act", onclick: () => this.skip(1) }, "⏭");
   private follow = h("button", { class: "mp-chip", onclick: () => { tap(); this.following = !this.following; this.update(); } });
   private files = h("button", { class: "mp-chip", onclick: () => { tap(); this.d.openFile("home"); } });
@@ -145,7 +147,9 @@ export class MobileDemo {
     if (i !== this.lastAct) { this.lastAct = i; this.d.captions.render(); }   // the strip's resting line is the act's description
     this.fill.style.width = `${(v.now / v.duration) * 100}%`;
     if (!this.ticks.childElementCount) for (const a of v.acts.slice(1)) this.ticks.append(h("i", { style: `left:${(a.t / v.duration) * 100}%` }));
-    set(this.pause, v.paused ? "▶  Resume" : "⏸  Pause");
+    set(this.pauseIcon, v.paused ? "▶" : "⏸");
+    set(this.pauseText, v.paused ? " Resume" : " Pause");
+    this.pause.setAttribute("aria-label", v.paused ? "Resume" : "Pause");
     this.prev.toggleAttribute("disabled", false);
     this.next.toggleAttribute("disabled", skipTarget(v.acts, v.now, 1) === null);
     set(this.follow, this.following ? "Following" : "Follow");
