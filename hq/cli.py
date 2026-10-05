@@ -188,6 +188,8 @@ def main() -> None:
                                                  "nothing is installed")
     p_svc.add_argument("--port", type=int, default=8750)
     p_svc.add_argument("--tunnel", default="conscious-hq", help="Cloudflare tunnel name")
+    sub.add_parser("export-demo-micron", help="record the 5-minute Micron demo and write it to "
+                                              "web/public/demo/micron (no API calls)")
     p_serve = sub.add_parser("serve", help="open the office in your browser")
     p_serve.add_argument("--demo", action="store_true",
                          help="scripted demo office: zero API cost, separate database")
@@ -239,6 +241,11 @@ def main() -> None:
         from hq import deploy
 
         print(deploy.write_service_files(port=args.port, tunnel=args.tunnel)[1])
+        sys.exit(0)
+    if args.cmd == "export-demo-micron":
+        from hq import demo_export
+
+        demo_export.export()
         sys.exit(0)
     if args.cmd == "serve":
         from hq.server import serve

@@ -96,7 +96,8 @@ export function renderActivity(root: HTMLElement, state: OfficeState, wing: stri
   const who = (id: string | null) =>
     id && state.agents.has(id) ? h("a", { class: "who", href: "#", onclick: (e: Event) => { e.preventDefault(); onPick(id); } }, state.name(id)) : h("strong", {}, state.name(id));
   const items = state.feed.slice(-150).reverse().filter((ev) => !wing || state.agents.get(ev.agent ?? "")?.wing === wing);
-  if (!items.length) root.append(h("p", { class: "empty" }, "Quiet so far. Assign work to get the office moving."));
+  const visitor = document.body.classList.contains("visitor");
+  if (!items.length) root.append(h("p", { class: "empty" }, visitor ? "Quiet right now. Work appears here the moment the office picks it up." : "Quiet so far. Assign work to get the office moving."));
   for (const ev of items) {
     const line = feedLine(ev, state, who);
     if (line) root.append(h("div", { class: `feed-item t-${ev.type}` }, h("span", { class: "feed-time" }, timeAgo(ev.ts)), line));
@@ -104,16 +105,19 @@ export function renderActivity(root: HTMLElement, state: OfficeState, wing: stri
   root.scrollTop = prevTop > 4 ? prevTop + (root.scrollHeight - prevHeight) : 0;
 }
 
+/** ": text" for a feed line, or nothing when the words are hidden (a visitor's stream carries "…"). */
+const said = (text: unknown, max: number): string => (!text || text === "…" ? "" : `: ${short(String(text), max)}`);
+
 function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) => HTMLElement): HTMLElement | null {
   const s = (...kids: (Node | string)[]) => h("span", { class: "feed-text" }, ...kids);
   switch (ev.type) {
     case "task_created": return ev.assigned_by === "captain" ? null : s("📋 ", who(ev.assigned_by), " assigned ", who(ev.agent), `: ${ev.title}`);
     case "task_started": return ev.kind === "assignment" ? s("▶️ ", who(ev.agent), ` started "${ev.title}"`) : null;
     case "task_done": return s("✅ ", who(ev.agent), " finished a task");
-    case "delegated": return s("🤝 ", who(ev.agent), " → ", who(ev.to), `: ${short(ev.job, 110)}`);
+    case "delegated": return s("🤝 ", who(ev.agent), " → ", who(ev.to), said(ev.job, 110));
     case "chat":
-      if (String(ev.channel).startsWith("group:")) return s("📢 ", who(ev.agent), ` in ${groupName(ev.channel, state)}: ${short(ev.text, 140)}`);
-      return s("💬 ", who(ev.agent), " → ", ...(ev.recipients as string[]).flatMap((r, i) => (i ? [", ", who(r)] : [who(r)])), `: ${short(ev.text, 140)}`);
+      if (String(ev.channel).startsWith("group:")) return s("📢 ", who(ev.agent), ` in ${groupName(ev.channel, state)}${said(ev.text, 140)}`);
+      return s("💬 ", who(ev.agent), " → ", ...(ev.recipients as string[]).flatMap((r, i) => (i ? [", ", who(r)] : [who(r)])), said(ev.text, 140));
     case "captain_report": return s("📣 ", who(ev.agent), ` → ${state.captain.nickname}: ${short(ev.text, 160)}`);
     case "meeting": return s("🪑 Lobby gathering: ", (ev.participants as string[]).map((p) => state.name(p)).join(", "));
     case "task_paused": return s("⛔ ", who(ev.agent), ` paused (${ev.reason})`);
@@ -132,6 +136,7 @@ function feedLine(ev: OfficeEvent, state: OfficeState, who: (id: string | null) 
     case "outbox_ready": return s("📬 ", who(ev.agent), ` put "${short(String(ev.title), 70)}" in the Outbox for your approval`);
     case "outbox_status": return ev.status === "approved" ? s("📮 Ready to paste: ", ev.issue ? "the newsletter issue" : "the client memo", " you approved is in the Outbox") : null;
     case "office_hold": return s(ev.held ? "⏸️ " : "▶️ ", who("captain"), ev.held ? " paused the office. Work waits; message anyone to talk one to one." : " resumed the office");
+    case "rounds": return s("🧭 ", who(ev.agent), ` did the rounds: ${(ev.wings as unknown[] | undefined)?.length ?? 0} busy wing${(ev.wings as unknown[] | undefined)?.length === 1 ? "" : "s"}${ev.held ? " (office paused)" : ""}`);
     case "audit_digest": return s("🧾 ", who(ev.agent), ` posted the audit digest for ${ev.day}`);
     case "approval_decided": return s("⚖️ ", who("captain"), ` ${ev.decision === "approved" ? "approved" : ev.decision === "changes" ? "asked for changes on" : "declined"} "${ev.title}"`);
   }

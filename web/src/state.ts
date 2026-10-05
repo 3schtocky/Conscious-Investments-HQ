@@ -67,6 +67,7 @@ export class OfficeState {
   demo = false;
   clockedOut = false;
   held = false;   // the Captain paused the whole office
+  touring = false;     // the visitor is playing the recorded Micron demo: live events are ignored
   replaying = false;   // a visitor's page is playing back recent work, not showing live activity
   wings: Record<string, string> = {};
   captain: { nickname: string; avatar?: AvatarSpec } = { nickname: "Captain" };
@@ -103,6 +104,13 @@ export class OfficeState {
       for (const ev of s.events) this.apply(ev, false);
     }
     this.emit(null);
+  }
+
+  /** Fill an empty feed with recent events (a visitor's page, which only hears events from the moment
+   *  it connects). Nothing moves on the floor: this only lists what already happened. */
+  seedFeed(events: OfficeEvent[]) {
+    if (this.feed.length) return;
+    this.feed = events.filter((ev) => FEED_TYPES.has(ev.type)).slice(-150);
   }
 
   name(id: string | null | undefined): string {
@@ -248,10 +256,10 @@ export class OfficeState {
   }
 }
 
-const FEED_TYPES = new Set(["task_created", "task_started", "task_done", "delegated", "chat",
+export const FEED_TYPES = new Set(["task_created", "task_started", "task_done", "delegated", "chat",
   "captain_report", "task_paused", "task_error", "incident", "office_status", "meeting",
   "captain_message", "approval_requested", "approval_decided", "watchlist_added", "screen_run",
-  "audit_flag", "audit_resolved", "memory_held", "audit_digest", "outbox_draft", "outbox_ready", "outbox_status",
+  "audit_flag", "audit_resolved", "memory_held", "audit_digest", "rounds", "outbox_draft", "outbox_ready", "outbox_status",
   "office_hold"]);
 
 export function groupName(channel: string, state: OfficeState): string {

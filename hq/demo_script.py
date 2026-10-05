@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-DURATION = 300.0
+DURATION = 340.0
 END_CARD = 5.0          # seconds at the end for the closing frame
 # What a visitor's floor and feed need, field by field. Anything else is dropped.
 FIELDS: dict[str, tuple[str, ...]] = {
@@ -100,26 +100,33 @@ def build(events: list[dict], agent_names: dict[str, str], duration: float = DUR
             marks.setdefault("note", i)
         if ev["type"] == "approval_decided" and ev.get("kind") == "newsletter":
             marks.setdefault("note_approved", i)
+        if ev["type"] == "approval_requested" and ev.get("kind") == "portfolio":
+            marks.setdefault("position_card", i)
+        if ev["type"] == "approval_decided" and ev.get("kind") == "portfolio":
+            marks.setdefault("position_open", i)
         if ev["type"] == "meeting":
             marks.setdefault("wrap", i)
         beats.append(beat)
     missing = {"opening", "model_card", "model_approved", "report", "model_built", "note", "note_approved",
-               "wrap"} - set(marks)
+               "position_card", "position_open", "wrap"} - set(marks)
     if missing:
         raise ValueError(f"the recording is missing beats: {sorted(missing)}")
     # Re-time into fixed windows, one per act, so the story always has the same shape and length.
     first_report = next(i for i, b in enumerate(beats) if b["type"] == "captain_report")
-    approve_msg = [i for i, b in enumerate(beats) if b["type"] == "captain_message"][1]
-    bounds = [0, first_report + 1, marks["model_card"], approve_msg, marks["note"], marks["wrap"], len(beats)]
+    asks = [i for i, b in enumerate(beats) if b["type"] == "captain_message"]   # Stott's own words, in order
+    if len(asks) < 5:
+        raise ValueError(f"expected five messages from Stott, found {len(asks)}")
+    approve_msg, buy_msg, wrap_msg = asks[1], asks[2], asks[4]
+    bounds = [0, first_report + 1, marks["model_card"], approve_msg, marks["note"], buy_msg, wrap_msg, len(beats)]
     if bounds != sorted(bounds):
         raise ValueError(f"the recording's acts are out of order: {bounds}")
-    windows = [30.0, 80.0, 25.0, 95.0, 30.0, 35.0]            # seconds per act; they add up to 295
+    windows = [28.0, 80.0, 24.0, 90.0, 26.0, 50.0, 37.0]       # seconds per act; they add up to 335
     scale_check = duration - END_CARD
     if abs(sum(windows) - scale_check) > 0.01:
         windows[-1] += scale_check - sum(windows)
+    assert len(windows) == len(bounds) - 1
     at: list[float] = []
     start = 0.0
-    assert len(windows) == len(bounds) - 1
     for lo, hi, win in zip(bounds, bounds[1:], windows):
         hold = [_hold(b) for b in beats[lo:hi]]
         total = sum(hold) or 1.0
@@ -146,13 +153,17 @@ def build(events: list[dict], agent_names: dict[str, str], duration: float = DUR
         {"t": at[bounds[4]], "label": "The note passes the publishing gate",
          "caption": "Code checks the note for unapproved numbers, hype and advice before the "
                     "Captain sees it."},
-        {"t": at[bounds[5]], "label": "Juno wraps up",
+        {"t": at[bounds[5]], "label": "Do we own it?",
+         "caption": "Stott asks the team to size a position. Research proposes, Audit checks the rules, "
+                    "Quant states the downside, and Stott decides."},
+        {"t": at[bounds[6]], "label": "Juno wraps up",
          "caption": "One line from each lead, then one report for Stott."},
     ]
     unlocks = [
         {"t": stamp("report"), "artifact": "report", "label": "Initiating-coverage report"},
         {"t": stamp("model_built"), "artifact": "model", "label": "Bull, base and bear model"},
         {"t": stamp("note"), "artifact": "note", "label": "Client note"},
+        {"t": stamp("position_open"), "artifact": "position", "label": "Open position"},
     ]
     return {"ticker": "MU", "duration": duration, "end_card": duration - END_CARD,
             "beats": beats, "acts": acts, "unlocks": unlocks}

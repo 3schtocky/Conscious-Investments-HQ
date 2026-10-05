@@ -173,6 +173,11 @@ export class OfficeScene extends Phaser.Scene {
       case "captain_report":
         if (w) w.queue.push({ type: "say", text: `To ${this.state.captain.nickname}: ${ev.text}` });
         break;
+      case "captain_message": {   // only in the recorded demo: Stott's words get a bubble too
+        const c = this.state.touring ? this.walkers.get("captain") : undefined;
+        if (c) c.queue.push({ type: "say", text: ev.text });
+        break;
+      }
       case "delegated":
         if (w) w.queue.push({ type: "say", text: `Over to you, ${this.state.name(ev.to)}.` });
         break;

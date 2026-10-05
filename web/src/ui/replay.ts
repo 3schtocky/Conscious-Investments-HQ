@@ -42,7 +42,7 @@ export class Replayer {
   }
 
   private tick() {
-    if (this.playing || document.hidden) return;
+    if (this.playing || document.hidden || this.state.touring) return;
     const now = Date.now();
     if (this.busy()) { this.quietSince = now; this.say(null); return; }
     if (now - this.quietSince < IDLE_MS || now < this.resumeAt) return;

@@ -2,7 +2,7 @@
 
 `hq serve --demo` uses this so the office UI can be toured and tuned for free. Everything
 downstream is authentic (tasks, guards, delegation, chat, spend accounting); only the model's
-words are scripted. Spoken lines carry no "(demo)" tag (the DEMO pill says it once); anything a
+words are scripted. Spoken lines carry no "(demo)" tag (the Demo button's tooltip says it once); anything a
 visitor could mistake for real work, such as a newsletter, a watchlist thesis or a card title,
 keeps its tag, and the companies in the made-up scenes are fictional.
 """

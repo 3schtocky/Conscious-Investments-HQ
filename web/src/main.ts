@@ -12,18 +12,23 @@ import { ApprovalsPanel } from "./ui/approvals";
 import { BossChannel } from "./ui/boss";
 import { WatchlistPanel } from "./ui/watchlist";
 import { AuditPanel } from "./ui/audit";
+import { RoundsPanel } from "./ui/rounds";
 import { OutboxPanel } from "./ui/outbox";
 import { PortfolioPanel, pct as signedPct } from "./ui/portfolio";
 import { NewsPanel, SignInPanel } from "./ui/visitor";
 import { Replayer } from "./ui/replay";
+import { DemoTour } from "./ui/demoTour";
 
-type Tab = "activity" | "agent" | "chat" | "approvals" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings" | "news" | "signin";
-let TABS: Tab[] = ["activity", "agent", "chat", "approvals", "watchlist", "portfolio", "audit", "outbox", "settings"];
+type Tab = "activity" | "agent" | "chat" | "approvals" | "rounds" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings" | "news" | "signin" | "demo";
+let TABS: Tab[] = ["activity", "agent", "chat", "approvals", "rounds", "watchlist", "portfolio", "audit", "outbox", "settings"];
 // On the public site a visitor (anyone who hasn't signed in as the Captain) gets a read-only
 // office: the floor, the team, the watchlist, the scoreboard and published newsletters.
-const VISITOR_TABS: Tab[] = STATIC ? ["agent", "watchlist", "portfolio", "news"] : ["agent", "watchlist", "portfolio", "news", "signin"];
+const VISITOR_TABS: Tab[] = STATIC ? ["activity", "demo", "agent", "watchlist", "portfolio", "news"] : ["activity", "demo", "agent", "watchlist", "portfolio", "news", "signin"];
 let visitor = false;
 let publicSite = false;
+// Events that change what the Rounds board shows (it re-reads cheap code on the server).
+const ROUNDS_EVENTS = new Set(["rounds", "status", "task_started", "task_done", "task_paused", "approval_requested",
+  "approval_decided", "incident", "office_hold", "office_status", "delegated"]);
 const OUTBOX_EVENTS = new Set(["outbox_draft", "outbox_ready", "outbox_status"]);
 // Events that change what the Audit tab shows.
 const AUDIT_EVENTS = new Set(["audit_flag", "audit_review", "audit_resolved", "memory_saved", "memory_held",
@@ -38,7 +43,8 @@ let scene: OfficeScene | null = null;
 const spendFill = h("div", { class: "meter-fill" });
 const spendText = h("span", { class: "meter-text" });
 const statusPill = h("span", { class: "pill office-status" });
-const demoBadge = h("span", { class: "pill demo hidden", title: "Scripted demo office: no API calls, no real spend" }, "DEMO");
+const demoBtn = h("button", { class: "demo-btn hidden", title: "Scripted demo: watch the whole office make a Micron report, model and client note in five minutes. No API calls, no real spend.",
+  onclick: () => void demoTour.start() }, "▶ Demo");
 const crumbs = h("div", { class: "crumbs" });
 const awaiting = h("button", { class: "pill awaiting hidden", onclick: () => { tab = "approvals"; render(); } });
 const signOut = h("button", { class: "pill signout hidden", title: "Sign out of the Captain's office", onclick: async () => {
@@ -70,7 +76,7 @@ const holdBtn = h("button", { class: "hold-btn", onclick: async () => {
 } });
 const header = h("header", {},
   h("div", { class: "brand" }, h("span", { class: "brand-mark" }), h("span", {}, "Conscious Investments ", h("b", {}, "HQ"))),
-  statusPill, demoBadge, awaiting, scorePill, crumbs,
+  statusPill, demoBtn, awaiting, scorePill, crumbs,
   h("div", { class: "meter", title: "Today's API spend vs. the daily cap" }, h("div", { class: "meter-bar" }, spendFill), spendText),
   holdBtn,
   signOut, themeBtn);
@@ -84,6 +90,9 @@ const panelRoot = h("div", { class: "panel" });
 const bossBar = h("div", { class: "boss" });
 // Visitors only: plays back recent work when the floor is quiet (see ui/replay.ts).
 const replay = new Replayer(state, () => scene, () => loadState().catch(() => {}));
+// Visitors only: the five-minute Micron demo, played from a recorded script in their own browser (ui/demoTour.ts).
+const demoTour = new DemoTour(state, () => scene, () => loadState().catch(() => {}), () => render(), () => { tab = "demo"; render(); },
+  () => { tab = "portfolio"; render(); });
 // Shown when the live connection drops (the office restarting, a flaky phone connection).
 const linkBanner = h("div", { class: "replay-banner link hidden", role: "status" }, "Reconnecting to the office…");
 
@@ -96,7 +105,7 @@ const aside = h("aside", {}, resizer, tabsBar, panelRoot, bossBar);
 const mainEl = h("main", {},
   h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons, replay.banner, linkBanner), cardsRoot),
   aside);
-document.getElementById("app")!.append(header, mainEl);
+document.getElementById("app")!.append(header, demoTour.bar, mainEl);
 
 let game: Phaser.Game | null = null;
 /** Keep the office canvas exactly the size of its container. Phaser only re-measures when the
@@ -161,10 +170,13 @@ const approvals = new ApprovalsPanel(approvalsRoot, state, () => render());
 const boss = new BossChannel(bossBar, state);
 const watchRoot = h("div", { class: "watchlist" });
 const watchlist = new WatchlistPanel(watchRoot, state, () => render());
+const roundsRoot = h("div", { class: "audit rounds-panel" });
+const rounds = new RoundsPanel(roundsRoot, state, () => render());
 const auditRoot = h("div", { class: "audit" });
 const audit = new AuditPanel(auditRoot, state, () => render());
 const portfolioRoot = h("div", { class: "audit portfolio-panel" });
 const portfolio = new PortfolioPanel(portfolioRoot, state, () => render(), () => { tab = "approvals"; render(); });
+portfolio.extra = () => demoTour.panel.positionCard();   // the recorded demo's own position card
 const newsRoot = h("div", { class: "audit" });
 const news = new NewsPanel(newsRoot, () => render());
 const signinRoot = h("div", { class: "audit" });
@@ -230,14 +242,16 @@ function renderTabs() {
       if (t === "settings" && focus.kind === "agent") settings.select(focus.id);
       tab = t; render();
     } },
-      { activity: "Feed", agent: "Agent", chat: "Chat", approvals: "Approvals", watchlist: "Watchlist", portfolio: "Portfolio", audit: "Audit", outbox: "Outbox", settings: "⚙", news: "Newsletter", signin: "Sign in" }[t].replace(/^Agent$/, visitor ? "Team" : "Agent"),
+      { activity: "Feed", agent: "Agent", chat: "Chat", approvals: "Approvals", rounds: "Rounds", watchlist: "Watchlist", portfolio: "Portfolio", audit: "Audit", outbox: "Outbox", settings: "⚙", demo: "Demo", news: "Newsletter", signin: "Sign in" }[t].replace(/^Agent$/, visitor ? "Team" : "Agent"),
+      t === "demo" && demoTour.panel.count ? h("span", { class: "badge" }, String(demoTour.panel.count)) : null,
       t === "outbox" && outbox.count ? h("span", { class: "badge quiet" }, String(outbox.count)) : null,
+      t === "rounds" && rounds.count ? h("span", { class: "badge" }, String(rounds.count)) : null,
       t === "audit" && audit.count ? h("span", { class: "badge" }, String(audit.count)) : null,
       !visitor && t === "approvals" && approvals.pending ? h("span", { class: "badge" }, String(approvals.pending)) : null,
       !visitor && t === "watchlist" && watchlist.count ? h("span", { class: "badge quiet" }, String(watchlist.count)) : null)));
   writeHash();
   // Swap the panel only on a real tab change: re-attaching an element resets its scroll.
-  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, watchlist: watchRoot, portfolio: portfolioRoot, audit: auditRoot, outbox: outboxRoot, settings: settingsRoot, news: newsRoot, signin: signinRoot }[tab];
+  const panel = { activity: actRoot, agent: agentRoot, chat: chatRoot, approvals: approvalsRoot, rounds: roundsRoot, watchlist: watchRoot, portfolio: portfolioRoot, audit: auditRoot, outbox: outboxRoot, demo: demoTour.panel.root, settings: settingsRoot, news: newsRoot, signin: signinRoot }[tab];
   if (panelRoot.firstElementChild !== panel) panelRoot.replaceChildren(panel);
 }
 
@@ -262,7 +276,6 @@ function renderHeader() {
     const working = [...state.agents.values()].filter((a) => a.status === "working").length;
     statusPill.textContent = state.replaying ? "↻ Replay" : state.held ? "⏸ Paused" : state.clockedOut ? "🌙 Clocked out" : working ? `● ${working} working` : "● Open";
     statusPill.dataset.state = state.replaying ? "open" : state.held || state.clockedOut ? "closed" : working ? "busy" : "open";
-    demoBadge.classList.toggle("hidden", !state.demo);
     const pv = portfolio.view;
     const scored = !!pv && pv.return !== null && pv.priced;
     scorePill.classList.toggle("hidden", !scored);
@@ -285,7 +298,6 @@ function renderHeader() {
     : "Pause the whole office: steps in progress finish, then everyone waits. You can still message anyone one to one.";
   holdBtn.classList.toggle("held", state.held);
   document.body.classList.toggle("office-held", state.held);
-  demoBadge.classList.toggle("hidden", !state.demo);
   const n = approvals.pending;
   awaiting.textContent = `${n} awaiting you`;
   awaiting.classList.toggle("hidden", n === 0);
@@ -315,8 +327,10 @@ function frame() {
       renderViews();
       if (tab === "activity") renderActivity(actRoot, state, wing, pickAgent);
       if (tab === "chat") chatPanel.render(selected);
+      if (tab === "demo") demoTour.panel.render();
       if (tab === "settings") settings.render();
       if (tab === "approvals") approvals.render();
+      if (tab === "rounds") { rounds.render(); rounds.maybeRefresh(); }
       if (tab === "watchlist") { watchlist.render(); watchlist.maybeRefresh(); }
       if (tab === "audit") { audit.render(); audit.maybeRefresh(); }
       if (tab === "outbox") outbox.render();
@@ -336,7 +350,7 @@ async function loadState() {
   watchlist.refresh();
   portfolio.refresh();
   if (visitor) news.refresh();
-  else { audit.refresh(); outbox.refresh(); }
+  else { audit.refresh(); outbox.refresh(); rounds.refresh(); }
   scene?.sync();
   render();
 }
@@ -347,6 +361,7 @@ function connect() {
     const ev: OfficeEvent = JSON.parse(m.data);
     if (ev.type === "ping") return;   // keep-alive only
     if (ev.type === "roster_updated" && !visitor) { loadState(); }
+    if (visitor && state.touring) return;   // the recorded demo owns the floor until it is closed
     if (visitor) {   // a visitor's stream carries movement and nudges only; refetch the public views
       if (ev.type === "roster_updated") loadState();
       if (ev.type === "watchlist_added" || ev.type === "watchlist_status") watchlist.refresh();
@@ -359,6 +374,7 @@ function connect() {
     if (["approval_requested", "approval_decided", "audit_resolved", "audit_review"].includes(ev.type)) { approvals.refresh(); }
     if (ev.type === "watchlist_added" || ev.type === "watchlist_status") { watchlist.refresh(); }
     if (OUTBOX_EVENTS.has(ev.type)) { outbox.refresh(); }
+    if (ROUNDS_EVENTS.has(ev.type) && (tab === "rounds" || ev.type === "rounds")) { rounds.refresh(); }
     if (ev.type === "portfolio_changed" || (["approval_requested", "approval_decided"].includes(ev.type) && ev.kind === "portfolio")) { portfolio.refresh(); }
     if (AUDIT_EVENTS.has(ev.type) && (tab === "audit" || !["status", "task_done"].includes(ev.type))) { audit.refresh(); }
     if (tab === "agent" && focus.kind === "agent" && ev.agent === focus.id &&
@@ -387,12 +403,18 @@ async function boot() {
   visitor = session.role === "visitor";
   if (visitor) {
     TABS = VISITOR_TABS;
-    tab = "agent";
+    tab = "activity";   // the live feed is the first thing a visitor sees beside the floor
     document.body.classList.add("visitor");
+    demoBtn.classList.remove("hidden");
     watchlist.readOnly = portfolio.readOnly = agentPanel.readOnly = true;
   }
   signOut.classList.toggle("hidden", !publicSite || visitor);
   await loadState();
+  if (visitor) {   // a new visitor lands on recent activity, not an empty list
+    const recent = await fetch("/api/public/replay").then((r) => (r.ok ? r.json() : { events: [] })).catch(() => ({ events: [] }));
+    state.seedFeed(recent.events ?? []);
+    render();
+  }
   readHash();
   const overlay = new Overlay(overlayLayer, state, () => scene);
   game = new Phaser.Game({

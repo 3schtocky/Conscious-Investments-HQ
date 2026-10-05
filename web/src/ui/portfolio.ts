@@ -35,6 +35,8 @@ export class PortfolioPanel {
   private again = false;
   /** A visitor on the public site: the sanitized view (no cards from the Captain's desk). */
   readOnly = false;
+  /** The recorded Micron demo adds its own position card here while a visitor plays it (ui/demoTour.ts). */
+  extra: (() => HTMLElement | null) | null = null;
 
   constructor(private root: HTMLElement, private state: OfficeState, private onChange: () => void,
               private openApprovals: () => void) {}
@@ -60,8 +62,17 @@ export class PortfolioPanel {
     clear(this.root);
     const captain = this.state.captain.nickname;
     const v = this.view;
-    this.root.append(h("p", { class: "muted small audit-intro" },
+    if (this.state.touring) {
+      this.root.append(h("p", { class: "muted small audit-intro" },
+        `A paper portfolio: no real money, $100,000 to start. Normally the team sizes a position at 3, 5 or 8 percent. In this demo ${captain} chose 10 percent, so it is shown as an explicit decision and not a standard size.`));
+    } else this.root.append(h("p", { class: "muted small audit-intro" },
       `A paper portfolio: no real money. Only names with an approved Outperform model can be proposed, at 3, 5 or 8 percent, and nothing enters or leaves until ${captain} approves the card.`));
+    if (this.state.touring) {   // the demo shows only its own story: no other positions on this page
+      const demo = this.extra?.();
+      this.root.append(demo ?? h("p", { class: "empty" }, "No positions yet. The team is still working on Micron: watch for the moment the Captain approves a position."));
+      this.root.scrollTop = top;
+      return;
+    }
     if (!v) { this.root.append(h("p", { class: "empty" }, "Loading…")); return; }
 
     this.root.append(this.scoreEl(v));
