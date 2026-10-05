@@ -389,3 +389,18 @@ body.office-held .boss::before { content: "The office is paused. A message to on
 .replay-banner { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 6; max-width: min(560px, calc(100% - 24px)); padding: 8px 14px; border-radius: 999px; background: var(--surface); color: var(--ink); border: 1px solid var(--grid); box-shadow: var(--shadow); font-size: 12.5px; line-height: 1.35; text-align: center; pointer-events: none; }
 .replay-banner.hidden { display: none; }
 .replay-banner.link { bottom: auto; top: 14px; background: var(--gold); color: #fff; border-color: transparent; }
+
+/* Rounds board */
+.rounds-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.rounds-head p, .rounds-last { margin: 2px 0 0; }
+.round-wing { border: 1px solid var(--line, #2b3550); border-left-width: 4px; border-radius: 6px; padding: 8px 10px; background: var(--panel-2, rgba(255,255,255,.03)); }
+.round-wing header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.round-wing.state-working { border-left-color: #3fa66b; }
+.round-wing.state-blocked { border-left-color: #d1493f; }
+.round-wing.state-waiting { border-left-color: #d89a2b; }
+.round-wing.state-held, .round-wing.state-queued { border-left-color: #6b7a99; }
+.round-pill { font-size: 11px; padding: 1px 8px; border-radius: 10px; background: rgba(255,255,255,.08); }
+.round-say { margin: 6px 0; font-style: italic; }
+.round-person { font-size: 12px; margin: 4px 0; }
+.round-person ul { margin: 2px 0 0; padding-left: 16px; color: var(--text-2); }
+.round-warn { margin: 4px 0 0; font-size: 12px; color: #e0a23a; }

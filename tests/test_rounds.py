@@ -113,3 +113,19 @@ def test_rounds_endpoints(make_office):
         assert r["last_round"] is None and {w["wing"] for w in r["digest"]["wings"]} >= {"quant"}
         walked = c.post("/api/rounds/walk").json()
         assert "every wing is idle" in walked["summary"]
+
+
+async def test_demo_delegates_answer_juno_from_the_live_digest(make_office):
+    from hq.demo import DemoLLM
+
+    office, _ = make_office()
+    office._llm = DemoLLM(speed=1000, office=office)
+    await _er_waiting_on_captain_demo(office)
+    out = await office.rounds.walk(reason="asked")
+    assert out["mode"] == "model" and "EOSE brief" in out["summary"]
+    assert not [t for t in office.store.tasks() if t["assignee"] == "chief_of_staff"]   # nothing woke Juno
+
+
+async def _er_waiting_on_captain_demo(office) -> None:
+    office.request_approval("er_lead", kind="brief", title="EOSE brief", summary="Please review.",
+                            task_id=None, payload={})

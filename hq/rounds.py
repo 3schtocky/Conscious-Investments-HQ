@@ -46,7 +46,7 @@ class Rounds:
 
     def latest(self) -> dict | None:
         rows = self.office.store.events_where(types=["rounds"], limit=1)
-        return rows[-1]["payload"] if rows else None
+        return {**rows[-1]["payload"], "ts": rows[-1]["ts"]} if rows else None
 
     async def walk(self, *, reason: str = "asked", post: bool = False) -> dict:
         """One round. `post` also sends the roll-up to the Captain in his chat."""

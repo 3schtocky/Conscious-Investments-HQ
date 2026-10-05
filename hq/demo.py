@@ -240,9 +240,13 @@ class DemoLLM:
             return think("Done: that is passed on.", "Passed on.")(params)
         if "[Announcement from" in first:
             return self._announcement_reply(who, agent, first, params)
-        m = re.match(r"\[(?:Message|Question) from [^(]+\((\w+)\)\]: (.*)", first, re.DOTALL)
-        sender = m.group(1) if m else ""
+        m = re.match(r"\[(Message|Question) from [^(]+\((\w+)\)\]: (.*)", first, re.DOTALL)
+        sender = m.group(2) if m else ""
         asker = office.agents.get(sender)
+        if m and m.group(1) == "Question":   # the reply text goes straight back to the asker
+            return think("A question about where we are. My lead's live activity answers it, "
+                         "so I don't need to interrupt them.",
+                         office.comms.code_answer(agent.wing))(params)
         if asker is not None and asker.wing != agent.wing:
             line = office.comms.code_answer(agent.wing)
             return think(f"{asker.nickname} wants to know where we are. My lead's live activity "
