@@ -31,22 +31,23 @@ export class MobileHome {
     const scored = !!pv && pv.return !== null && pv.priced;
     const note = this.d.latestNote();
     const last = this.d.lastActive();
-    const key = JSON.stringify([working.length, this.d.state.replaying, this.d.state.held, this.d.state.clockedOut, scored && [pv!.return, pv!.benchmark_return],
+    const key = JSON.stringify([working.length, this.d.state.touring, this.d.state.replaying, this.d.state.held, this.d.state.clockedOut, scored && [pv!.return, pv!.benchmark_return],
       pv && pv.value, note?.title, last && Math.floor(last / 60), Math.floor(Date.now() / 60_000)]);
     if (key === this.shown) return;
     this.shown = key;
 
     // A replay sets agent statuses too, but it is not live: never call it "working right now".
     const replaying = this.d.state.replaying;
-    const busy = working.length > 0 && !replaying;
-    const headline = replaying ? "Replaying recent work" : this.d.state.held ? "The office is paused" : this.d.state.clockedOut ? "The office has clocked out" : busy ? `${working.length} working right now` : "The office is quiet";
-    const sub = replaying ? "The office is quiet; this is how a recent stretch of work went."
+    const touring = this.d.state.touring;   // the demo drives statuses too, and is not live either
+    const busy = working.length > 0 && !replaying && !touring;
+    const headline = touring ? "The Micron demo is running" : replaying ? "Replaying recent work" : this.d.state.held ? "The office is paused" : this.d.state.clockedOut ? "The office has clocked out" : busy ? `${working.length} working right now` : "The office is quiet";
+    const sub = touring ? "A recorded run, not live. Pick it up where you left it." : replaying ? "The office is quiet; this is how a recent stretch of work went."
       : busy ? working.slice(0, 3).map((a) => a.nickname).join(", ") + (working.length > 3 ? ` and ${working.length - 3} more` : "") : lastActiveLabel(last);
 
     const cards: (HTMLElement | null)[] = [
       h("div", { class: "m-card m-hero", "data-busy": busy ? "1" : "0" },
         h("div", { class: "m-hero-top" }, h("span", { class: "m-dot" }), h("div", {}, h("div", { class: "m-hero-title" }, headline), h("div", { class: "m-hero-sub" }, sub))),
-        h("button", { class: "m-btn primary", onclick: () => (busy || replaying ? this.d.openFloor() : this.d.watch()) }, replaying ? "Back to the replay" : busy ? "Watch live" : "Watch the latest replay"),
+        h("button", { class: "m-btn primary", onclick: () => (busy || replaying || touring ? this.d.openFloor() : this.d.watch()) }, touring ? "Back to the demo" : replaying ? "Back to the replay" : busy ? "Watch live" : "Watch the latest replay"),
         h("button", { class: "m-btn quiet", onclick: () => this.d.openFloor() }, "Open the floor")),
       scored
         ? h("button", { class: "m-card m-score", onclick: () => this.d.openPortfolio() },

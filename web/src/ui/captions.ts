@@ -9,6 +9,8 @@ export class Captions {
   readonly root = h("div", { class: "m-captions", role: "status", "aria-live": "polite" });
   private lines: Line[] = [];
   private shown = "";
+  /** What the strip says when no line is fresh, instead of the office's status (the demo sets this to the act's description). */
+  rest: (() => string | null) | null = null;
 
   constructor(private state: OfficeState) {
     state.on((ev) => {
@@ -22,10 +24,17 @@ export class Captions {
     this.render();
   }
 
+  /** Forget what was said (the demo skipped ahead or closed). */
+  clear() {
+    this.lines = [];
+    this.shown = "";
+    this.render();
+  }
+
   render() {
     const fresh = freshLines(this.lines, Date.now());
     const working = [...this.state.agents.values()].filter((a) => a.status === "working").map((a) => a.nickname);
-    const idle = idleLine({ workingNames: working, replaying: this.state.replaying, held: this.state.held, clockedOut: this.state.clockedOut });
+    const idle = this.rest?.() ?? idleLine({ workingNames: working, replaying: this.state.replaying, held: this.state.held, clockedOut: this.state.clockedOut });
     const key = fresh.length ? fresh.map((l) => l.text).join("|") : `idle:${idle}`;
     if (key === this.shown) return;
     this.shown = key;

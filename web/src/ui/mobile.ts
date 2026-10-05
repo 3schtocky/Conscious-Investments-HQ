@@ -6,26 +6,33 @@ import type { AgentSheet } from "./agentSheet";
 import type { Captions } from "./captions";
 import { h } from "./dom";
 import { tap } from "./haptics";
+import type { MobileDemo } from "./mobileDemo";
 import type { MobileHome } from "./mobileHome";
 import { FLOOR_VIEWS, installHintDue, isIphone, MORE_ROWS, MTABS, neighbourView, swipeDir, titleFor, type MoreId, type MTab } from "./mobileModel";
 
-export type PanelTab = "activity" | "portfolio" | "watchlist" | "news" | "agent";
+export type PanelTab = "activity" | "portfolio" | "watchlist" | "news" | "agent" | "demo";
 
 export interface MobileHooks {
   statusPill: HTMLElement;          // the office status pill: lives in the masthead on a phone
   desktopHeader: HTMLElement;       // ...and goes back here on a wide screen
   showPanel: (tab: PanelTab) => void;
-  startDemo: () => void;
   toggleTheme: () => void;
   themeLabel: () => string;
   contactHref: string;
   // the Floor tab
   stageWrap: HTMLElement;           // the map; swiping it changes wing
+  chips: HTMLElement;               // the wing chips: a row above the map on a phone (an overlay on desktop)
+  chipsHome: HTMLElement;           // ...and the element they follow on desktop
   captions: Captions;               // the strip under the map
   sheet: AgentSheet;                // tap a colleague
   home: MobileHome;                 // the quiet-state summary
   view: { current: () => string; set: (id: string) => void };   // which wing the map is on
   onFloorVisible: (visible: boolean) => void;                    // pause the map's drawing when it is not on screen
+  // the Micron demo
+  demo: MobileDemo;
+  demoPill: () => void;                                          // the masthead Demo button
+  onLeaveFloor: () => void;                                      // the visitor left the map: pause the demo
+  files: { title: () => string; back: () => boolean; onList: () => boolean };   // the Demo files page
 }
 
 const ICONS: Record<MTab, string> = {
@@ -49,7 +56,8 @@ export class MobileShell {
   active = false;
   private head = h("div", { class: "m-head" });
   private statusSlot = h("span", { class: "m-status" });
-  private back = h("button", { class: "m-back hidden", "aria-label": "Back to More", onclick: () => this.go("more", null, true) }, "‹ More");
+  private back = h("button", { class: "m-back hidden", "aria-label": "Back", onclick: () => this.pop() }, "‹ More");
+  private pill = h("button", { class: "m-demo", "aria-label": "Watch the Micron demo", onclick: () => { tap(); this.hooks.demoPill(); } }, "▶ Demo");
   private title = h("h1", { class: "m-title" });
   private bar = h("nav", { class: "m-tabs", "aria-label": "Sections" });
   private buttons = new Map<MTab, HTMLButtonElement>();
@@ -64,7 +72,7 @@ export class MobileShell {
 
   constructor(app: HTMLElement, main: HTMLElement, private hooks: MobileHooks) {
     this.head.append(
-      h("div", { class: "m-bar" }, this.back, h("span", { class: "m-brand" }, h("span", { class: "m-mark" }), h("span", { class: "m-word" }, "Conscious Investments ", h("b", {}, "HQ"))), this.statusSlot),
+      h("div", { class: "m-bar" }, this.back, h("span", { class: "m-brand" }, h("span", { class: "m-mark" }), h("span", { class: "m-word" }, h("span", { class: "m-word-full" }, "Conscious Investments "), h("span", { class: "m-word-short" }, "CI "), h("b", {}, "HQ"))), this.pill, this.statusSlot),
       this.title);
     for (const t of MTABS) {
       const b = h("button", { class: "m-tab", "aria-label": t.label, onclick: () => this.press(t.id) }, svg(ICONS[t.id]), h("span", { class: "m-tab-label" }, t.label));
@@ -76,7 +84,7 @@ export class MobileShell {
     app.prepend(this.head);
     main.append(this.more, hooks.home.root);   // inside <main>, so they take exactly the space the floor and panels do
     hooks.stageWrap.after(hooks.captions.root);
-    app.append(hooks.sheet.root, this.hint, this.bar);
+    app.append(hooks.sheet.root, hooks.demo.toast, hooks.demo.invite, hooks.demo.player, this.hint, this.bar);
     this.swipe(hooks.stageWrap);
   }
 
@@ -87,11 +95,13 @@ export class MobileShell {
     document.body.classList.toggle("mobile", on);
     if (on) {
       this.statusSlot.append(this.hooks.statusPill);
+      this.hooks.stageWrap.before(this.hooks.chips);   // above the map, so they never cover the top of the wings
       document.body.dataset.fmode = this.fmode;
       this.go(this.tab, this.sub);
       this.hintTimer = window.setInterval(() => this.maybeHint(), 3000);
     } else {
       this.hooks.desktopHeader.insertBefore(this.hooks.statusPill, this.hooks.desktopHeader.children[1] ?? null);
+      this.hooks.chipsHome.after(this.hooks.chips);
       document.body.removeAttribute("data-mtab");
       document.body.removeAttribute("data-msub");
       document.body.removeAttribute("data-fmode");
@@ -123,7 +133,7 @@ export class MobileShell {
     document.body.dataset.mtab = tab;
     document.body.dataset.msub = this.sub ?? "";
     const panel: PanelTab | null = tab === "feed" ? "activity" : tab === "portfolio" ? "portfolio"
-      : this.sub === "watchlist" || this.sub === "news" || this.sub === "agent" ? this.sub : null;
+            : this.sub === "watchlist" || this.sub === "news" || this.sub === "agent" || this.sub === "demo" ? this.sub : null;
     if (panel) this.hooks.showPanel(panel);
     for (const [id, b] of this.buttons) {
       b.classList.toggle("active", id === tab);
@@ -137,7 +147,28 @@ export class MobileShell {
     this.themeValue.textContent = this.hooks.themeLabel();
     this.hooks.sheet.close();
     this.hooks.onFloorVisible(tab === "floor" && this.fmode === "map");
+    if (!(tab === "floor" && this.fmode === "map")) this.hooks.onLeaveFloor();
     if (tab === "floor" && this.fmode === "home") this.hooks.home.render();
+    this.syncTitle();
+  }
+
+  /** The back button: one step up inside the Demo files, otherwise back to the More list. */
+  private pop() {
+    if (this.sub === "demo" && this.hooks.files.back()) { this.syncTitle(); return; }
+    this.go("more", null, true);
+  }
+
+  /** Titles and labels that follow what is on screen (called every frame; only writes on a change). */
+  syncTitle() {
+    if (!this.active) return;
+    let t = titleFor(this.tab, this.sub);
+    if (this.sub === "demo") t = this.hooks.files.title();
+    if (this.title.textContent !== t) { this.title.textContent = t; this.title.classList.toggle("hidden", !t); }
+    const back = this.sub === "demo" && !this.hooks.files.onList() ? "‹ Demo files" : "‹ More";
+    if (this.back.textContent !== back) this.back.textContent = back;
+    const playing = document.body.classList.contains("touring");
+    const label = playing ? "● Demo" : "▶ Demo";
+    if (this.pill.textContent !== label) { this.pill.textContent = label; this.pill.classList.toggle("on", playing); }
   }
 
   // ---- the Floor tab: summary home or map ---------------------------------------------------------
@@ -189,8 +220,7 @@ export class MobileShell {
       const inner = [h("span", { class: "m-row-main" }, h("span", { class: "m-row-label" }, r.label), h("span", { class: "m-row-hint" }, r.hint)), value, h("span", { class: "m-row-chev", "aria-hidden": "true" }, "›")];
       const open = () => {
         tap();
-        if (r.id === "demo") { this.go("more", "demo"); this.hooks.startDemo(); }
-        else if (r.id === "appearance") { this.hooks.toggleTheme(); this.themeValue.textContent = this.hooks.themeLabel(); }
+        if (r.id === "appearance") { this.hooks.toggleTheme(); this.themeValue.textContent = this.hooks.themeLabel(); }
         else this.go("more", r.id);
       };
       return r.kind === "link"
@@ -213,7 +243,7 @@ export class MobileShell {
   private hintShown = false;
 
   private maybeHint() {
-    if (this.hintShown || !this.active) return;
+    if (this.hintShown || !this.active || !this.hooks.demo.inviteSettled || document.body.classList.contains("touring")) return;   // one card at a time, never over the demo
     const standalone = (navigator as unknown as { standalone?: boolean }).standalone === true || matchMedia("(display-mode: standalone)").matches;
     if (!installHintDue({ iphone: isIphone(navigator.userAgent), standalone, dismissed: this.dismissed(), secondsOpen: (Date.now() - this.opened) / 1000 })) return;
     this.hintShown = true;

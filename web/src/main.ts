@@ -23,6 +23,7 @@ import { MobileShell } from "./ui/mobile";
 import { AgentSheet } from "./ui/agentSheet";
 import { Captions } from "./ui/captions";
 import { MobileHome } from "./ui/mobileHome";
+import { MobileDemo } from "./ui/mobileDemo";
 import { isMobileLayout, opensOnHome } from "./ui/mobileModel";
 
 type Tab = "activity" | "agent" | "chat" | "approvals" | "rounds" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings" | "news" | "signin" | "demo";
@@ -128,17 +129,34 @@ const mobileHome = new MobileHome({
   openFloor: () => mobile.showMap(),
   openPortfolio: () => mobile.go("portfolio"),
   openNote: () => mobile.go("more", "news"),
-  openDemo: () => { mobile.go("more", "demo"); void demoTour.start(); },
+  openDemo: () => mobileDemo.start(),
 });
+// The Micron demo on a phone: a docked player, a camera that follows the action, a toast when a
+// file is ready, and a one-time invitation (ui/mobileDemo.ts).
+const mobileDemo = new MobileDemo({
+  tour: demoTour, state, captions,
+  view: { current: () => (focus.kind === "wing" ? focus.id : "floor"), set: (id) => setFocus(id === "floor" ? { kind: "floor" } : { kind: "wing", id }) },
+  goFloor: () => { mobile.go("floor"); mobile.showMap(); },
+  openFile: (kind) => { mobile.go("more", "demo"); demoTour.panel.show(kind); },
+  onFloor: () => mobile.active && mobile.tab === "floor" && mobile.fmode === "map",
+});
+demoTour.panel.mobileOps = {
+  startDemo: () => mobileDemo.start(),
+  backToFloor: () => { mobile.go("floor"); mobile.showMap(); },
+  status: () => { const v = demoTour.view(); return { playing: !!v && v.active && !v.finished, finished: !!v?.finished, started: !!v }; },
+};
 const mobile = new MobileShell(document.getElementById("app")!, mainEl, {
   statusPill, desktopHeader: header,
   showPanel: (t) => { tab = t; render(); },
-  startDemo: () => void demoTour.start(),
   toggleTheme: () => themeBtn.click(),
   themeLabel: () => { const t = document.documentElement.dataset.theme; return t === "dark" ? "Dark" : t === "light" ? "Light" : "Automatic"; },
   contactHref: contactBtn.getAttribute("href") ?? "",
-  stageWrap, captions, sheet: agentSheet, home: mobileHome,
-  view: { current: () => (focus.kind === "wing" ? focus.id : "floor"), set: (id) => setFocus(id === "floor" ? { kind: "floor" } : { kind: "wing", id }) },
+  stageWrap, chips: viewButtons, chipsHome: overlayLayer, captions, sheet: agentSheet, home: mobileHome,
+  view: { current: () => (focus.kind === "wing" ? focus.id : "floor"), set: (id) => { mobileDemo.userMoved(); setFocus(id === "floor" ? { kind: "floor" } : { kind: "wing", id }); } },
+  demo: mobileDemo,
+  demoPill: () => { if (state.touring) { mobile.go("floor"); mobile.showMap(); } else mobileDemo.start(); },
+  onLeaveFloor: () => demoTour.pauseIfPlaying(),
+  files: { title: () => demoTour.panel.pageTitle, back: () => demoTour.panel.back(), onList: () => demoTour.panel.onList },
   // The map only needs drawing while it is on screen: a phone should not animate an office nobody is looking at.
   onFloorVisible: (visible) => { if (visible) { game?.loop.wake(); fitCanvas(); } else game?.loop.sleep(); },
 });
@@ -297,7 +315,7 @@ function renderTabs() {
 function renderViews() {
   const wings = WING_ORDER.filter((w) => w !== "executive");
   const btn = (label: string, f: Focus, active: boolean) =>
-    h("button", { class: `view${active ? " active" : ""}`, onclick: () => setFocus(f) }, label);
+    h("button", { class: `view${active ? " active" : ""}`, onclick: () => { mobileDemo.userMoved(); setFocus(f); } }, label);
   const phone = mobile.active;
   viewButtons.replaceChildren(
     ...(phone ? [h("button", { class: "view summary", onclick: () => mobile.showHome() }, "Summary")] : []),
@@ -360,6 +378,7 @@ let dirty = true;
 let structural = true;
 function render() { dirty = true; structural = true; }
 function frame() {
+  if (mobile.active) mobile.syncTitle();
   if (dirty) {
     dirty = false;
     renderHeader();
@@ -509,6 +528,8 @@ async function boot() {
   connect();
   requestAnimationFrame(frame);
 }
+
+if (import.meta.env.DEV) (window as unknown as { __demoTour?: DemoTour }).__demoTour = demoTour;   // for browser checks
 
 boot().catch((e) => {
   document.getElementById("app")!.replaceChildren(h("div", { class: "boot-error" },

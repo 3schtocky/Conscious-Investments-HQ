@@ -7,31 +7,30 @@ import "./demoTour.css";
 import type { OfficeScene } from "../office/scene";
 import type { OfficeEvent, OfficeState } from "../state";
 import { clear, h } from "./dom";
+import { pct, ratingTone, usd } from "./demoFormat";
+import { renderMobileFiles, renderMobileModel, renderMobileNote, renderMobilePosition, renderMobileReport, type FileView, type ReaderCtx } from "./demoReaders";
 
-const BASE = `${import.meta.env.BASE_URL}demo/micron/`;
+export const BASE = `${import.meta.env.BASE_URL}demo/micron/`;
 const TICK_MS = 100;
 
 interface Beat extends Record<string, unknown> { t: number; type: string; agent: string | null }
 interface Act { t: number; label: string; caption: string }
 interface Unlock { t: number; artifact: "report" | "model" | "note" | "position"; label: string }
 interface Tour { duration: number; end_card: number; beats: Beat[]; acts: Act[]; unlocks: Unlock[] }
-interface ReportData { title: string; date: string; rating: string; banner: string; pdf: string; sections: { id: string; title: string; html: string }[] }
-interface Case { price_target: number; total_return: number; wacc: number; methods: Record<string, number>; projections: { fy: number; revenue: number; growth: number; ebitda_margin: number; eps: number; capex: number; fcf: number }[] }
-interface ModelData {
+export interface ReportData { title: string; date: string; rating: string; banner: string; pdf: string; sections: { id: string; title: string; html: string }[] }
+export interface Case { price_target: number; total_return: number; wacc: number; methods: Record<string, number>; projections: { fy: number; revenue: number; growth: number; ebitda_margin: number; eps: number; capex: number; fcf: number }[] }
+export interface ModelData {
   banner: string; price: number; as_of: string; rating: string; benchmark_return: number; excess_return: number; horizon_months: number; target_date: string;
   cases: Record<"bear" | "base" | "bull", Case>; workbook: string;
   simulation: { runs: number; p10_p50_p90: number[]; chance_above_price: number; chance_beats_sp500: number; drivers: { driver: string; pt_range: number[] }[] };
 }
-interface PositionData {
+export interface PositionData {
   ticker: string; name: string; size_pct: number; entry_price: number; shares: number; value: number; portfolio_value: number;
   entered: string; rating: string; base_target: number; to_target: number; bear_target: number; bull_target: number;
   model_version: number; thesis: string; proposed_by: string; return: number; vs_sp500: number; downloads: { label: string; href: string }[];
 }
-interface NoteData { banner: string; title: string; words: number; html: string; social: string; header: string }
+export interface NoteData { banner: string; title: string; words: number; html: string; social: string; header: string }
 
-const ratingTone = (rating: string): string => (rating === "Outperform" ? "good" : rating === "Underperform" ? "warn" : "");
-const usd = (x: number) => `$${x.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const pct = (x: number) => (x < 0 ? `(${Math.abs(x * 100).toFixed(1)}%)` : `${(x * 100).toFixed(1)}%`);
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const get = async <T>(file: string): Promise<T> => {
   const res = await fetch(`${BASE}${file}`);
@@ -51,6 +50,9 @@ export class DemoTour {
   private seq = 0;
   private unlocked = new Set<string>();
   private finished = false;
+  private listeners = new Set<() => void>();
+  /** Called when the office finishes a file while the demo plays (not when skipping past it). */
+  onUnlock: ((artifact: string, label: string) => void) | null = null;
 
   constructor(private state: OfficeState, private scene: () => OfficeScene | null,
               private restore: () => Promise<void>, private onChange: () => void,
@@ -60,6 +62,49 @@ export class DemoTour {
   }
 
   get active(): boolean { return this.state.touring; }
+
+  /** The phone player draws itself from this, and redraws whenever it changes. */
+  subscribe(fn: () => void): () => void { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  private emit() { for (const fn of this.listeners) fn(); }
+
+  view(): { active: boolean; finished: boolean; paused: boolean; now: number; duration: number; acts: Act[]; unlocked: Set<string>; banner: string } | null {
+    if (!this.tour) return null;
+    return { active: this.state.touring, finished: this.finished, paused: this.pausedAt !== null, now: this.playhead(), duration: this.tour.duration,
+      acts: this.tour.acts, unlocked: new Set(this.unlocked), banner: this.panel.banner };
+  }
+
+  /** Stop the clock if it is running (the visitor has gone to read a file). They resume when they are back. */
+  pauseIfPlaying() {
+    if (this.state.touring && !this.finished && this.pausedAt === null) this.togglePause();
+  }
+
+  /** Jump to a moment, rebuilding the floor, feed and files as they were then. Walks and speech
+   *  between 0:00 and there are skipped: everyone just ends up where they would be. */
+  seek(t: number) {
+    if (!this.tour) return;
+    const target = Math.max(0, Math.min(t, this.tour.end_card - 0.5));
+    const wasPaused = this.pausedAt !== null;
+    window.clearInterval(this.timer);
+    this.unlocked.clear();
+    this.panel.reset();
+    this.finished = false;
+    this.idx = 0;
+    this.state.feed = [];
+    const scene = this.scene();
+    if (scene) scene.instant = true;
+    try {
+      this.floorToIdle();
+      while (this.idx < this.tour.beats.length && this.tour.beats[this.idx].t < target) this.play(this.tour.beats[this.idx++]);
+    } finally {
+      if (scene) scene.instant = false;
+    }
+    for (const u of this.tour.unlocks) if (u.t < target) this.unlocked.add(u.artifact);
+    this.t0 = performance.now() - target * 1000;
+    this.pausedAt = wasPaused ? performance.now() : null;
+    this.timer = window.setInterval(() => this.tick(), TICK_MS);
+    this.draw();
+    this.onChange();
+  }
 
   private deliverables(): number { return ["report", "model", "note"].filter((k) => this.unlocked.has(k)).length; }
 
@@ -97,6 +142,7 @@ export class DemoTour {
     this.state.touring = false;
     this.bar.classList.add("hidden");
     document.body.classList.remove("touring");
+    this.emit();
     void this.restore().then(() => this.onChange());
   }
 
@@ -127,7 +173,7 @@ export class DemoTour {
     const now = this.playhead();
     while (this.idx < this.tour.beats.length && this.tour.beats[this.idx].t <= now) this.play(this.tour.beats[this.idx++]);
     for (const u of this.tour.unlocks) {
-      if (u.t <= now && !this.unlocked.has(u.artifact)) { this.unlocked.add(u.artifact); this.panel.noticed(u.artifact); this.onChange(); }
+      if (u.t <= now && !this.unlocked.has(u.artifact)) { this.unlocked.add(u.artifact); this.panel.noticed(u.artifact); this.onChange(); this.onUnlock?.(u.artifact, u.label); }
     }
     if (now >= this.tour.duration && !this.finished) { this.finished = true; window.clearInterval(this.timer); }
     this.draw();
@@ -150,6 +196,7 @@ export class DemoTour {
 
   private draw() {
     if (!this.tour) return;
+    this.emit();
     const now = this.playhead();
     const act = [...this.tour.acts].reverse().find((a) => a.t <= now) ?? this.tour.acts[0];
     const step = this.tour.acts.indexOf(act) + 1;
@@ -193,7 +240,10 @@ export class DemoPanel {
   private model: ModelData | null = null;
   private note: NoteData | null = null;
   private position: PositionData | null = null;
-  private view: "home" | "report" | "model" | "note" = "home";
+  private view: FileView = "home";
+  /** Set by the phone layout: how the files list talks to the player. */
+  mobileOps: { startDemo: () => void; backToFloor: () => void; status: () => { playing: boolean; finished: boolean; started: boolean } } | null = null;
+  private lastKey = "";
   private section = 0;
   private fresh = new Set<string>();
   private sig = "";   // what was last drawn: the tour asks for a redraw on every beat, and a reader's scroll must survive
@@ -242,11 +292,56 @@ export class DemoPanel {
 
   private open(view: "report" | "model" | "note") { this.view = view; this.fresh.delete(view); this.render(); this.onChange(); }
 
+  // ---- the phone layout drives these ----
+  /** Open one of the files (the toast's Open button, a row in the files list). */
+  show(view: FileView) { this.view = view; this.fresh.delete(view); this.sig = ""; this.render(); this.onChange(); }
+  /** One step back inside the files: true if it did something, false if it is already on the list. */
+  back(): boolean {
+    if (this.view === "home") return false;
+    this.view = "home"; this.sig = ""; this.render(); this.onChange();
+    return true;
+  }
+  /** The masthead title for the file on screen. */
+  get pageTitle(): string {
+    return { home: "Demo files", report: "Report", model: "Model", note: "Client note", position: "Paper position" }[this.view];
+  }
+  get onList(): boolean { return this.view === "home"; }
+
+  private renderMobile(have: Set<string>) {
+    clear(this.root);
+    if (!this.report || !this.model || !this.note) {
+      const st = this.mobileOps?.status();
+      this.root.append(h("div", { class: "m-card mr-intro" },
+        h("div", { class: "m-card-label" }, "Micron (MU) demo"),
+        h("div", { class: "m-card-body" }, "A five-minute recorded run: the office makes a report, a model and a client note, then sizes a paper position. The files appear here as it goes."),
+        h("button", { class: "m-btn primary", onclick: () => this.mobileOps?.startDemo() }, st?.started ? "Watch again" : "Start the demo")));
+      return;
+    }
+    const st = this.mobileOps?.status() ?? { playing: false, finished: false, started: false };
+    const ctx: ReaderCtx = {
+      base: BASE, report: this.report, model: this.model, note: this.note,
+      section: this.section, setSection: (i) => { this.section = i; this.render(); },
+      have, fresh: this.fresh, open: (v) => this.show(v),
+      positionCard: () => this.positionCard(),
+      run: { ...st, clock: "" },
+      startDemo: () => this.mobileOps?.startDemo(), backToFloor: () => this.mobileOps?.backToFloor(),
+      banner: this.banner,
+    };
+    const pages = { home: renderMobileFiles, report: renderMobileReport, model: renderMobileModel, note: renderMobileNote, position: renderMobilePosition };
+    this.root.append(...pages[this.view](ctx));
+    const key = `${this.view}:${this.section}`;
+    if (key !== this.lastKey) { this.lastKey = key; this.root.scrollTop = 0; }   // a new page starts at the top
+  }
+
   render() {
     const have = this.unlocked();
-    const sig = JSON.stringify([this.view, this.section, [...have].filter((k) => k !== "position"), [...this.fresh], !!this.report]);
+    const mobile = document.body.classList.contains("mobile");
+    const run = mobile ? this.mobileOps?.status() : null;
+    const sig = JSON.stringify([this.view, this.section, [...have].filter((k) => mobile || k !== "position"), [...this.fresh], !!this.report, mobile, run && [run.playing, run.finished, run.started]]);
     if (sig === this.sig) return;
     this.sig = sig;
+    if (mobile) { this.renderMobile(have); return; }
+    if (this.view === "position") this.view = "home";   // the position page exists only on a phone
     clear(this.root);
     this.root.append(h("div", { class: "demo-banner" }, this.banner));
     if (!this.report || !this.model || !this.note) {

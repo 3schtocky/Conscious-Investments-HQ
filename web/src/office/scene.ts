@@ -54,6 +54,8 @@ export class OfficeScene extends Phaser.Scene {
   private visitTaken = new Map<string, string>();   // "x,y" of a spot in front of a desk -> who holds it
   private focus: Focus = { kind: "floor" };
   private ready = false;
+  /** Fast-forward (skipping ahead in the demo): moves land at once and nothing is said. */
+  instant = false;
 
   constructor() { super("office"); }
 
@@ -158,16 +160,19 @@ export class OfficeScene extends Phaser.Scene {
   // ---- events -----------------------------------------------------------------------------
   handle(ev: OfficeEvent) {
     const w = ev.agent ? this.walkers.get(ev.agent) : undefined;
+    if (this.instant && ev.type !== "move" && ev.type !== "meeting") return;
     switch (ev.type) {
       case "move": {
         if (!w) return;
         const to = String(ev.to);
         const owner = to.startsWith("desk:") ? to.slice(5) : "";
         if (owner && owner !== w.id && this.desks.some((d) => d.owner === owner)) {
+          if (this.instant) { const at = this.takeVisitSpot(w, owner); if (at) this.teleport(w, at); break; }
           w.queue.push({ type: "visit", owner });   // the spot is picked when the walk begins
           break;
         }
         const target = this.resolveTarget(to, w);
+        if (this.instant) { this.releaseVisit(w); if (target) this.teleport(w, target); break; }
         if (target) w.queue.push({ type: "walk", to: target });
         break;
       }
@@ -176,7 +181,8 @@ export class OfficeScene extends Phaser.Scene {
           const p = this.walkers.get(id);
           if (!p) continue;
           const seat = this.takeSeat(p);
-          if (seat) p.queue.push({ type: "walk", to: seat });
+          if (!seat) continue;
+          if (this.instant) { this.releaseVisit(p); this.teleport(p, seat); } else p.queue.push({ type: "walk", to: seat });
         }
         break;
       case "chat":
@@ -205,6 +211,18 @@ export class OfficeScene extends Phaser.Scene {
         this.refreshGlows();
         break;
     }
+  }
+
+  /** Put a colleague straight at a tile: no walk, nothing queued. */
+  private teleport(w: Walker, to: Pt) {
+    w.queue.length = 0;
+    w.path.length = 0;
+    w.waitUntil = 0;
+    w.tile = { ...to };
+    w.dir = "down"; w.flip = false;
+    this.place(w);
+    this.setFrame(w, 0);
+    w.idleSince = this.time.now;
   }
 
   private resolveTarget(to: string, w: Walker): Pt | null {

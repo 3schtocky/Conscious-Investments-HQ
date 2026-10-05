@@ -41,6 +41,18 @@ export function captionFor(ev: OfficeEvent, who: Names): string | null {
       const names = ((ev.participants as string[]) ?? []).map((p) => who.name(p));
       return names.length > 1 ? `${joinNames(names)} gathered in the Lobby` : null;
     }
+    case "captain_report": {   // only in the Demo: on the public site these never arrive
+      const said = words(ev.text, 110);
+      return said ? `${a} to ${who.name("captain")}: “${said}”` : null;
+    }
+    case "approval_requested": {
+      const t = words(ev.title, 90);
+      return t ? `${a} asked ${who.name("captain")} to approve: ${t}` : null;
+    }
+    case "approval_decided": {
+      const t = words(ev.title, 90);
+      return t ? `${who.name("captain")} ${ev.decision === "approved" ? "approved" : "decided on"}: ${t}` : null;
+    }
     case "task_started":   // sub-jobs are noise; an assignment is the news
       return ev.kind === "assignment" && ev.title ? `${a} started “${tidy(String(ev.title), 80)}”` : null;
     case "task_done":

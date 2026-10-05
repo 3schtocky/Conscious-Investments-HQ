@@ -23,7 +23,7 @@ export const MORE_ROWS: MoreRow[] = [
   { id: "watchlist", label: "Watchlist", hint: "Names we are watching, and how they have done", kind: "panel" },
   { id: "news", label: "Newsletters", hint: "Notes we have published", kind: "panel" },
   { id: "agent", label: "Team", hint: "Who is who in the office", kind: "panel" },
-  { id: "demo", label: "Demo", hint: "Watch the office build a report in five minutes", kind: "action" },
+  { id: "demo", label: "Demo files", hint: "The report, model and note from the Micron demo", kind: "panel" },
   { id: "appearance", label: "Appearance", hint: "Light or dark", kind: "action" },
   { id: "contact", label: "Contact", hint: "Email us", kind: "link" },
 ];

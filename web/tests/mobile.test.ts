@@ -19,7 +19,7 @@ test("the tab bar is Floor, Feed, Portfolio, More", () => {
 });
 
 test("More lists everything that is not in the tab bar, and Contact is a link", () => {
-  assert.deepEqual(MORE_ROWS.map((r) => r.label), ["Watchlist", "Newsletters", "Team", "Demo", "Appearance", "Contact"]);
+  assert.deepEqual(MORE_ROWS.map((r) => r.label), ["Watchlist", "Newsletters", "Team", "Demo files", "Appearance", "Contact"]);
   assert.equal(MORE_ROWS.find((r) => r.id === "contact")!.kind, "link");
 });
 
