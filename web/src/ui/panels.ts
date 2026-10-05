@@ -22,7 +22,7 @@ export function modelLabel(modelId: string): string {
   return modelId;
 }
 
-function statusLabel(a: AgentView, clockedOut: boolean): string {
+export function statusLabel(a: AgentView, clockedOut: boolean): string {
   if (a.paused) return "Paused";
   if (a.status === "held") return "On hold";
   if (a.status === "working") return a.live?.kind === "thinking" ? "Thinking" : a.live ? "Writing" : "Working";

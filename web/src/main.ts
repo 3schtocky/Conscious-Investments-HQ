@@ -20,7 +20,10 @@ import { NewsPanel, SignInPanel } from "./ui/visitor";
 import { Replayer } from "./ui/replay";
 import { DemoTour } from "./ui/demoTour";
 import { MobileShell } from "./ui/mobile";
-import { isMobileLayout } from "./ui/mobileModel";
+import { AgentSheet } from "./ui/agentSheet";
+import { Captions } from "./ui/captions";
+import { MobileHome } from "./ui/mobileHome";
+import { isMobileLayout, opensOnHome } from "./ui/mobileModel";
 
 type Tab = "activity" | "agent" | "chat" | "approvals" | "rounds" | "watchlist" | "portfolio" | "audit" | "outbox" | "settings" | "news" | "signin" | "demo";
 let TABS: Tab[] = ["activity", "agent", "chat", "approvals", "rounds", "watchlist", "portfolio", "audit", "outbox", "settings"];
@@ -106,12 +109,27 @@ const SIDE_KEY = "hq-sidebar-width", SIDE_DEFAULT = 400, SIDE_MIN = 400, FLOOR_M
 const resizer = h("div", { class: "resizer", role: "separator", tabindex: 0, "aria-orientation": "vertical",
   "aria-label": "Resize the sidebar", title: "Drag to resize the sidebar (double-click to reset)" });
 const aside = h("aside", {}, resizer, tabsBar, panelRoot, bossBar);
+const stageWrap = h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons, replay.banner, linkBanner);
 const mainEl = h("main", {},
-  h("section", { class: "floor" }, h("div", { class: "stage-wrap" }, stage, overlayLayer, viewButtons, replay.banner, linkBanner), cardsRoot),
+  h("section", { class: "floor" }, stageWrap, cardsRoot),
   aside);
 document.getElementById("app")!.append(header, demoTour.bar, mainEl);
-// The iPhone layout (ui/mobile.ts): a masthead and bottom tab bar around the same panels and map.
-// It switches on in boot() once we know the visitor is not the Captain.
+// The iPhone layout (ui/mobile.ts): a masthead and bottom tab bar around the same panels and map,
+// with a caption strip, an agent sheet and a quiet-state summary. It switches on in boot() once we
+// know the visitor is not the Captain.
+const captions = new Captions(state);
+const agentSheet = new AgentSheet(state);
+const mobileHome = new MobileHome({
+  state,
+  portfolio: () => portfolio.view,
+  latestNote: () => { const i = news.items[0]; return i ? { title: i.title, date: i.date, words: i.words } : null; },
+  lastActive: () => (state.feed.length ? state.feed[state.feed.length - 1].ts : null),
+  watch: () => { mobile.showMap(); setFocus({ kind: "floor" }); replay.play(); },
+  openFloor: () => mobile.showMap(),
+  openPortfolio: () => mobile.go("portfolio"),
+  openNote: () => mobile.go("more", "news"),
+  openDemo: () => { mobile.go("more", "demo"); void demoTour.start(); },
+});
 const mobile = new MobileShell(document.getElementById("app")!, mainEl, {
   statusPill, desktopHeader: header,
   showPanel: (t) => { tab = t; render(); },
@@ -119,6 +137,10 @@ const mobile = new MobileShell(document.getElementById("app")!, mainEl, {
   toggleTheme: () => themeBtn.click(),
   themeLabel: () => { const t = document.documentElement.dataset.theme; return t === "dark" ? "Dark" : t === "light" ? "Light" : "Automatic"; },
   contactHref: contactBtn.getAttribute("href") ?? "",
+  stageWrap, captions, sheet: agentSheet, home: mobileHome,
+  view: { current: () => (focus.kind === "wing" ? focus.id : "floor"), set: (id) => setFocus(id === "floor" ? { kind: "floor" } : { kind: "wing", id }) },
+  // The map only needs drawing while it is on screen: a phone should not animate an office nobody is looking at.
+  onFloorVisible: (visible) => { if (visible) { game?.loop.wake(); fitCanvas(); } else game?.loop.sleep(); },
 });
 
 let game: Phaser.Game | null = null;
@@ -210,6 +232,7 @@ function startChat(id: string) {
 const cards = new DeskCards(cardsRoot, state, (id) => pickAgent(id));
 
 function pickAgent(id: string) {
+  if (mobile.active && state.agents.has(id)) { mobile.openAgent(id); return; }   // a phone gets a sheet, not the sidebar
   if (!state.agents.has(id)) { if (id === "captain" && !visitor) { tab = "settings"; settings.select("captain"); render(); } return; }
   setFocus({ kind: "agent", id });
   tab = "agent";
@@ -218,6 +241,8 @@ function pickAgent(id: string) {
 
 function setFocus(f: Focus) {
   focus = f;
+  mobile.setViewKind(f.kind === "floor" ? "floor" : "wing");
+  if (mobile.active && mobile.fmode === "home") mobile.showMap();
   boss.setDefaultRecipient(f.kind === "agent" ? f.id : null);
   scene?.setFocus(f);
   writeHash();
@@ -273,9 +298,16 @@ function renderViews() {
   const wings = WING_ORDER.filter((w) => w !== "executive");
   const btn = (label: string, f: Focus, active: boolean) =>
     h("button", { class: `view${active ? " active" : ""}`, onclick: () => setFocus(f) }, label);
+  const phone = mobile.active;
   viewButtons.replaceChildren(
+    ...(phone ? [h("button", { class: "view summary", onclick: () => mobile.showHome() }, "Summary")] : []),
     btn("Whole floor", { kind: "floor" }, focus.kind === "floor"),
-    ...wings.map((w) => btn(state.wings[w] ?? w, { kind: "wing", id: w }, focus.kind === "wing" && focus.id === w)));
+    ...wings.map((w) => btn(state.wings[w] ?? w, { kind: "wing", id: w }, focus.kind === "wing" && focus.id === w)),
+    ...(phone ? [btn("Lobby", { kind: "wing", id: "lobby" }, focus.kind === "wing" && focus.id === "lobby")] : []));
+  if (phone) {   // keep the chosen chip in view as swipes move along the row
+    const active = viewButtons.querySelector<HTMLElement>(".view.active");
+    if (active) viewButtons.scrollTo({ left: Math.max(0, active.offsetLeft - 16), behavior: "smooth" });
+  }
   const parts = ["Floor"];
   if (focus.kind === "wing") parts.push(state.wings[focus.id] ?? focus.id);
   if (focus.kind === "agent") {
@@ -334,6 +366,7 @@ function frame() {
     const selected = focus.kind === "agent" ? focus.id : null;
     const wing = focus.kind === "wing" ? focus.id : null;
     cards.render(selected, wing);
+    if (mobile.active && mobile.fmode === "home" && mobile.tab === "floor") mobileHome.render();
     if (tab === "agent") agentPanel.render(selected);
     if (structural) {
       structural = false;
@@ -424,7 +457,11 @@ async function boot() {
   }
   signOut.classList.toggle("hidden", !publicSite || visitor);
   const forceMobile = new URLSearchParams(location.search).has("mobile");   // ?mobile=1: try the phone layout on a desktop
-  const fitLayout = () => mobile.setActive(isMobileLayout({ width: window.innerWidth, visitor, forced: forceMobile }));
+  const fitLayout = () => {
+    mobile.setActive(isMobileLayout({ width: window.innerWidth, visitor, forced: forceMobile }));
+    mobile.setViewKind(focus.kind === "floor" ? "floor" : "wing");
+    render();   // the chip row differs on a phone
+  };
   fitLayout();
   window.addEventListener("resize", fitLayout);
   await loadState();
@@ -434,6 +471,10 @@ async function boot() {
     render();
   }
   readHash();
+  mobile.setViewKind(focus.kind === "floor" ? "floor" : "wing");
+  // A phone opens on the summary when the office is quiet, and on the floor when someone is working.
+  mobile.settle(opensOnHome({ working: [...state.agents.values()].filter((a) => a.status === "working").length,
+    replaying: state.replaying, touring: state.touring }));
   const overlay = new Overlay(overlayLayer, state, () => scene);
   game = new Phaser.Game({
     type: Phaser.AUTO,

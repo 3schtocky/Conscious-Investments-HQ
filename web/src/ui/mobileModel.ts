@@ -43,3 +43,40 @@ export function installHintDue(o: { iphone: boolean; standalone: boolean; dismis
 export function isIphone(userAgent: string): boolean {
   return /iPhone/.test(userAgent);
 }
+
+// ---- Floor views: swipe order, swipe detection, the quiet-state home ------------------------------
+
+/** Chips along the top of the Floor, in swipe order. */
+export const FLOOR_VIEWS = ["floor", "equity_research", "screening", "quant", "audit", "client_relations", "lobby"];
+
+/** The view a swipe lands on, or null at either end (no wrapping: the chip row is a line). */
+export function neighbourView(order: string[], current: string, dir: -1 | 1): string | null {
+  const i = order.indexOf(current);
+  if (i < 0) return null;
+  return order[i + dir] ?? null;
+}
+
+/** -1 = swipe right (go to the previous view), 1 = swipe left (next), 0 = not a deliberate sideways swipe. */
+export function swipeDir(o: { dx: number; dy: number; ms: number }): -1 | 0 | 1 {
+  if (o.ms > 800 || Math.abs(o.dx) < 48 || Math.abs(o.dx) < Math.abs(o.dy) * 1.6) return 0;
+  return o.dx < 0 ? 1 : -1;
+}
+
+/** A tap is a small movement; a swipe or a pan must not count as a tap on whoever is underneath. */
+export const TAP_SLOP = 12;
+
+/** On first opening: the floor if anyone is working, otherwise the summary home. */
+export function opensOnHome(o: { working: number; replaying: boolean; touring: boolean }): boolean {
+  return o.working === 0 && !o.replaying && !o.touring;
+}
+
+/** "just now", "12 minutes ago", "3 hours ago", "yesterday", then the date. */
+export function lastActiveLabel(ts: number | null, nowMs = Date.now()): string {
+  if (!ts) return "No recent activity";
+  const s = Math.max(0, nowMs / 1000 - ts);
+  if (s < 90) return "Active just now";
+  if (s < 3600) return `Last active ${Math.round(s / 60)} minutes ago`;
+  if (s < 86400) { const h = Math.round(s / 3600); return `Last active ${h} ${h === 1 ? "hour" : "hours"} ago`; }
+  if (s < 2 * 86400) return "Last active yesterday";
+  return `Last active ${new Date(ts * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+}

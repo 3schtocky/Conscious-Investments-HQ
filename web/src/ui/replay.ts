@@ -37,6 +37,14 @@ export class Replayer {
     if (this.playing) this.stop();
   }
 
+  /** The visitor asked to watch: start the latest replay now instead of waiting for the floor to
+   *  go quiet. Does nothing while the office is busy (the live floor is the thing to watch). */
+  play() {
+    if (this.playing || this.busy() || this.state.touring) return;
+    this.resumeAt = 0;
+    void this.start();
+  }
+
   private busy(): boolean {
     return [...this.state.agents.values()].some((a) => a.status === "working");
   }

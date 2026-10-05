@@ -2,9 +2,12 @@
 // More). It reuses the office's existing panels and map, so it only decides what is on screen;
 // main.ts owns the data and the panels. Desktop is untouched: everything here sits behind
 // `body.mobile` (see mobile.css).
+import type { AgentSheet } from "./agentSheet";
+import type { Captions } from "./captions";
 import { h } from "./dom";
 import { tap } from "./haptics";
-import { installHintDue, isIphone, MORE_ROWS, MTABS, titleFor, type MoreId, type MTab } from "./mobileModel";
+import type { MobileHome } from "./mobileHome";
+import { FLOOR_VIEWS, installHintDue, isIphone, MORE_ROWS, MTABS, neighbourView, swipeDir, titleFor, type MoreId, type MTab } from "./mobileModel";
 
 export type PanelTab = "activity" | "portfolio" | "watchlist" | "news" | "agent";
 
@@ -16,6 +19,13 @@ export interface MobileHooks {
   toggleTheme: () => void;
   themeLabel: () => string;
   contactHref: string;
+  // the Floor tab
+  stageWrap: HTMLElement;           // the map; swiping it changes wing
+  captions: Captions;               // the strip under the map
+  sheet: AgentSheet;                // tap a colleague
+  home: MobileHome;                 // the quiet-state summary
+  view: { current: () => string; set: (id: string) => void };   // which wing the map is on
+  onFloorVisible: (visible: boolean) => void;                    // pause the map's drawing when it is not on screen
 }
 
 const ICONS: Record<MTab, string> = {
@@ -48,6 +58,9 @@ export class MobileShell {
   private hint = h("div", { class: "m-hint hidden", role: "note" });
   private hintTimer = 0;
   private opened = Date.now();
+  /** The Floor tab opens on the summary when the office is quiet, and on the map otherwise. */
+  fmode: "home" | "map" = "map";
+  private settled = false;
 
   constructor(app: HTMLElement, main: HTMLElement, private hooks: MobileHooks) {
     this.head.append(
@@ -61,8 +74,10 @@ export class MobileShell {
     this.buildMore();
     this.buildHint();
     app.prepend(this.head);
-    main.append(this.more);   // inside <main>, so it takes exactly the space the floor and panels do
-    app.append(this.hint, this.bar);
+    main.append(this.more, hooks.home.root);   // inside <main>, so they take exactly the space the floor and panels do
+    hooks.stageWrap.after(hooks.captions.root);
+    app.append(hooks.sheet.root, this.hint, this.bar);
+    this.swipe(hooks.stageWrap);
   }
 
   /** Switch the phone layout on or off (the screen can rotate or resize into either). */
@@ -72,12 +87,17 @@ export class MobileShell {
     document.body.classList.toggle("mobile", on);
     if (on) {
       this.statusSlot.append(this.hooks.statusPill);
+      document.body.dataset.fmode = this.fmode;
       this.go(this.tab, this.sub);
       this.hintTimer = window.setInterval(() => this.maybeHint(), 3000);
     } else {
       this.hooks.desktopHeader.insertBefore(this.hooks.statusPill, this.hooks.desktopHeader.children[1] ?? null);
       document.body.removeAttribute("data-mtab");
       document.body.removeAttribute("data-msub");
+      document.body.removeAttribute("data-fmode");
+      document.body.removeAttribute("data-view");
+      this.hooks.sheet.close();
+      this.hooks.onFloorVisible(true);
       window.clearInterval(this.hintTimer);
       this.hint.classList.add("hidden");
     }
@@ -115,6 +135,52 @@ export class MobileShell {
     this.back.classList.toggle("hidden", !this.sub);
     this.head.classList.toggle("has-back", !!this.sub);
     this.themeValue.textContent = this.hooks.themeLabel();
+    this.hooks.sheet.close();
+    this.hooks.onFloorVisible(tab === "floor" && this.fmode === "map");
+    if (tab === "floor" && this.fmode === "home") this.hooks.home.render();
+  }
+
+  // ---- the Floor tab: summary home or map ---------------------------------------------------------
+  /** Once the first data is in: open on the summary if the office is quiet, the map if it is busy. */
+  settle(quiet: boolean) {
+    if (this.settled) return;
+    this.settled = true;
+    if (quiet) this.showHome(); else this.showMap();
+  }
+
+  showHome() { this.setMode("home"); }
+  showMap() { this.setMode("map"); }
+  private setMode(mode: "home" | "map") {
+    this.fmode = mode;
+    document.body.dataset.fmode = mode;
+    if (this.active) {
+      this.hooks.onFloorVisible(this.tab === "floor" && mode === "map");
+      if (mode === "home") this.hooks.home.render();
+    }
+  }
+
+  /** "mapview" for CSS: tags and room signs are sized for a wing close-up, and hidden in the overview. */
+  setViewKind(kind: "floor" | "wing") { document.body.dataset.view = kind; }
+
+  openAgent(id: string) { this.hooks.sheet.open(id); }
+
+  /** Swipe sideways on the map to move along the chip row. A tap or a scroll is not a swipe. */
+  private swipe(el: HTMLElement) {
+    let x0 = 0, y0 = 0, t0 = 0, live = false;
+    el.addEventListener("touchstart", (e) => {
+      live = e.touches.length === 1 && this.active && this.fmode === "map";
+      if (live) { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = e.timeStamp; }
+    }, { passive: true });
+    el.addEventListener("touchend", (e) => {
+      if (!live) return;
+      live = false;
+      const t = e.changedTouches[0];
+      const dir = swipeDir({ dx: t.clientX - x0, dy: t.clientY - y0, ms: e.timeStamp - t0 });
+      if (!dir) return;
+      const next = neighbourView(FLOOR_VIEWS, this.hooks.view.current(), dir);
+      if (next) { tap(); this.hooks.view.set(next); }
+    }, { passive: true });
+    el.addEventListener("touchcancel", () => { live = false; }, { passive: true });
   }
 
   private buildMore() {

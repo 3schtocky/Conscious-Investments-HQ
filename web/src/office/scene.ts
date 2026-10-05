@@ -11,6 +11,7 @@ import type { OfficeEvent, OfficeState } from "../state";
 
 const WALK_SPEED = 64;          // px per second
 const LOBBY_LINGER_MS = 9000;   // gathered colleagues drift back to their desks after this
+const TAP_SLOP = 12;            // px a finger or mouse may move and still count as a tap, not a swipe
 
 export type Focus = { kind: "floor" } | { kind: "wing"; id: string } | { kind: "agent"; id: string };
 
@@ -68,8 +69,10 @@ export class OfficeScene extends Phaser.Scene {
     this.drawFloors();
     this.drawWalls();
     this.drawProps();
-    this.input.on("pointerdown", (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
-      if (over.length) return;
+    // A tap, not a press: a swipe that begins on the floor (to change wing on a phone) must not
+    // also open whoever it started on, or the room under the finger.
+    this.input.on("pointerup", (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+      if (over.length || p.getDistance() > TAP_SLOP) return;
       const t = { x: Math.floor(p.worldX / TILE), y: Math.floor(p.worldY / TILE) };
       const room = ROOMS.find((r) => t.x >= r.rect.x && t.x < r.rect.x + r.rect.w && t.y >= r.rect.y && t.y < r.rect.y + r.rect.h);
       if (room) this.hooks.onRoomClick(room.id);
@@ -105,7 +108,7 @@ export class OfficeScene extends Phaser.Scene {
       const specKey = JSON.stringify(m.avatar ?? null);
       if (!w) {
         const sprite = this.add.sprite(0, 0, "__DEFAULT").setOrigin(0.5, 1).setInteractive({ useHandCursor: true });
-        sprite.on("pointerdown", () => this.hooks.onAgentClick(m.id));
+        sprite.on("pointerup", (p: Phaser.Input.Pointer) => { if (p.getDistance() <= TAP_SLOP) this.hooks.onAgentClick(m.id); });
         w = new Walker(m.id, sprite, desk);
         this.walkers.set(m.id, w);
         this.place(w);
@@ -356,6 +359,9 @@ export class OfficeScene extends Phaser.Scene {
     if (this.focus.kind === "wing") {
       const r = ROOMS.find((x) => x.id === (this.focus as any).id);
       if (r) rect = { x: r.rect.x - 1, y: r.rect.y - 1, w: r.rect.w + 2, h: r.rect.h + 2 };
+      // The Lobby is 47 tiles wide but its action (the table, the seats, reception) is in the
+      // middle: on a narrow screen frame that, or the table would be a few pixels across.
+      if (r?.id === "lobby" && cam.width < 700) rect = { x: 14, y: 12, w: 21, h: 9 };
     }
     if (this.focus.kind === "agent") {
       const w = this.walkers.get(this.focus.id);

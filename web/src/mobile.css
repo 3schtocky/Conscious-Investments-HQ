@@ -115,3 +115,89 @@ body.mobile .m-hint.hidden { display: none; }
 
 /* the office's own panels: scroll smoothly, and keep their content clear of the side safe areas */
 body.mobile .panel > * { -webkit-overflow-scrolling: touch; }
+
+/* ======================= Phase 2: the Floor ======================= */
+
+/* the map, with the caption strip under it (bubbles are too wide for a phone) */
+body.mobile .floor { display: flex; flex-direction: column; }
+body.mobile .stage-wrap { flex: 1; }
+body.mobile .bubble-anchor { display: none; }
+body.mobile .replay-banner { bottom: 10px; font-size: 12px; padding: 6px 12px; }
+body.mobile .replay-banner.link { top: 56px; }
+
+.m-captions { display: none; }
+body.mobile .m-captions {
+  display: flex; flex: none; flex-direction: column; justify-content: center; gap: 3px;
+  min-height: 70px; padding: 9px calc(var(--sar) + 16px) 9px calc(var(--sal) + 16px);
+  background: var(--surface); border-top: 1px solid var(--grid);
+}
+.m-cap { font-size: 14px; line-height: 1.3; color: var(--ink); animation: m-cap-in .25s ease-out; }
+.m-cap.old { font-size: 12.5px; color: var(--muted); }
+.m-cap.idle { color: var(--muted); }
+@keyframes m-cap-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* names: sized for a close-up. In the whole-floor overview they would bury the map, so only
+   someone who is talking keeps theirs. */
+body.mobile[data-view="floor"] .tag:not(.speaking) { display: none !important; }
+body.mobile[data-view="floor"] .room-sign { font-size: 8px; padding: 3px 6px; }
+body.mobile[data-view="wing"] .room-sign { display: none; }
+.tag.speaking .tag-name::after { content: " …"; letter-spacing: 1px; animation: m-talk 1s steps(3) infinite; }
+@keyframes m-talk { 0% { opacity: .3; } 50% { opacity: 1; } 100% { opacity: .3; } }
+
+/* the summary home: shown instead of the map while the office is quiet */
+.m-home { display: none; }
+body.mobile[data-mtab="floor"][data-fmode="home"] .floor { visibility: hidden; pointer-events: none; }
+body.mobile[data-mtab="floor"][data-fmode="home"] .m-home {
+  display: flex; flex-direction: column; gap: 12px; position: absolute; inset: 0; z-index: 2; overflow-y: auto;
+  padding: 14px calc(var(--sar) + 16px) 24px calc(var(--sal) + 16px); background: var(--paper);
+}
+.m-card { display: block; width: 100%; text-align: left; border: 1px solid var(--grid); border-radius: 16px; background: var(--surface); color: var(--ink); padding: 14px 16px; }
+button.m-card:active { background: var(--paper-light); }
+.m-card-label { font-size: 12px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); }
+.m-card-title { margin-top: 6px; font-size: 18px; font-weight: 650; line-height: 1.25; }
+.m-card-body { margin-top: 6px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
+.m-card-foot { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+.m-hero { display: flex; flex-direction: column; gap: 10px; }
+.m-hero-top { display: flex; align-items: center; gap: 12px; }
+.m-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--heather); }
+.m-hero[data-busy="1"] .m-dot { background: var(--sage); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sage) 25%, transparent); }
+.m-hero-title { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.m-hero-sub { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.m-btn { min-height: 48px; border-radius: 12px; border: 0; font-size: 16px; font-weight: 650; padding: 0 16px; }
+.m-btn.primary { background: var(--clay); color: #fff; }
+.m-btn.quiet { background: var(--paper); color: var(--ink); border: 1px solid var(--grid); font-weight: 600; }
+.m-btn:active { filter: brightness(.92); }
+.m-score-row { display: flex; gap: 28px; margin-top: 8px; }
+.m-score-num { font-size: 30px; font-weight: 700; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.m-score-num.up { color: var(--sage); }
+.m-score-num.down { color: var(--danger); }
+.m-score-cap { font-size: 12px; color: var(--muted); }
+
+/* the agent sheet */
+.m-sheet-root { position: fixed; inset: 0; z-index: 50; }
+.m-sheet-back { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); opacity: 0; transition: opacity .25s; }
+.m-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 82%; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); color: var(--ink); border-radius: 20px 20px 0 0; border-top: 3px solid var(--accent, var(--clay));
+  padding: 0 calc(var(--sar) + 18px) calc(var(--sab) + 18px) calc(var(--sal) + 18px);
+  transform: translateY(100%); transition: transform .26s cubic-bezier(.2, .8, .2, 1);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, .3);
+}
+.m-sheet-root.open .m-sheet-back { opacity: 1; }
+.m-sheet-root.open .m-sheet { transform: none; }
+.m-sheet-grab { display: flex; justify-content: center; padding: 10px 0 8px; touch-action: none; cursor: grab; }
+.m-sheet-grab span { width: 40px; height: 5px; border-radius: 3px; background: var(--grid); }
+.m-sheet-head { display: flex; align-items: center; gap: 14px; }
+.m-sheet-head .portrait { width: 64px; height: 56px; flex: none; image-rendering: pixelated; object-fit: contain; background: var(--paper); border-radius: 10px; }
+.m-sheet-id h2 { margin: 0; font-size: 22px; line-height: 1.15; }
+.m-sheet-role { font-size: 13px; color: var(--muted); margin-top: 1px; }
+.m-sheet-persona { margin: 12px 0 0; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.m-sheet-label { margin: 16px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); }
+.m-sheet-now { font-size: 16px; font-weight: 600; line-height: 1.3; }
+.m-sheet-recent { list-style: none; margin: 0; padding: 0; }
+.m-sheet-recent li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; font-size: 14px; line-height: 1.3; border-top: 1px solid var(--grid); }
+.m-sheet-recent li:first-child { border-top: 0; }
+.m-sheet-recent time { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.m-sheet-none { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.4; }
+.m-sheet-close { display: block; width: 100%; margin-top: 18px; min-height: 48px; border-radius: 12px; border: 1px solid var(--grid); background: var(--paper); color: var(--ink); font-size: 16px; font-weight: 600; }
+.m-status-working { background: color-mix(in srgb, var(--sage) 20%, transparent); color: var(--sage); }

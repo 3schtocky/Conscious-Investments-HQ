@@ -117,6 +117,7 @@ export class Overlay {
         }
         t.root.dataset.status = a ? (a.paused ? "paused" : a.status) : "captain";
         if (t.bubbleUntil && now > t.bubbleUntil) { t.bubble.classList.remove("show"); t.bubbleUntil = 0; }
+        t.root.classList.toggle("speaking", t.bubbleUntil > 0);   // on a phone, bubbles are hidden: the tag shows who is talking
       }
       this.layout();   // after the text above is final, so tags are measured at their real width
       for (const r of scene.roomLabelPositions()) {
