@@ -243,6 +243,12 @@ _NOTE_BYPASS = re.compile(
     r"|\b(?:don'?t|do\s+not|never)\s+(?:tell|mention|report|flag)\b"
     r"|\bkeep\s+(?:this|it)\s+from\b|\bwithout\s+(?:approval|asking|telling)\b"
     r"|\balways\s+approve\b|api\.enabled|\bunpause\b", re.IGNORECASE)
+# A ticker in a desk note pins one company into every future prompt, which anchors later work.
+_NOTE_TICKER = re.compile(r"\b[A-Z]{2,5}\b")
+_NOTE_ACRONYMS = {"SEC", "EDGAR", "EPS", "FCF", "DCF", "LBO", "CAPM", "IPO", "ADV", "ADR", "ADRS", "CIK",
+                  "GAAP", "XBRL", "API", "PDF", "XLSX", "ER", "QA", "URL", "USD", "US", "CEO", "CFO", "TTM",
+                  "YOY", "QOQ", "EBIT", "EBITDA", "ROIC", "ROE", "TAM", "SIC", "SPY", "NYSE", "HQ", "AI",
+                  "OK", "PM", "PDFS", "FAQ", "KPI", "KPIS", "REIT", "SOP", "MD", "NOT", "ALL", "ONLY"}
 _NOTE_SECRET = re.compile(r"sk-[A-Za-z0-9_\-]{8,}|api[ _\-]?key|passw(?:or)?d|\bsecret\b|"
                           r"\b(?:access|auth|bearer)\s+token\b", re.IGNORECASE)
 
@@ -254,6 +260,9 @@ def screen_note(text: str) -> list[str]:
         reasons.append("states a valuation or rating (those come from the approved model)")
     elif _NOTE_FIGURES.search(text):
         reasons.append("contains figures (they belong in the model or the brief)")
+    if any(t not in _NOTE_ACRONYMS for t in _NOTE_TICKER.findall(text)):
+        reasons.append("names a specific company (desk notes are lessons about method; company facts "
+                       "belong in models and files)")
     if _NOTE_BYPASS.search(text):
         reasons.append("reads like a way around a rule or a review")
     if _NOTE_SECRET.search(text):

@@ -16,6 +16,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from hq.config import ROOT, mission, model_config, office
+from hq.departments import brief as department_brief
 from hq.engine.guards import GuardBlock, GuardTripped, TaskGuard
 from hq.engine.ledger import BudgetExhausted
 from hq.engine.llm import ApiDisabled, TurnResult, api_problem, request_params, web_tools
@@ -82,12 +83,12 @@ class Agent:
         team = "\n".join(
             f"- {a.nickname} (`{a.id}`): {a.role}, {self.office.wing_name(a.wing)}"
             for a in self.office.agents.values() if a.id != self.id)
-        charter = PROMPTS / "departments" / f"{self.wing}.md"   # optional department charter
+        charter = department_brief(self.wing)   # the wing's folder under departments/
         parts = ["\n\n".join([
             mission().strip(),
             (PROMPTS / "common.md").read_text().strip(),
             (PROMPTS / role_file).read_text().strip(),
-            *([charter.read_text().strip()] if charter.is_file() else []),
+            *([charter] if charter else []),
             (f"# Who you are\nYou are **{self.nickname}** (`{self.id}`), {self.role} in the "
              f"{self.office.wing_name(self.wing)} wing.\n\n{self.persona}"),
             f"# Your colleagues\n{team}",
@@ -104,7 +105,9 @@ class Agent:
             out.append(f"# Office wiki (standing guidance from {{captain}})\n{w}")
         notes = desk_notes(self.id, self.office.memory_dir)
         if notes:
-            out.append(f"# Your desk notes (from earlier tasks)\n{notes}")
+            out.append("# Your desk notes (lessons from earlier tasks)\n"
+                       "These are about how to do the work. They say nothing about any company: check "
+                       "every company fact against its model, files and filings.\n" + notes)
         return out
 
     # status -----------------------------------------------------------------------------

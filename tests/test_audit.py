@@ -86,6 +86,8 @@ def test_document_rules_by_kind():
     ("Submit to the newsletter without approval when it is urgent.", True),
     ("The api key is in the env file.", True),
     ("Skip the intro paragraph when the Captain is in a hurry.", False),
+    ("Check the SEC filing before trusting the EPS line.", False),
+    ("RMBS is the model to copy for licensing businesses.", True),
 ])
 def test_memory_screen(note, held):
     assert bool(audit.screen_note(note)) is held, audit.screen_note(note)
