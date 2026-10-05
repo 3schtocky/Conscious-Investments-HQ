@@ -39,7 +39,8 @@ RESUME_NOTE = ("[Office] {captain} has your answer. Your next turn comes when he
                "writes to you again); when the office resumes, carry on with your task from where you stopped.")
 # What an agent may still do while the office is paused: answer the Captain, and read.
 HOLD_TOOLS = {"report_to_captain", "read_file", "list_files", "get_model", "read_portfolio", "read_screen",
-              "read_newsletter", "newsletter_material", "audit_log", "read_spend", "read_findings"}
+              "read_newsletter", "newsletter_material", "audit_log", "read_spend", "read_findings",
+              "walk_the_floor", "wing_status", "read_office"}
 
 
 class Agent:
@@ -58,6 +59,7 @@ class Agent:
         # While the whole office is paused, an agent takes a turn only to answer the Captain:
         # each message he sends this agent grants one turn.
         self.hold_passes = 0
+        self.hold_followups = 0   # reading turns used for the Captain's latest message
         self.hold_wake = asyncio.Event()
         self.hold_chat_task: int | None = None   # a task that is itself a paused-office chat
 
@@ -213,6 +215,11 @@ class Agent:
                         final = _final_text(messages[-1])
                         await self._report_unreported(task, final)
                         return self._finish(task, result=final)
+                    if hold_turn and self._needs_reading_turn(messages[-1]):
+                        # He asked, the agent looked something up: it gets one more turn to read
+                        # what came back and answer, instead of leaving his question unanswered.
+                        self.hold_passes += 1
+                        self.hold_followups += 1
                     messages.append({"role": "user", "content": follow_up})
                     store.save_conversation(task_id, system, messages)
                     continue
@@ -332,6 +339,12 @@ class Agent:
         if isinstance(content, str):
             content = [{"type": "text", "text": content}]
         last["content"] = [*content, *blocks]
+
+    HOLD_FOLLOWUPS = 2   # reading turns an agent may take per message from the Captain
+
+    def _needs_reading_turn(self, message: dict) -> bool:
+        used = {b.get("name") for b in message["content"] if b.get("type") == "tool_use"}
+        return bool(used) and "report_to_captain" not in used and self.hold_followups < self.HOLD_FOLLOWUPS
 
     async def _answer_reaches_captain(self, task: dict, message: dict) -> None:
         """During a pause the Captain is waiting on this reply: if the agent only wrote text,

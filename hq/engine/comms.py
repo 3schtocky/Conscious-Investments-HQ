@@ -80,12 +80,13 @@ class Comms:
         task.add_done_callback(self.office._running.discard)
         return task
 
-    async def ask(self, delegate_id: str, asker: str, question: str, *, depth: int = 0) -> str:
+    async def ask(self, delegate_id: str, asker: str, question: str, *, depth: int = 0,
+                  visit: bool = True) -> str:
         """Ask a wing's delegate a question and wait for its answer (a status check, a quick
         fact). Falls back to the digest read out by code when no model turn is possible."""
         o = self.office
         agent = o.agents[delegate_id]
-        o.say(asker, [delegate_id], question)
+        o.say(asker, [delegate_id], question, visit=visit)
         if self.can_think():
             note = f"[Question from {o.name(asker)} ({asker})]: {question}"
             answer = await self._safe_run(delegate_id, asker, note, depth=depth + 1)
@@ -93,7 +94,7 @@ class Comms:
             answer = ""
         if not answer:
             answer = self.code_answer(agent.wing)
-        o.say(delegate_id, [asker], answer)
+        o.say(delegate_id, [asker], answer, visit=visit)
         return answer
 
     # the comms loop -----------------------------------------------------------------------

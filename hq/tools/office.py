@@ -461,8 +461,8 @@ def tools_for(tier: str, agent_id: str, wing: str | None = None) -> list[Tool]:
     if tier == "lead" and wing != "audit":   # the delegate speaks for the wing in group chats
         base = [t for t in base if t.name != "post_to_group"]
     if agent_id == "chief_of_staff":   # Juno walks the floor: she can read and ask any wing
-        from hq.tools.comms import ASK_DELEGATE, WING_STATUS
-        base = base + [WING_STATUS, ASK_DELEGATE]
+        from hq.tools.comms import ASK_DELEGATE, WALK_THE_FLOOR, WING_STATUS
+        base = base + [WALK_THE_FLOOR, WING_STATUS, ASK_DELEGATE]
     base = base + [NOTE_TO_SELF]
     if tier == "lead" or agent_id == "chief_of_staff":
         base = base + [PROPOSE_WIKI]

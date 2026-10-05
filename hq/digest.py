@@ -136,9 +136,7 @@ def wing_digest(office: Office, wing: str) -> dict:
     waiting = [_clip(c["title"], 60) for c in office.store.approvals("pending") if c["agent"] in ids]
     queued = [t for t in office.store.open_tasks()
               if t["assignee"] in ids and t["status"] == "queued"]
-    if office.held:
-        state = "held"
-    elif blockers:
+    if blockers:
         state = "blocked"
     elif waiting and not any(p["working_on"] for p in people):
         state = "waiting"
@@ -148,6 +146,8 @@ def wing_digest(office: Office, wing: str) -> dict:
         state = "queued"
     else:
         state = "idle"
+    if office.held and state in ("working", "queued"):
+        state = "held"   # work waits where it is until the Captain resumes the office
     return {"wing": wing, "name": office.wing_name(wing), "state": state, "people": people,
             "blockers": list(dict.fromkeys(blockers)), "waiting_on_captain": waiting,
             "queued": len(queued), "headline": _sentence(office, people, blockers, waiting)}
@@ -156,6 +156,6 @@ def wing_digest(office: Office, wing: str) -> dict:
 def office_digest(office: Office) -> dict:
     """Every wing, for Juno's rounds and the Rounds board. Same data live or paused."""
     wings = [wing_digest(office, w) for w in office._wings]
-    busy = [w for w in wings if w["state"] in ("working", "blocked", "waiting", "queued")]
+    busy = [w for w in wings if w["state"] != "idle"]
     return {"ts": time.time(), "held": office.held, "clocked_out": office.clocked_out,
             "active": bool(busy), "wings": wings}

@@ -19,6 +19,7 @@ from hq.engine.events import EventBus
 from hq.engine.guards import ConversationGuard, GuardBlock
 from hq.engine.ledger import BudgetExhausted, Ledger
 from hq.engine.llm import AnthropicClient, ModelClient
+from hq.rounds import Rounds
 from hq.store import Store
 
 log = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ class Office:
         self.slots = asyncio.Semaphore(office()["limits"]["max_concurrent_agents"])
         self.conversations = ConversationGuard()
         self.comms = Comms(self)   # the delegates' comms desk (hq/engine/comms.py)
+        self.rounds = Rounds(self)   # Juno's walk of the floor (hq/rounds.py)
         self.clocked_out = False
         self.quant_dir = quant_dir or ROOT / "Quant"   # the Quant Department's model files
         self._model_locks: dict[str, asyncio.Lock] = {}
@@ -186,13 +188,14 @@ class Office:
         for r in recipients:
             self._deliver(sender, r, text, channel)
 
-    def say(self, sender: str, recipients: list[str], text: str, task_id: int | None = None) -> None:
+    def say(self, sender: str, recipients: list[str], text: str, task_id: int | None = None,
+            visit: bool = True) -> None:
         """Put a line in the chat and on the floor without delivering it to anyone's inbox: the
         asker already has the answer (comms exchanges), so nothing new should wake a colleague."""
         channel = _channel(sender, recipients, self.agents)
         self.store.add_chat(channel=channel, sender=sender, recipients=recipients, text=text,
                             task_id=task_id)
-        away = [r for r in recipients if self.agents[r].wing != self.agents[sender].wing]
+        away = [r for r in recipients if self.agents[r].wing != self.agents[sender].wing] if visit else []
         if away and channel != "lobby":
             self.bus.publish("move", sender, task_id, to=f"desk:{away[0]}")
         self.bus.publish("chat", sender, task_id, channel=channel, recipients=recipients, text=text)
@@ -1031,6 +1034,7 @@ class Office:
         if self.held:
             agent = self.agents[agent_id]
             agent.hold_passes += 1
+            agent.hold_followups = 0
             agent.hold_wake.set()
 
     def on_budget_exhausted(self, detail: str) -> None:

@@ -152,6 +152,22 @@ RELAY_REQUEST = Tool(
 )
 
 
+async def _walk_the_floor(ctx: ToolContext, inp: dict) -> str:
+    result = await ctx.office.rounds.walk(reason="asked")
+    return result["summary"]
+
+
+WALK_THE_FLOOR = Tool(
+    name="walk_the_floor",
+    description=("Do your rounds now: walk to each busy wing's delegate, ask where the wing stands, "
+                 "and get the roll-up back. Use it when {captain} asks where things are. It works "
+                 "while the office is paused too (then it reads the live activity log, with no "
+                 "model turns). Follow it with `report_to_captain`."),
+    input_schema={"type": "object", "properties": {}},
+    handler=_walk_the_floor,
+)
+
+
 def comms_tools(depth: int = 0) -> list[Tool]:
     """A delegate's comms tools. A delegate asked by another delegate (depth 1) cannot ask a
     third, so questions never chain across the office."""

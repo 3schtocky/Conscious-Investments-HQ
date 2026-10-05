@@ -217,8 +217,10 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
                 await asyncio.sleep(1800)
 
         state["reminder_task"] = asyncio.create_task(reminders())
+        state["rounds_task"] = asyncio.create_task(office.rounds.run_forever())   # Juno's rounds
         yield
         state["reminder_task"].cancel()
+        state["rounds_task"].cancel()
         task = state.get("demo_task")
         if task:
             task.cancel()
@@ -416,6 +418,18 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         if path is None:
             raise HTTPException(404)
         return FileResponse(path, media_type="image/png")
+
+    @app.get("/api/rounds")
+    async def rounds() -> JSONResponse:
+        """The Rounds board: every wing's live state (read by code, free) and Juno's last walk."""
+        from hq.digest import office_digest
+
+        return JSONResponse({"digest": office_digest(office()), "last_round": office().rounds.latest()})
+
+    @app.post("/api/rounds/walk")
+    async def rounds_walk() -> JSONResponse:
+        """The Captain asks Juno to walk the floor now and post the roll-up in his chat."""
+        return JSONResponse(await office().rounds.walk(reason="asked", post=True))
 
     @app.post("/api/office/hold")
     async def office_hold() -> JSONResponse:

@@ -55,5 +55,17 @@ async def test_digest_works_while_the_office_is_held(make_office):
     office, _ = make_office()
     office.hold()
     d = office_digest(office)
-    assert d["held"] and all(w["state"] == "held" for w in d["wings"])
+    assert d["held"] and not d["active"] and all(w["state"] == "idle" for w in d["wings"])
     assert person_digest(office, "er_lead")["working_on"] is None
+
+
+async def test_work_in_hand_shows_as_held_while_paused(make_office):
+    office, llm = make_office()
+    office.hold()
+    llm.script("er_lead", text_turn("Done."))
+    office.assign("er_lead", "Memo.", title="Memo")
+    await __import__("asyncio").sleep(0.05)   # the task is queued and waits at the pause gate
+    d = office_digest(office)
+    assert d["active"] and next(w for w in d["wings"] if w["wing"] == "equity_research")["state"] == "held"
+    office.release()
+    await office.idle()
