@@ -80,7 +80,7 @@ SEND_MESSAGE = Tool(
         "type": "object",
         "properties": {
             "to": {"type": "array", "items": {"type": "string"},
-                   "description": "Teammate ids or nicknames, e.g. [\"Ledger\"]"},
+                   "description": "Teammate ids or nicknames, e.g. [\"er_associate\"]"},
             "text": {"type": "string", "description": "The message."},
         },
         "required": ["to", "text"],

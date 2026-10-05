@@ -165,7 +165,7 @@ def main() -> None:
     p_smoke = sub.add_parser("smoke", help="one tiny API call to check the key and pricing")
     p_smoke.add_argument("--tier", default="lead", help="model tier (lead|associate) or model id")
     p_run = sub.add_parser("run-agent", help="assign a task to one agent and watch the office")
-    p_run.add_argument("agent", help="agent id or nickname, e.g. Quill")
+    p_run.add_argument("agent", help="agent role id, e.g. er_lead (a nickname also works)")
     p_run.add_argument("task", help="what you want done")
     p_run.add_argument("--title")
     sub.add_parser("spend", help="today's spend by agent and model")

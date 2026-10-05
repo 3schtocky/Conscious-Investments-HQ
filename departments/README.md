@@ -19,3 +19,6 @@ Everything except `README.md` and `cases/` is added to the system prompt of ever
 - **Refine here, not in code.** Change how a department thinks by editing these files; the next task picks it up.
 
 `equity_research` holds the wing's charter only; its code and coverage live in the `Equity Research/` repo (a git submodule at the project root). The Chief of Staff (wing `executive`) is guided by `prompts/chief_of_staff.md`.
+
+## Naming agents
+Code, tests, prompts and charters refer to colleagues by **role id** (`er_lead`, `quant_associate`, `screen_lead`, `audit_lead`, `cr_lead`, `chief_of_staff` and so on), never by nickname: the Captain can rename anyone in Settings. In charters and playbooks write `{screen_lead}` and the current nickname is filled in when the prompt is built.

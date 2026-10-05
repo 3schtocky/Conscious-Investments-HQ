@@ -11,6 +11,6 @@ Each shortlisted name gets one page (`pitch.md`), readable in two minutes by som
 
 Standards:
 - No price target, rating, fair value, upside or "cheap/expensive". The setup, not the valuation.
-- Every figure sourced (filing, the screen run, or a URL Pip logged) or marked `[VERIFY]`.
+- Every figure sourced (filing, the screen run, or a URL {screen_associate} logged) or marked `[VERIFY]`.
 - Plain text, short sentences, no hype words. If a sentence would sound the same about any company, cut it.
 - One page. If it needs more, the thesis is not yet clear.

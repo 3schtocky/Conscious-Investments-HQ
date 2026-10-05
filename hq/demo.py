@@ -32,15 +32,43 @@ def _usage(inp: int, out: int, cached: int = 0) -> dict:
             "cache_creation_input_tokens": 0}
 
 
+_TEAM_LINE = re.compile(r"^- (.+?) \(`(\w+)`\)", re.MULTILINE)
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+
+def _names(system: str) -> dict[str, str]:
+    """role id -> current nickname, read from the agent's own prompt (its colleague list and its
+    'You are' line), so a scene written by role keeps working after a rename in Settings."""
+    names = {i: n for n, i in _TEAM_LINE.findall(system)}
+    me = re.search(r"You are \*\*(.+?)\*\* \(`(\w+)`\)", system)
+    if me:
+        names[me.group(2)] = me.group(1)
+    return names
+
+
+def _fill(value, names: dict[str, str]):
+    """Fill {role_id} placeholders in a scripted line (strings, lists and dicts alike)."""
+    if isinstance(value, str):
+        return _PLACEHOLDER.sub(lambda m: names.get(m.group(1), m.group(0)), value)
+    if isinstance(value, list):
+        return [_fill(v, names) for v in value]
+    if isinstance(value, dict):
+        return {k: _fill(v, names) for k, v in value.items()}
+    return value
+
+
 def think(thinking: str, text: str | None = None, *tools: tuple[str, dict]) -> Callable:
-    """A scripted turn: some thinking, optional text, optional tool calls."""
+    """A scripted turn: some thinking, optional text, optional tool calls. Lines may name a
+    colleague by role id, e.g. "{er_associate} will pull the facts"; the current nickname is
+    filled in when the turn is played."""
     def build(params: dict) -> TurnResult:
-        content = [{"type": "thinking", "thinking": thinking, "signature": "demo"}]
+        names = _names(params["system"])
+        content = [{"type": "thinking", "thinking": _fill(thinking, names), "signature": "demo"}]
         if text:
-            content.append({"type": "text", "text": text})
+            content.append({"type": "text", "text": _fill(text, names)})
         for name, inp in tools:
             content.append({"type": "tool_use", "id": f"toolu_demo_{next(_ids)}", "name": name,
-                            "input": inp})
+                            "input": _fill(inp, names)})
         stop = "tool_use" if tools else "end_turn"
         lead = "sonnet" in params["model"]
         return TurnResult(content=content, stop_reason=stop,
@@ -79,22 +107,22 @@ _THANKS = re.compile(r"\b(thanks|thank you|great work|well done|nice work|good j
 _ANNOUNCE_LINES = {
     "equity_research": ["I'll check the memos in progress against this today.",
                         "noted; I'll line the coverage up with it and flag any conflict.",
-                        "understood, and I'll tell Ledger before the next pull.",
+                        "understood, and I'll tell {er_associate} before the next pull.",
                         "clear. I'll bring any question to you before I act on it."],
     "quant": ["I'll check which models this touches before the next build.",
               "noted; any model it affects gets rebuilt and re-checked first.",
               "understood. I'll flag it if the numbers say otherwise.",
-              "clear, and Delta will work to it from the next run."],
+              "clear, and {quant_associate} will work to it from the next run."],
     "screening": ["I'll keep it in mind for the next screen and the shortlist.",
                   "noted; it changes how I sanity-check the names.",
-                  "understood. Pip will work to it from the next pitch.",
+                  "understood. {screen_associate} will work to it from the next pitch.",
                   "clear. I'll raise anything that conflicts with the screen."],
     "audit": ["I'll add it to what the checks look for.",
-              "noted; Tally will watch for it in the logs.",
+              "noted; {audit_associate} will watch for it in the logs.",
               "understood, and I'll hold work to it when I review.",
               "clear. I'll flag anything that drifts from it."],
     "client_relations": ["I'll reflect it in the next newsletter draft.",
-                         "noted; Wren will write to it from today.",
+                         "noted; {cr_associate} will write to it from today.",
                          "understood. I'll make sure nothing we send contradicts it.",
                          "clear, and I'll check the Outbox against it."],
     "executive": ["I'll keep the leads pointed at it.",
@@ -325,7 +353,7 @@ class DemoLLM:
         """Vera reviewing flags nobody scripted (e.g. raised by the Captain's own demo chat)."""
         ids = [int(n) for n in _FINDING.findall(first)]
         if len(msgs) == 1:
-            return think("Tally's checks flagged something. Evidence first.", None,
+            return think("{audit_associate}'s checks flagged something. Evidence first.", None,
                          ("read_findings", {}))(params)
         if len(msgs) == 3:
             return think("The check stands on what I can see. Closing each with a reason.", None,
@@ -384,8 +412,8 @@ def scene_gem_hunt(office: Office, llm: DemoLLM) -> None:
         picks.extend(clean[:2])
         names = " and ".join(r["ticker"] for r in picks) or "the top names"
         return think("Two clean inflections near the top; the flagged names (lumpy revenue or "
-                     "commodity-driven) I set aside. Pip writes the pitches.", None,
-                     ("delegate", {"to": "Pip", "job": f"Write one-page pitches for {names} with "
+                     "commodity-driven) I set aside. {screen_associate} writes the pitches.", None,
+                     ("delegate", {"to": "screen_associate", "job": f"Write one-page pitches for {names} with "
                                    "pitch_memo (Gems screen). Return what each pitch shows."}))(params)
 
     def scout_watchlists(params: dict) -> TurnResult:
@@ -429,7 +457,7 @@ def scene_gem_hunt(office: Office, llm: DemoLLM) -> None:
                                                   + ", ".join(f"{r['ticker']} (coverage/{r['ticker']}/pitch.md)"
                                                               for r in picks),
                                                   "confidence": "medium"}))(p))
-    office.assign("Scout", "Run the Gems hunt on today's screen.",
+    office.assign("screen_lead", "Run the Gems hunt on today's screen.",
                   title="Gems hunt (demo, real tools)")
 
 
@@ -454,16 +482,16 @@ def scene_memo(office: Office, llm: DemoLLM) -> None:
     name, short = co["name"], co["short"]
     llm.script("er_lead",
                think("A one-page memo needs the snapshot, the thesis, the valuation vs history and "
-                     f"the Street view. Ledger can pull the facts pack and the draft model while I "
+                     f"the Street view. {{er_associate}} can pull the facts pack and the draft model while I "
                      f"frame the thesis for {short}.", f"Starting the {short} memo.",
-                     ("delegate", {"to": "Ledger", "job": f"Pull the facts pack and draft model for "
+                     ("delegate", {"to": "er_associate", "job": f"Pull the facts pack and draft model for "
                                    f"{name}. Return the snapshot table with a "
                                    "source for every figure."})),
-               think("Ledger's pack is clean and sourced. Before this goes to the Captain, Vera "
+               think("{er_associate}'s pack is clean and sourced. Before this goes to the Captain, {audit_lead} "
                      "should spot-check the sourcing.", None,
-                     ("send_message", {"to": ["Vera"], "text": "Could you spot-check the "
+                     ("send_message", {"to": ["audit_lead"], "text": "Could you spot-check the "
                                        f"sourcing on the {short} memo draft?"})),
-               think("Vera's on it. I'll report the draft.", None,
+               think("{audit_lead}'s on it. I'll report the draft.", None,
                      ("request_approval", {"kind": "brief", "title": f"{name} memo (demo)",
                                            "ticker": co["ticker"],
                                            "summary": f"Thesis: {co['thesis']}. Audit is "
@@ -480,17 +508,17 @@ def scene_memo(office: Office, llm: DemoLLM) -> None:
     llm.script("audit_lead",
                think("Checking that each figure in the memo traces to a filing, model.json or a "
                      f"logged URL. Two items lack sources in {co['gap']}.", None,
-                     ("send_message", {"to": ["Quill"], "text": f"Two figures in {co['gap']} need "
+                     ("send_message", {"to": ["er_lead"], "text": f"Two figures in {co['gap']} need "
                                        "sources; tag them [VERIFY] or cite the 10-Q."})),
                think("Feedback sent.", "Sourcing check done: two fixes requested."))
-    office.assign("Quill", f"Draft a one-page memo on {name}.", title=f"{short} memo (demo)")
+    office.assign("er_lead", f"Draft a one-page memo on {name}.", title=f"{short} memo (demo)")
 
 
 def scene_lobby_sync(office: Office, llm: DemoLLM) -> None:
     llm.script("chief_of_staff",
                think("A quick Monday sync: each lead gives one line on priorities and blockers.",
                      None,
-                     ("send_message", {"to": ["Quill", "Scout", "Harbor"],
+                     ("send_message", {"to": ["er_lead", "screen_lead", "cr_lead"],
                                        "text": "Quick Lobby sync: one line each on this week's "
                                                "priority and any blocker."})),
                think("Collected. I'll summarize for the Captain.", None,
@@ -501,10 +529,10 @@ def scene_lobby_sync(office: Office, llm: DemoLLM) -> None:
     for lead, line in (("er_lead", "Northwind memo to the Captain by Wednesday."),
                        ("screen_lead", "Gems refresh Friday, no blockers."),
                        ("cr_lead", "Newsletter draft ready Thursday.")):
-        llm.script(lead, think("Juno wants one line.", None,
-                               ("send_message", {"to": ["Juno"], "text": line})),
-                   think("Sent.", "Replied to Juno."))
-    office.assign("Juno", "Run a quick Monday sync with the leads.",
+        llm.script(lead, think("{chief_of_staff} wants one line.", None,
+                               ("send_message", {"to": ["chief_of_staff"], "text": line})),
+                   think("Sent.", "Replied to {chief_of_staff}."))
+    office.assign("chief_of_staff", "Run a quick Monday sync with the leads.",
                   title="Monday sync (demo)")
 
 
@@ -576,13 +604,13 @@ def scene_newsletter(office: Office, llm: DemoLLM) -> None:
                                         "figures": [], "open_questions": [], "confidence": "high"}))(params)
 
     llm.script("cr_lead",
-               think("This week's note. Wren drafts from what is publishable; I check the voice and "
+               think("This week's note. {cr_associate} drafts from what is publishable; I check the voice and "
                      "the numbers, then finalize.", None,
-                     ("delegate", {"to": "Wren", "job": "Draft this week's newsletter: start "
+                     ("delegate", {"to": "cr_associate", "job": "Draft this week's newsletter: start "
                                    "from newsletter_material, lead with how we screen, list the "
                                    "watchlist as ideas only, and save it with save_newsletter. Return "
                                    "the issue id."})),
-               lambda p: think("Reading Wren's draft before it goes anywhere.", None,
+               lambda p: think("Reading {cr_associate}'s draft before it goes anywhere.", None,
                                ("read_newsletter", {"issue": issue.get("issue", "")}))(p),
                lambda p: think("It says what we do and promises nothing. The checks pass. Building "
                                "the files and filing it for the Captain.", None,
@@ -593,13 +621,13 @@ def scene_newsletter(office: Office, llm: DemoLLM) -> None:
                think("First, what are we actually allowed to publish this week?", None,
                      ("newsletter_material", {})),
                wren_drafts, wren_returns)
-    office.assign("Harbor", "Prepare this week's newsletter.", title="Newsletter (demo)")
+    office.assign("cr_lead", "Prepare this week's newsletter.", title="Newsletter (demo)")
 
 
 def scene_audit(office: Office, llm: DemoLLM) -> None:
     """Audit end to end with the REAL checks: Scout files a card that states a price target for
-    a name with no approved model. Tally's code check flags it, Vera is called in, reads the
-    log, upholds the flag and asks for the fix. Scout's two desk notes show the memory screen:
+    a name with no approved model. The Audit associate's code check flags it, the Audit lead is called in,
+    reads the log, upholds the flag and asks for the fix. The Screening lead's two desk notes show the memory screen:
     one saves, one is held for the Captain. Only the agents' words are scripted."""
     def vera_rules(params: dict) -> TurnResult:
         ids = [int(n) for n in _FINDING.findall(_text_of(params["messages"][0]["content"]))]
@@ -609,7 +637,7 @@ def scene_audit(office: Office, llm: DemoLLM) -> None:
                      *[("resolve_finding", {"finding": i, "verdict": "upheld",
                                             "note": "The card states a $48.00 price target; NWST "
                                                     "has no approved model."}) for i in ids],
-                     ("send_message", {"to": ["Scout"], "text": "Your Northwind card states a "
+                     ("send_message", {"to": ["screen_lead"], "text": "Your Northwind card states a "
                                        "$48.00 price target, and there is no approved model for "
                                        "it. Please take the target out and describe the setup "
                                        "only; Quant values it if Stott sends it to research "
@@ -627,12 +655,12 @@ def scene_audit(office: Office, llm: DemoLLM) -> None:
                                            "within 18 months. Our price target is $48.00. "
                                            "Should this go to research?"})),
                think("Sent.", "Northwind card is on the Captain's desk."),
-               think("Vera is right: valuation is Quant's call, not mine.",
+               think("{audit_lead} is right: valuation is Quant's call, not mine.",
                      "Understood. I'll keep targets out of Screening cards."))
     llm.script("audit_lead",
-               think("Tally's check flagged a Screening card. I read what Scout actually did "
+               think("{audit_associate}'s check flagged a Screening card. I read what {screen_lead} actually did "
                      "before ruling.", None,
-                     ("audit_log", {"agent": "Scout", "limit": 12}),
+                     ("audit_log", {"agent": "screen_lead", "limit": 12}),
                      ("get_model", {"ticker": "NWST"})),
                vera_rules,
                think("One more thing worth keeping for everyone.", None,
@@ -640,7 +668,7 @@ def scene_audit(office: Office, llm: DemoLLM) -> None:
                                        "target or rating; valuation waits for Quant's approved "
                                        "model."})),
                think("Done.", "Flag upheld, fix requested, wiki entry proposed."))
-    office.assign("Scout", "Put Northwind Storage in front of the Captain as a research "
+    office.assign("screen_lead", "Put Northwind Storage in front of the Captain as a research "
                   "candidate.", title="Northwind pitch card (demo)")
 
 
@@ -703,7 +731,7 @@ def scene_portfolio(office: Office, llm: DemoLLM) -> None:
                      None, ("read_portfolio", {})),
                quill_acts,
                think("Done.", "Portfolio reviewed."))
-    office.assign("Quill", "Review the paper portfolio and propose an entry if one qualifies.",
+    office.assign("er_lead", "Review the paper portfolio and propose an entry if one qualifies.",
                   title="Portfolio review (demo)")
 
 
@@ -731,19 +759,19 @@ def scene_quant_model(office: Office, llm: DemoLLM) -> None:
     llm.script("er_lead",
                think("Our thesis and assumptions for META are in coverage/META. Quant owns the "
                      "model, so I hand the assumptions over instead of building a valuation.", None,
-                     ("send_message", {"to": ["Sigma"], "text": f"{t} assumptions are ready in "
+                     ("send_message", {"to": ["quant_lead"], "text": f"{t} assumptions are ready in "
                                        f"coverage/{t}. Please build the "
                                        "model."})),
                think("Handed off.", "Assumptions sent to Quant."))
     llm.script("quant_lead",
                think("DCF with a CAPM cost of capital, the multiples blend, bull/base/bear, then a "
-                     "Monte Carlo. Delta builds and checks; I review and sign off.", None,
-                     ("delegate", {"to": "Delta", "job": f"Build the {t} model with build_model, "
+                     "Monte Carlo. {quant_associate} builds and checks; I review and sign off.", None,
+                     ("delegate", {"to": "quant_associate", "job": f"Build the {t} model with build_model, "
                                    "then run_simulations. Return the version, price targets, the "
                                    "formula-check result and the top value drivers."})),
                lambda p: _sigma_files_for_approval(p, t),
-               think("Quill needs to know it's with the Captain.", None,
-                     ("send_message", {"to": ["Quill"], "text": f"{t} model is with Stott for "
+               think("{er_lead} needs to know it's with the Captain.", None,
+                     ("send_message", {"to": ["er_lead"], "text": f"{t} model is with Stott for "
                                        "approval. Hold any figures until it's approved."})),
                think("Done.", "Model sent for approval."))
     llm.script("quant_associate",
@@ -752,7 +780,7 @@ def scene_quant_model(office: Office, llm: DemoLLM) -> None:
                think("Built and checked. Now the Monte Carlo and the value drivers.", None,
                      ("run_simulations", {"ticker": t, "runs": 1000})),
                lambda p: _delta_reports(p, t))
-    office.assign("Quill", f"Hand the {t} assumptions to Quant for the model.", title=f"{t} to Quant (demo, real tools)")
+    office.assign("er_lead", f"Hand the {t} assumptions to Quant for the model.", title=f"{t} to Quant (demo, real tools)")
 
 
 def _delta_reports(params: dict, t: str) -> TurnResult:

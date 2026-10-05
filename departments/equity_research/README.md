@@ -1,6 +1,6 @@
 # Equity Research department
 
-Quill (lead) and Ledger (associate). Initiating-coverage briefs and memos, built on the Equity Research repo (`Equity Research/`, erb).
+Lead (`er_lead`) and associate (`er_associate`). Initiating-coverage briefs and memos, built on the Equity Research repo (`Equity Research/`, erb).
 
 How they think lives here, in plain Markdown you can edit:
 - `charter.md`: role, tools, workflow, hard rules.

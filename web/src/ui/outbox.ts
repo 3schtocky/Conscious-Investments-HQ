@@ -81,7 +81,7 @@ export class OutboxPanel {
     const v = this.view;
     if (!v) { this.root.append(h("p", { class: "empty" }, "Loading…")); return; }
     this.root.append(h("h4", { class: "section" }, "Newsletter"));
-    if (!v.issues.length) this.root.append(h("p", { class: "empty" }, "No issues yet. Ask Harbor for this week's newsletter."));
+    if (!v.issues.length) this.root.append(h("p", { class: "empty" }, `No issues yet. Ask ${this.state.name("cr_lead")} for this week's newsletter.`));
     for (const i of v.issues) this.root.append(this.issueEl(i));
     if (v.deliverables.length) {
       this.root.append(h("h4", { class: "section" }, "Client memos"));

@@ -1,7 +1,9 @@
 """Shared fixtures: an Office wired to an in-memory store and a scripted fake model.
 
-The fake picks each agent's next scripted turn by the nickname in its system prompt, so tests
-read like a screenplay: {"Quill": [turn, turn], "Ledger": [turn]}.
+The fake picks each agent's next scripted turn by the agent's role id in its system prompt, so
+tests read like a screenplay: {"er_lead": [turn, turn], "er_associate": [turn]}. Tests always name
+agents by role id, never by nickname: the Captain can rename anyone in Settings. Every test runs
+on a pinned copy of the committed config (tests/fixtures/config), not the live config/ folder.
 """
 
 from __future__ import annotations
@@ -9,7 +11,9 @@ from __future__ import annotations
 import copy
 import itertools
 import re
+import shutil
 from collections import defaultdict
+from pathlib import Path
 
 import pytest
 
@@ -48,14 +52,14 @@ def tool_turn(*calls: tuple[str, dict], text: str | None = None,
 class FakeLLM:
     def __init__(self, office_ref: dict):
         self.scripts: dict[str, list] = defaultdict(list)
-        self.calls: list[dict] = []   # (nickname, params) for assertions
+        self.calls: list[dict] = []   # (agent id, params) for assertions
         self._office = office_ref
 
-    def script(self, nickname: str, *turns) -> None:
-        self.scripts[nickname].extend(turns)
+    def script(self, agent_id: str, *turns) -> None:
+        self.scripts[agent_id].extend(turns)
 
     async def turn(self, *, params, on_delta=None, on_block=None) -> TurnResult:
-        who = re.search(r"You are \*\*(.+?)\*\*", params["system"]).group(1)
+        who = re.search(r"You are \*\*.+?\*\* \(`(\w+)`\)", params["system"]).group(1)
         self.calls.append({"who": who, "params": copy.deepcopy(params)})
         if not self.scripts[who]:
             raise AssertionError(f"No scripted turn left for {who}")
@@ -73,7 +77,23 @@ class FakeLLM:
 
 
 @pytest.fixture(autouse=True)
-def _never_spend(monkeypatch):
+def _pinned_config(monkeypatch, tmp_path_factory):
+    """Run on a copy of the committed config, so renames and other Settings edits in the live
+    config/ folder never change what a test sees."""
+    from hq import config, roster_edit
+
+    pinned = tmp_path_factory.mktemp("config")
+    shutil.copytree(Path(__file__).parent / "fixtures" / "config", pinned, dirs_exist_ok=True)
+    monkeypatch.setattr(config, "CONFIG_DIR", pinned)
+    monkeypatch.setattr(roster_edit, "ROSTER", pinned / "roster.yaml")
+    cached_office = config.office   # _never_spend swaps this for a lambda while a test runs
+    cached_office.cache_clear()
+    yield
+    cached_office.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _never_spend(monkeypatch, _pinned_config):
     """Tests never reach the real API, whatever config/office.yaml says: the switch is forced
     off, and the SDK is pointed at a dead local port as a second line of defence."""
     from hq import config
@@ -118,6 +138,14 @@ def make_office(monkeypatch, tmp_path):
         return office_, llm
 
     return _make
+
+
+def nick(agent_id: str) -> str:
+    """An agent's display name in the pinned test roster. Use it where the app shows a nickname
+    (names in chat text, tool results and views); everywhere else tests use the role id."""
+    from hq import config
+
+    return next(a["nickname"] for a in config.roster()["agents"] if a["id"] == agent_id)
 
 
 # cost of one USAGE turn at the fake (Sonnet) price: 1000*2 + 200*10 per MTok = $0.004

@@ -1,6 +1,6 @@
 # Quant department
 
-Sigma (lead) and Delta (associate). Every price target: versioned models, Excel by default, approved by {captain} before anyone uses the numbers. Code in `hq/quant/`; model files in `Quant/` (gitignored).
+Quant lead (`quant_lead`) and associate (`quant_associate`). Every price target: versioned models, Excel by default, approved by {captain} before anyone uses the numbers. Code in `hq/quant/`; model files in `Quant/` (gitignored).
 
 How they think lives here, in plain Markdown you can edit:
 - `charter.md`: role, tools, workflow, hard rules.

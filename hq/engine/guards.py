@@ -130,7 +130,7 @@ class ConversationGuard:
                 if self._threads[pair] >= self.max_exchanges:
                     raise GuardBlock(
                         f"You and {r} have exchanged {self._threads[pair]} messages in a row. "
-                        "Bring in Juno (chief_of_staff) or wrap up with what you have.")
+                        "Bring in the chief_of_staff or wrap up with what you have.")
 
     def record_message(self, sender: str, recipients: list[str], text: str) -> None:
         self._recent[sender].append(" ".join(text.lower().split()))

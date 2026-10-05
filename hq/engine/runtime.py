@@ -441,7 +441,8 @@ class Office:
     def send_watch_to_research(self, watch_id: int) -> dict:
         """The Captain's 'Send to research': routed through Juno like any office message."""
         w = self.store.watch(watch_id)
-        pitch = f" Scout's pitch is in coverage/{w['ticker']}/pitch.md." if w["pitch"] else ""
+        pitch = (f" {self.name('screen_lead')}'s pitch is in coverage/{w['ticker']}/pitch.md."
+                 if w["pitch"] else "")
         text = (f"Please start research on {w['ticker']} from the watchlist ({w['source']}). "
                 f"Screening's thesis: {w['thesis']}.{pitch}")
         out = self.captain_send("office", text)
@@ -459,10 +460,12 @@ class Office:
         week = f"{now.isocalendar().year}-W{now.isocalendar().week:02d}"
         if any(e["payload"].get("week") == week for e in self.store.events_of_type("weekly_reminder")):
             return False
+        screen = " and ".join(self.name(i) for i in ("screen_lead", "screen_associate") if i in self.agents)
+        cr = " and ".join(self.name(i) for i in ("cr_lead", "cr_associate") if i in self.agents)
         text = ("Good morning. It's Monday, so a fresh Gems or Core screen is ready whenever you want "
-                "it. Pulling the data is free; Scout and Pip reviewing the results and writing pitches "
-                "costs a little. Harbor and Wren can also draft this week's newsletter from what is "
-                "approved and on the watchlist. Just say the word and I'll route it.")
+                f"it. Pulling the data is free; {screen or 'Screening'} reviewing the results and writing "
+                f"pitches costs a little. {cr or 'Client Relations'} can also draft this week's newsletter "
+                "from what is approved and on the watchlist. Just say the word and I'll route it.")
         self.store.add_chat(channel=f"dm:{CAPTAIN}|chief_of_staff", sender="chief_of_staff",
                             recipients=[CAPTAIN], text=text)
         self.bus.publish("captain_report", "chief_of_staff", None, text=text)
@@ -762,7 +765,7 @@ class Office:
             raise ValueError("There is no Audit lead in the roster to review this.")
         task_id = self.send_to_vera([f])
         if task_id is None:
-            raise ValueError("The API is switched off, so Vera can't review this now. It stays "
+            raise ValueError("The API is switched off, so Audit can't review this now. It stays "
                              "open here; dismiss it or send it once the API is on.")
         return task_id
 

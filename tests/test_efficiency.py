@@ -24,7 +24,7 @@ def coverage(monkeypatch, tmp_path):
     return root
 
 
-def _seen(llm, who="Quill", call=1):
+def _seen(llm, who="er_lead", call=1):
     return [c for c in llm.calls if c["who"] == who][call]["params"]["messages"][-1]["content"]
 
 
@@ -38,7 +38,7 @@ async def _go(office, llm, who, *calls):
 # file paths ---------------------------------------------------------------------------------
 async def test_paths_with_the_ticker_or_coverage_prefix_still_work(make_office, coverage):
     office, llm = make_office()
-    r = await _go(office, llm, "Quill",
+    r = await _go(office, llm, "er_lead",
                   ("read_file", {"ticker": "ZZZZ", "path": "ZZZZ/facts/facts.md"}),
                   ("read_file", {"ticker": "ZZZZ", "path": "coverage/ZZZZ/facts/facts.md"}),
                   ("write_file", {"ticker": "ZZZZ", "path": "ZZZZ/notes/idea.md", "content": "hi"}))
@@ -49,7 +49,7 @@ async def test_paths_with_the_ticker_or_coverage_prefix_still_work(make_office, 
 
 async def test_a_wrong_file_name_comes_back_with_the_real_ones(make_office, coverage):
     office, llm = make_office()
-    r = await _go(office, llm, "Quill",
+    r = await _go(office, llm, "er_lead",
                   ("read_file", {"ticker": "ZZZZ", "path": "facts/filings/10-K_2025-12-31_risk_factors.txt"}))
     msg = r[0]["content"]
     assert r[0]["is_error"]
@@ -59,7 +59,7 @@ async def test_a_wrong_file_name_comes_back_with_the_real_ones(make_office, cove
 
 async def test_missing_folder_says_to_build_the_facts_first(make_office, coverage):
     office, llm = make_office()
-    r = await _go(office, llm, "Quill", ("read_file", {"ticker": "NOPE", "path": "brief.md"}))
+    r = await _go(office, llm, "er_lead", ("read_file", {"ticker": "NOPE", "path": "brief.md"}))
     assert "no files for NOPE yet" in r[0]["content"] and "erb_facts" in r[0]["content"]
 
 
@@ -67,7 +67,7 @@ async def test_other_wings_are_never_told_about_quants_private_files(make_office
     office, llm = make_office()
     (office.quant_dir / "ZZZZ").mkdir(parents=True)
     (office.quant_dir / "ZZZZ" / "secret_draft.md").write_text("draft")
-    r = await _go(office, llm, "Quill", ("read_file", {"ticker": "ZZZZ", "path": "nope.md"}))
+    r = await _go(office, llm, "er_lead", ("read_file", {"ticker": "ZZZZ", "path": "nope.md"}))
     assert "secret_draft" not in r[0]["content"]
 
 
@@ -75,7 +75,7 @@ async def test_other_wings_are_never_told_about_quants_private_files(make_office
 async def test_one_read_is_capped_and_says_where_to_continue(make_office, coverage):
     office, llm = make_office()
     (coverage / "wide.txt").write_text("\n".join("x" * 900 for _ in range(100)))
-    r = await _go(office, llm, "Quill", ("read_file", {"ticker": "ZZZZ", "path": "wide.txt", "lines": 400}))
+    r = await _go(office, llm, "er_lead", ("read_file", {"ticker": "ZZZZ", "path": "wide.txt", "lines": 400}))
     text = r[0]["content"]
     assert len(text) < 22_000
     assert "continue at offset" in text and "stopped at 20,000 characters" in text
@@ -83,7 +83,7 @@ async def test_one_read_is_capped_and_says_where_to_continue(make_office, covera
 
 async def test_search_finds_the_line_and_where_to_read(make_office, coverage):
     office, llm = make_office()
-    r = await _go(office, llm, "Quill",
+    r = await _go(office, llm, "er_lead",
                   ("search_file", {"ticker": "ZZZZ", "pattern": "series b preferred"}),
                   ("search_file", {"ticker": "ZZZZ", "pattern": "cash", "path": "facts/facts.md"}),
                   ("search_file", {"ticker": "ZZZZ", "pattern": "zzz-not-there"}),
@@ -96,7 +96,7 @@ async def test_search_finds_the_line_and_where_to_read(make_office, coverage):
 
 async def test_search_caps_the_hits(make_office, coverage):
     office, llm = make_office()
-    r = await _go(office, llm, "Quill", ("search_file", {"ticker": "ZZZZ", "pattern": "about nothing"}))
+    r = await _go(office, llm, "er_lead", ("search_file", {"ticker": "ZZZZ", "pattern": "about nothing"}))
     text = r[0]["content"]
     assert text.count("10-K_2025-12-31_mdna.txt:") == 25
     assert "474 more matches" in text   # 499 lines, 25 shown
@@ -114,28 +114,28 @@ def test_every_wing_that_reads_files_can_search_them():
 # submit_result -------------------------------------------------------------------------------
 async def test_submit_result_forgives_how_open_questions_are_written(make_office):
     office, llm = make_office()
-    llm.script("Quill", tool_turn(("delegate", {"to": "Ledger", "job": "j1"})),
-               tool_turn(("delegate", {"to": "Ledger", "job": "j2"})), text_turn("done"))
-    llm.script("Ledger",
+    llm.script("er_lead", tool_turn(("delegate", {"to": "er_associate", "job": "j1"})),
+               tool_turn(("delegate", {"to": "er_associate", "job": "j2"})), text_turn("done"))
+    llm.script("er_associate",
                tool_turn(("submit_result", {"findings": "A", "confidence": "high",
                                             "open_questions": "Is the warrant exercisable?"})),
                tool_turn(("submit_result", {"findings": "B", "confidence": "high",
                                             "open_questions": [{"question": "Cash runway?", "why": "no 10-Q"}]})))
-    office.assign("Quill", "x")
+    office.assign("er_lead", "x")
     await office.idle()
     first, second = (json.loads(c["content"]) for c in
-                     [_seen(llm, "Quill", 1)[0], _seen(llm, "Quill", 2)[0]])
+                     [_seen(llm, "er_lead", 1)[0], _seen(llm, "er_lead", 2)[0]])
     assert first["open_questions"] == ["Is the warrant exercisable?"]
     assert second["open_questions"] == ["Cash runway?; no 10-Q"]
 
 
 async def test_a_long_result_is_accepted_up_to_the_new_limit(make_office):
     office, llm = make_office()
-    llm.script("Quill", tool_turn(("delegate", {"to": "Ledger", "job": "j"})), text_turn("done"))
-    llm.script("Ledger", tool_turn(("submit_result", {"findings": "x" * 12_000, "confidence": "high"})))
-    office.assign("Quill", "x")
+    llm.script("er_lead", tool_turn(("delegate", {"to": "er_associate", "job": "j"})), text_turn("done"))
+    llm.script("er_associate", tool_turn(("submit_result", {"findings": "x" * 12_000, "confidence": "high"})))
+    office.assign("er_lead", "x")
     await office.idle()
-    assert len(json.loads(_seen(llm, "Quill", 1)[0]["content"])["findings"]) == 12_000
+    assert len(json.loads(_seen(llm, "er_lead", 1)[0]["content"])["findings"]) == 12_000
 
 
 # the loop guard ------------------------------------------------------------------------------

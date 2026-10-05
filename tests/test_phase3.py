@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from conftest import register_model, text_turn, tool_turn
+from conftest import nick, register_model, text_turn, tool_turn
 
 from hq.engine.llm import TurnResult
 from hq.engine.tone import RuleRewriter, check, key_facts
@@ -48,9 +48,9 @@ def test_key_facts_ignores_ordinary_capitals_and_words_like_margins():
     "Sigma, rerun the DCF with WACC at 9.5% and 2.5% terminal growth by tomorrow",
 ])
 async def test_rule_rewriter_is_warmer_and_keeps_every_fact(msg):
-    out = await RuleRewriter().rewrite(msg, "Quill")
-    assert out.startswith("Hi Quill,") and check(msg, out).ok, (out, check(msg, out))
-    assert " i " not in out and not out.startswith("Hi Quill, T")   # natural casing
+    out = await RuleRewriter().rewrite(msg, nick("er_lead"))
+    assert out.startswith(f"Hi {nick('er_lead')},") and check(msg, out).ok, (out, check(msg, out))
+    assert " i " not in out and not out.startswith(f"Hi {nick('er_lead')}, T")   # natural casing
     for harsh in ("sloppy", "ASAP", "!!", "why haven't you"):
         assert harsh.lower() not in out.lower()
 
@@ -70,7 +70,7 @@ async def test_llm_rewriter_bills_juno_and_uses_haiku(make_office):
 
     office._llm = ToneLLM()
     office.tone_engine = "llm"
-    preview = await office.tone_preview("Quill", "rerun it")
+    preview = await office.tone_preview("er_lead", "rerun it")
     assert preview["rewrite"] == "Hi Quill, please rerun it." and preview["engine"] == "llm"
     from hq.config import model_config
     assert seen["model"] == model_config("associate")[1]["id"]
@@ -90,12 +90,12 @@ async def test_tone_preview_falls_back_to_rules_when_budget_is_spent(make_office
 # routing and DMs ----------------------------------------------------------------------------
 async def test_office_message_goes_to_juno_who_assigns_a_lead(make_office):
     office, llm = make_office()
-    llm.script("Juno",
-               tool_turn(("assign_task", {"to": "Sigma", "title": "RMBS DCF",
+    llm.script("chief_of_staff",
+               tool_turn(("assign_task", {"to": "quant_lead", "title": "RMBS DCF",
                                           "brief": "Build the RMBS DCF by Friday."})),
                tool_turn(("report_to_captain", {"text": "Sigma is on the RMBS DCF."})),
                text_turn("Routed."))
-    llm.script("Sigma", text_turn("Starting the model."))
+    llm.script("quant_lead", text_turn("Starting the model."))
     out = office.captain_send("office", "Hi team, please build the RMBS DCF by Friday.",
                               original="build the RMBS DCF by friday")
     await office.idle()
@@ -113,19 +113,19 @@ async def test_office_message_goes_to_juno_who_assigns_a_lead(make_office):
 
 async def test_juno_cannot_assign_to_an_associate(make_office):
     office, llm = make_office()
-    llm.script("Juno", tool_turn(("assign_task", {"to": "Delta", "title": "x", "brief": "y"})),
+    llm.script("chief_of_staff", tool_turn(("assign_task", {"to": "quant_associate", "title": "x", "brief": "y"})),
                text_turn("ok"))
     office.captain_send("office", "do something")
     await office.idle()
-    call = [c for c in llm.calls if c["who"] == "Juno"][1]
+    call = [c for c in llm.calls if c["who"] == "chief_of_staff"][1]
     result = call["params"]["messages"][-1]["content"][0]
     assert result["is_error"] and "Assign work to department leads" in result["content"]
 
 
 async def test_dm_to_idle_agent_starts_a_task_and_to_busy_agent_lands_in_inbox(make_office):
     office, llm = make_office()
-    llm.script("Quill", text_turn("On it."))
-    out = office.captain_send("Quill", "Please look at AMD.")
+    llm.script("er_lead", text_turn("On it."))
+    out = office.captain_send("er_lead", "Please look at AMD.")
     assert out["delivered"] == "task"
     await office.idle()
     assert office.store.task(out["task_id"])["body"] == "Please look at AMD."
@@ -134,17 +134,17 @@ async def test_dm_to_idle_agent_starts_a_task_and_to_busy_agent_lands_in_inbox(m
 
     async def busy(params):
         await release.wait()
-        return tool_turn(("send_message", {"to": ["Ledger"], "text": "pulling AMD"}))
+        return tool_turn(("send_message", {"to": ["er_associate"], "text": "pulling AMD"}))
 
-    llm.script("Quill", busy, text_turn("Saw Stott's note."))
-    llm.script("Ledger", text_turn("ok"))
-    office.assign("Quill", "Long job")
+    llm.script("er_lead", busy, text_turn("Saw Stott's note."))
+    llm.script("er_associate", text_turn("ok"))
+    office.assign("er_lead", "Long job")
     await asyncio.sleep(0.02)
-    out = office.captain_send("Quill", "Also check the 10-Q.")
+    out = office.captain_send("er_lead", "Also check the 10-Q.")
     assert out["delivered"] == "inbox"
     release.set()
     await office.idle()
-    last = [c for c in llm.calls if c["who"] == "Quill"][-1]["params"]["messages"][-1]["content"]
+    last = [c for c in llm.calls if c["who"] == "er_lead"][-1]["params"]["messages"][-1]["content"]
     assert any("[Message from Stott (the Captain)]: Also check the 10-Q." in b.get("text", "")
                for b in last)
 
@@ -153,13 +153,13 @@ async def test_dm_to_idle_agent_starts_a_task_and_to_busy_agent_lands_in_inbox(m
 async def test_model_approval_round_trip(make_office):
     office, llm = make_office()
     register_model(office, "RMBS", 1)
-    llm.script("Sigma",
+    llm.script("quant_lead",
                tool_turn(("request_approval", {"kind": "model", "ticker": "rmbs", "version": 1,
                                                "title": "RMBS model v1", "summary": "Base $X.",
                                                "attachments": ["RMBS_v1.xlsx"]})),
                text_turn("Sent for approval."),
                text_turn("Distributing v1."))
-    office.assign("Sigma", "Build RMBS v1")
+    office.assign("quant_lead", "Build RMBS v1")
     await office.idle()
     [card] = office.store.approvals("pending")
     assert card["kind"] == "model" and card["payload"] == {"ticker": "RMBS", "version": 1,
@@ -178,13 +178,13 @@ async def test_model_approval_round_trip(make_office):
 
 async def test_request_approval_validation(make_office):
     office, llm = make_office()
-    llm.script("Sigma",
+    llm.script("quant_lead",
                tool_turn(("request_approval", {"kind": "model", "title": "x", "summary": "y"}),
                          ("request_approval", {"kind": "vibes", "title": "x", "summary": "y"})),
                text_turn("ok"))
-    office.assign("Sigma", "x")
+    office.assign("quant_lead", "x")
     await office.idle()
-    results = [c for c in llm.calls if c["who"] == "Sigma"][1]["params"]["messages"][-1]["content"]
+    results = [c for c in llm.calls if c["who"] == "quant_lead"][1]["params"]["messages"][-1]["content"]
     assert "needs `ticker` and `version`" in results[0]["content"]
     assert "`kind` must be one of" in results[1]["content"]
     assert office.store.approvals() == []
@@ -218,12 +218,12 @@ def client(make_office):
 
 
 def test_preview_and_send_endpoints(client):
-    r = client.post("/api/captain/preview", json={"to": "Quill", "text": "fix the AMD model ASAP"})
+    r = client.post("/api/captain/preview", json={"to": "er_lead", "text": "fix the AMD model ASAP"})
     body = r.json()
     assert r.status_code == 200 and body["engine"] == "rules" and body["check"]["ok"]
     assert body["rewrite"].startswith("Hi Quill,")
-    client.llm.script("Quill", text_turn("On it."))
-    sent = client.post("/api/captain/send", json={"to": "Quill", "text": body["rewrite"],
+    client.llm.script("er_lead", text_turn("On it."))
+    sent = client.post("/api/captain/send", json={"to": "er_lead", "text": body["rewrite"],
                                                   "original": "fix the AMD model ASAP"})
     assert sent.status_code == 200 and sent.json()["routed_to"] == "er_lead"
     assert client.post("/api/captain/send", json={"to": "nobody", "text": "hi"}).status_code == 404
@@ -264,9 +264,9 @@ async def test_api_switch_off_pauses_tasks_and_tone_falls_back_to_rules(make_off
     office, _ = make_office()
     office._llm = None               # the real client, which checks the switch
     office.tone_engine = "llm"
-    preview = await office.tone_preview("Quill", "check AMD by Friday")
+    preview = await office.tone_preview("er_lead", "check AMD by Friday")
     assert preview["engine"] == "rules (API off)" and preview["check"]["ok"]
-    tid = office.assign("Quill", "anything")
+    tid = office.assign("er_lead", "anything")
     await office.idle()
     task = office.store.task(tid)
     assert task["status"] == "paused" and task["status_reason"].startswith("api_off")
@@ -277,7 +277,7 @@ async def test_api_switch_off_pauses_tasks_and_tone_falls_back_to_rules(make_off
 async def test_incident_events_carry_the_incident_id(make_office):
     office, _ = make_office()
     events = office.bus.subscribe()
-    office.pause("Quill", by="audit_lead", reason="sourcing check")
+    office.pause("er_lead", by="audit_lead", reason="sourcing check")
     ev = next(e for e in _drain(events) if e.type == "incident")
     [row] = office.store.incidents()
     assert ev.payload["incident_id"] == row["id"] and ev.payload["kind"] == "paused"
@@ -298,9 +298,9 @@ def test_titles_skip_the_greeting_paragraph():
 async def test_juno_assignments_share_the_captains_task_budget_and_fan_out_limit(make_office):
     office, llm = make_office()
     fan = [("assign_task", {"to": lead, "title": f"t{i}", "brief": f"brief {i}"})
-           for i, lead in enumerate(["Quill", "Scout", "Sigma", "Vera", "Harbor", "Quill"])]
-    llm.script("Juno", tool_turn(*fan), text_turn("done"))
-    for n in ("Quill", "Scout", "Sigma", "Vera", "Harbor"):
+           for i, lead in enumerate(["er_lead", "screen_lead", "quant_lead", "audit_lead", "cr_lead", "er_lead"])]
+    llm.script("chief_of_staff", tool_turn(*fan), text_turn("done"))
+    for n in ("er_lead", "screen_lead", "quant_lead", "audit_lead", "cr_lead"):
         llm.script(n, text_turn("ok"), text_turn("ok"))
     out = office.captain_send("office", "Everyone, please start.")
     await office.idle()
@@ -312,8 +312,8 @@ async def test_juno_assignments_share_the_captains_task_budget_and_fan_out_limit
 async def test_captain_assign_and_decision_are_announced_live(make_office):
     office, llm = make_office()
     events = office.bus.subscribe()
-    llm.script("Quill", text_turn("ok"), text_turn("thanks"))
-    office.assign("Quill", "Look at AMD.")
+    llm.script("er_lead", text_turn("ok"), text_turn("thanks"))
+    office.assign("er_lead", "Look at AMD.")
     aid = office.request_approval("er_lead", kind="brief", title="AMD brief", summary="s",
                                   payload={}, task_id=None)
     office.decide(aid, "approved", "go")

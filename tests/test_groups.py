@@ -31,7 +31,7 @@ async def test_juno_announces_in_her_group_and_everyone_else_replies(make_office
                lambda p: tool_turn(("post_to_group", {"group": "juno",
                                                       "text": "Lobby sync at 3pm today."})),
                lambda p: text_turn("Announced."))
-    office.assign("Juno", "Tell everyone about the 3pm sync.")
+    office.assign("chief_of_staff", "Tell everyone about the 3pm sync.")
     await office.idle()
     thread = office.store.chat("group:juno")
     assert thread[0]["sender"] == "chief_of_staff" and thread[0]["text"] == "Lobby sync at 3pm today."
@@ -40,15 +40,15 @@ async def test_juno_announces_in_her_group_and_everyone_else_replies(make_office
 
 async def test_only_juno_broadcasts_and_posts_are_limited_per_task(make_office):
     office, llm = make_office()
-    llm.script("Quill",
+    llm.script("er_lead",
                tool_turn(("post_to_group", {"group": "juno", "text": "first"}),
                          ("post_to_group", {"group": "stott", "text": "second note"}),
                          ("post_to_group", {"group": "stott", "text": "a third, different one"}),
                          ("post_to_group", {"group": "nowhere", "text": "x"})),
                text_turn("done"))
-    office.assign("Quill", "x")
+    office.assign("er_lead", "x")
     await office.idle()
-    results = [c for c in llm.calls if c["who"] == "Quill"][1]["params"]["messages"][-1]["content"]
+    results = [c for c in llm.calls if c["who"] == "er_lead"][1]["params"]["messages"][-1]["content"]
     assert [r.get("is_error", False) for r in results] == [False, False, True, True]
     assert "already posted 2 times" in results[2]["content"]
     assert len(office.store.tasks()) == 1   # Quill's post in Juno's group didn't fan out
@@ -57,18 +57,18 @@ async def test_only_juno_broadcasts_and_posts_are_limited_per_task(make_office):
 async def test_document_history(make_office):
     office, llm = make_office()
     register_model(office, "RMBS", 1)
-    llm.script("Sigma",
-               tool_turn(("delegate", {"to": "Delta", "job": "Build the sensitivity grid."})),
+    llm.script("quant_lead",
+               tool_turn(("delegate", {"to": "quant_associate", "job": "Build the sensitivity grid."})),
                tool_turn(("request_approval", {"kind": "model", "ticker": "RMBS", "version": 1,
                                                "title": "RMBS model v1", "summary": "Base case.",
                                                "attachments": ["RMBS_v1.xlsx"]})),
                tool_turn(("report_to_captain", {"text": "RMBS v1 is on your desk."})),
                text_turn("Done."))
-    llm.script("Delta", tool_turn(("submit_result", {"findings": "Grid built, 5x5.",
+    llm.script("quant_associate", tool_turn(("submit_result", {"findings": "Grid built, 5x5.",
                                                      "confidence": "high"})))
-    office.assign("Sigma", "RMBS v1")
+    office.assign("quant_lead", "RMBS v1")
     await office.idle()
-    sigma = office.documents("Sigma")
+    sigma = office.documents("quant_lead")
     assert [d["source"] for d in sigma][:2] == ["report", "approval"]
     assert "model" in [d["source"] for d in sigma]   # the registered workbook version
     assert sigma[1]["attachments"] == ["RMBS_v1.xlsx"] and sigma[1]["version"] == 1
@@ -84,7 +84,7 @@ def test_documents_and_all_endpoints(make_office):
     office, _ = make_office()
     office.tone_engine = "rules"
     with TestClient(create_app(office_factory=lambda: office)) as c:
-        assert c.get("/api/agents/Sigma/documents").json() == []
+        assert c.get("/api/agents/quant_lead/documents").json() == []
         assert c.get("/api/agents/nobody/documents").status_code == 404
         prev = c.post("/api/captain/preview", json={"to": "all", "text": "Big week ahead"}).json()
         assert prev["rewrite"].startswith("Hi team,")
@@ -92,15 +92,15 @@ def test_documents_and_all_endpoints(make_office):
 
 async def test_rejected_group_posts_dont_use_up_the_allowance(make_office):
     office, llm = make_office()
-    llm.script("Quill",
+    llm.script("er_lead",
                tool_turn(("post_to_group", {"group": "nowhere", "text": "x"}),
                          ("post_to_group", {"group": "stott", "text": "first real post"}),
                          ("post_to_group", {"group": "stott", "text": "first real post!"}),
                          ("post_to_group", {"group": "stott", "text": "a second, different post"})),
                text_turn("done"))
-    office.assign("Quill", "x")
+    office.assign("er_lead", "x")
     await office.idle()
-    results = [c for c in llm.calls if c["who"] == "Quill"][1]["params"]["messages"][-1]["content"]
+    results = [c for c in llm.calls if c["who"] == "er_lead"][1]["params"]["messages"][-1]["content"]
     assert [r.get("is_error", False) for r in results] == [True, False, True, False]
 
 
@@ -121,5 +121,5 @@ def test_documents_tolerate_odd_saved_results(make_office):
     tid = office.store.create_task(assignee="er_associate", assigned_by="er_lead",
                                    kind="delegation", title="odd", body="x")
     office.store.set_task_status(tid, "done", result="[1, 2]")
-    [doc] = office.documents("Ledger")
+    [doc] = office.documents("er_associate")
     assert doc["text"] == "[1, 2]"

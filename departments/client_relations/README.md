@@ -1,6 +1,6 @@
 # Client Relations department
 
-Harbor (lead) and Wren (associate). Newsletter drafts and memo packaging from approved numbers only. Code gate in `hq/outbox.py`; output in `outbox/` (gitignored).
+Lead (`cr_lead`) and associate (`cr_associate`). Newsletter drafts and memo packaging from approved numbers only. Code gate in `hq/outbox.py`; output in `outbox/` (gitignored).
 
 How they think lives here, in plain Markdown you can edit:
 - `charter.md`: role, tools, workflow, hard rules.

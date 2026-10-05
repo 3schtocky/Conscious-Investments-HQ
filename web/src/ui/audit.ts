@@ -1,4 +1,4 @@
-// Audit: what Tally's free code checks found, what Vera ruled, memory writes and the daily digest.
+// Audit: what the associate's free code checks found, what the lead ruled, memory writes and the daily digest.
 import type { OfficeState } from "../state";
 import { clear, h, money, timeAgo } from "./dom";
 
@@ -29,8 +29,8 @@ export const RULE: Record<string, string> = {
   unapproved_figures: "Unapproved figure", verify_left: "[VERIFY] left", valuation_in_pitch: "Valuation in a pitch",
   missing_sources: "No sources file", tool_errors: "Tool failures", task_spend: "Heavy spend",
 };
-const STATUS: Record<string, string> = { open: "Open", reviewing: "Vera is reviewing", cleared: "Cleared",
-  upheld: "Upheld", dismissed: "Dismissed by you" };
+const statusLabel = (status: string, reviewer: string): string => ({ open: "Open", reviewing: `${reviewer} is reviewing`,
+  cleared: "Cleared", upheld: "Upheld", dismissed: "Dismissed by you" } as Record<string, string>)[status] ?? status;
 const MEMORY: Record<string, string> = { saved: "Saved", pending: "Waiting for you", approved: "Approved",
   rejected: "Rejected", removed: "Removed", expired: "Expired (demo tidy-up)" };
 
@@ -81,7 +81,7 @@ export class AuditPanel {
     const v = this.view;
     const captain = this.state.captain.nickname;
     this.root.append(h("p", { class: "muted small audit-intro" },
-      `Tally's checks run as plain code on every approval card and finished assignment, at no API cost. Vera is called in only when a check raises a flag. Only ${captain} unpauses anyone.`));
+      `${this.state.name("audit_associate")}'s checks run as plain code on every approval card and finished assignment, at no API cost. ${this.state.name("audit_lead")} is called in only when a check raises a flag. Only ${captain} unpauses anyone.`));
     if (!v) { this.root.append(h("p", { class: "empty" }, "Loading…")); return; }
 
     const flags = v.findings.filter((f) => f.severity === "flag" && (f.status === "open" || f.status === "reviewing")).reverse();
@@ -137,14 +137,14 @@ export class AuditPanel {
       h("div", { class: "approval-head" },
         h("span", { class: `chip${f.severity === "flag" && live ? " warn" : ""}` }, f.severity === "flag" ? "Flag" : "Note"),
         h("span", { class: "chip" }, RULE[f.rule] ?? f.rule),
-        h("span", { class: `chip${f.status === "cleared" ? " good" : ""}` }, STATUS[f.status] ?? f.status),
+        h("span", { class: `chip${f.status === "cleared" ? " good" : ""}` }, statusLabel(f.status, this.state.name("audit_lead"))),
         h("span", { class: "feed-time" }, timeAgo(f.ts))),
       h("div", { class: "audit-subject" }, `${f.name} · ${f.subject}`),
       h("p", { class: "approval-summary" }, f.detail),
       f.note ? h("div", { class: "muted small" }, `${f.resolved_by_name ?? "Audit"}: ${f.note}`) : null,
       live ? h("div", { class: "row" },   // a review that stalls (API off, a failed task) can still be dismissed
-        !open ? null : apiOn ? h("button", { class: "btn", onclick: () => this.post(key, `/api/audit/findings/${f.id}/review`) }, "Ask Vera to review")
-          : h("span", { class: "muted small" }, "Vera can review this once the API is on."),
+        !open ? null : apiOn ? h("button", { class: "btn", onclick: () => this.post(key, `/api/audit/findings/${f.id}/review`) }, `Ask ${this.state.name("audit_lead")} to review`)
+          : h("span", { class: "muted small" }, `${this.state.name("audit_lead")} can review this once the API is on.`),
         h("button", { class: "btn ghost", onclick: () => this.post(key, `/api/audit/findings/${f.id}/dismiss`) }, "Dismiss")) : null,
       this.errorEl(key));
   }

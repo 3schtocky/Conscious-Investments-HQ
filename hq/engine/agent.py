@@ -94,7 +94,10 @@ class Agent:
             f"# Your colleagues\n{team}",
             *self._memory_sections(),
         ])]
-        return parts[0].replace("{captain}", self.office.captain_name)
+        text = parts[0].replace("{captain}", self.office.captain_name)
+        for other in self.office.agents.values():   # {screen_lead} -> that colleague's nickname
+            text = text.replace("{" + other.id + "}", other.nickname)
+        return text
 
     def _memory_sections(self) -> list[str]:
         from hq.memory import desk_notes, wiki

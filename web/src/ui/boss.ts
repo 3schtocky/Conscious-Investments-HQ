@@ -45,7 +45,7 @@ export class BossChannel {
       if (this.status) this.root.append(h("div", { class: `boss-status ${this.status.ok ? "ok" : "err"}` }, this.status.text));
       return;
     }
-    const recipients = [["office", "Office (Juno routes it)"], ["all", "Everyone (group text: Stott → All)"],
+    const recipients = [["office", `Office (${this.state.name("chief_of_staff")} routes it)`], ["all", "Everyone (group text: Stott → All)"],
       ...[...this.state.agents.values()].map((a) => [a.id, `${a.nickname} · ${a.role}`])];
     const select = h("select", { class: "to", title: "Send to", onchange: (e: Event) => { this.to = (e.target as HTMLSelectElement).value; } },
       ...recipients.map(([v, label]) => h("option", { value: v, selected: v === this.to }, label)));
@@ -76,7 +76,7 @@ export class BossChannel {
   }
 
   private previewEl(p: Preview): HTMLElement {
-    const who = this.to === "office" ? "the office (via Juno)" : this.to === "all" ? "everyone (group text)" : this.state.name(this.to);
+    const who = this.to === "office" ? `the office (via ${this.state.name("chief_of_staff")})` : this.to === "all" ? "everyone (group text)" : this.state.name(this.to);
     const checkBox = h("div", { class: "tone-check" });
     const renderCheck = (c: Check) => {
       clear(checkBox);
@@ -97,7 +97,7 @@ export class BossChannel {
     };
     const mine = h("textarea", { rows: 5, oninput: (e: Event) => { p.original = (e.target as HTMLTextAreaElement).value; recheck(); } }, p.original);
     const theirs = h("textarea", { rows: 7, oninput: (e: Event) => { p.rewrite = (e.target as HTMLTextAreaElement).value; recheck(); } }, p.rewrite);
-    const engine = p.engine.startsWith("rules") ? `Built-in rewriter${p.engine.includes("(") ? " " + p.engine.slice(5) : ""} · free` : "Rewritten by Juno (Haiku)";
+    const engine = p.engine.startsWith("rules") ? `Built-in rewriter${p.engine.includes("(") ? " " + p.engine.slice(5) : ""} · free` : `Rewritten by ${this.state.name("chief_of_staff")} (Haiku)`;
     return h("div", { class: "tone" },
       h("div", { class: "tone-head" }, h("strong", {}, `To ${who}`), h("span", { class: "muted small" }, engine)),
       h("label", { class: "field" }, h("span", {}, "You wrote (kept in your log)"), mine),
@@ -125,7 +125,7 @@ export class BossChannel {
     this.sending = false;
     if (!res.ok) { this.status = { text: body.detail ?? "Couldn't send.", ok: false }; this.render(); return; }
     const who = this.state.name(body.routed_to);
-    this.status = { text: this.to === "office" ? `Sent. Juno is routing it.` : this.to === "all" ? "Announced. Replies will come in under Chat › Stott → All." :
+    this.status = { text: this.to === "office" ? `Sent. ${this.state.name("chief_of_staff")} is routing it.` : this.to === "all" ? "Announced. Replies will come in under Chat › Stott → All." :
       body.delivered === "inbox" ? `Sent. ${who} will see it on their next step.` : `Sent. ${who} is on it.`, ok: true };
     this.text = ""; this.preview = null; this.render();
   }

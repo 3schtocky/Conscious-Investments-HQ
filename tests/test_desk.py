@@ -20,15 +20,15 @@ def _results(llm, who, call=1):
 
 async def test_files_are_confined_and_write_rights_follow_the_wing(make_office):
     office, llm = make_office()
-    llm.script("Quill",
+    llm.script("er_lead",
                tool_turn(("read_file", {"ticker": "META", "path": "../../pyproject.toml"}),
                          ("write_file", {"ticker": "ZZZZ", "path": "assumptions.yaml", "content": "x: 1"}),
                          ("write_file", {"ticker": "ZZZZ", "path": "notes/idea.md", "content": "hello"}),
                          ("read_file", {"ticker": "bad ticker!", "path": "x"})),
                text_turn("done"))
-    office.assign("Quill", "x")
+    office.assign("er_lead", "x")
     await office.idle()
-    r = _results(llm, "Quill")
+    r = _results(llm, "er_lead")
     assert "outside this ticker's folders" in r[0]["content"]
     assert "belong to Quant" in r[1]["content"]
     assert r[2].get("is_error") is None and "Saved notes/idea.md" in r[2]["content"]
@@ -67,12 +67,12 @@ def test_web_search_only_for_research():
 @needs_meta
 async def test_build_model_registers_a_checked_draft_and_simulations_land_in_the_workbook(make_office):
     office, llm = make_office()
-    llm.script("Delta", tool_turn(("build_model", {"ticker": "META"})),
+    llm.script("quant_associate", tool_turn(("build_model", {"ticker": "META"})),
                tool_turn(("run_simulations", {"ticker": "META", "runs": 300})),
                text_turn("built"))
-    office.assign("Delta", "Build META")
+    office.assign("quant_associate", "Build META")
     await office.idle()
-    built = json.loads(_results(llm, "Delta", 1)[0]["content"])
+    built = json.loads(_results(llm, "quant_associate", 1)[0]["content"])
     assert built["version"] == 1 and "PASSED" in built["check"]
     assert built["price_targets"]["base"] == pytest.approx(951.30, abs=0.01)   # the published model
     [m] = office.store.models("META")
@@ -80,25 +80,25 @@ async def test_build_model_registers_a_checked_draft_and_simulations_land_in_the
     wb = load_workbook(m["path"])
     assert {"Outputs", "Inputs", "Calc Base", "Calc Bull", "Calc Bear", "Monte Carlo",
             "Value Drivers"} <= set(wb.sheetnames)
-    sims = json.loads(_results(llm, "Delta", 2)[0]["content"])
+    sims = json.loads(_results(llm, "quant_associate", 2)[0]["content"])
     assert sims["runs"] == 300 and len(sims["top_value_drivers"]) == 4
     # a Quant workbook shows up in Delta's document history with a download link
-    doc = next(d for d in office.documents("Delta") if d["source"] == "model")
+    doc = next(d for d in office.documents("quant_associate") if d["source"] == "model")
     assert doc["file"] == "/files/quant/META/META_model_v1.xlsx"
 
 
 async def test_model_approval_needs_a_passing_registered_version(make_office):
     office, llm = make_office()
     register_model(office, "RMBS", 1, ok=False)
-    llm.script("Sigma",
+    llm.script("quant_lead",
                tool_turn(("request_approval", {"kind": "model", "ticker": "RMBS", "version": 1,
                                                "title": "t", "summary": "s"}),
                          ("request_approval", {"kind": "model", "ticker": "RMBS", "version": 9,
                                                "title": "t", "summary": "s"})),
                text_turn("ok"))
-    office.assign("Sigma", "x")
+    office.assign("quant_lead", "x")
     await office.idle()
-    r = _results(llm, "Sigma")
+    r = _results(llm, "quant_lead")
     assert "failed its formula check" in r[0]["content"] and "No model v9" in r[1]["content"]
     assert office.store.approvals() == []
 
@@ -107,18 +107,18 @@ async def test_only_approved_models_are_official(make_office):
     office, llm = make_office()
     register_model(office, "RMBS", 1)
     register_model(office, "RMBS", 2)
-    llm.script("Quill", tool_turn(("get_model", {"ticker": "RMBS"})), text_turn("ok"))
-    llm.script("Sigma", text_turn("noted"), text_turn("noted"))
-    office.assign("Quill", "check")
+    llm.script("er_lead", tool_turn(("get_model", {"ticker": "RMBS"})), text_turn("ok"))
+    llm.script("quant_lead", text_turn("noted"), text_turn("noted"))
+    office.assign("er_lead", "check")
     await office.idle()
-    assert "No approved model for RMBS" in _results(llm, "Quill", 1)[0]["content"]
+    assert "No approved model for RMBS" in _results(llm, "er_lead", 1)[0]["content"]
     aid = office.request_approval("quant_lead", kind="model", title="v2", summary="s",
                                   payload={"ticker": "RMBS", "version": 2}, task_id=None)
     office.decide(aid, "approved")
-    llm.script("Quill", tool_turn(("get_model", {"ticker": "RMBS"})), text_turn("ok"))
-    office.assign("Quill", "check again")
+    llm.script("er_lead", tool_turn(("get_model", {"ticker": "RMBS"})), text_turn("ok"))
+    office.assign("er_lead", "check again")
     await office.idle()
-    got = json.loads(_results(llm, "Quill", 3)[0]["content"])   # the second task's first result
+    got = json.loads(_results(llm, "er_lead", 3)[0]["content"])   # the second task's first result
     assert got["version"] == 2 and got["official"] and got["cite_as"].startswith("Quant model v2, approved")
     # an old card can't roll the official numbers back to an earlier version
     aid1 = office.request_approval("quant_lead", kind="model", title="v1", summary="s",
@@ -137,13 +137,13 @@ async def test_desk_notes_and_wiki_reach_the_next_task(make_office):
     office, llm = make_office()
     (office.memory_dir).mkdir(parents=True, exist_ok=True)
     (office.memory_dir / "wiki.md").write_text("- Stott prefers ranges over point estimates.")
-    llm.script("Sigma", tool_turn(("note_to_self", {"note": "Stott wants the bear case first."})),
+    llm.script("quant_lead", tool_turn(("note_to_self", {"note": "Stott wants the bear case first."})),
                text_turn("noted"), text_turn("second task"))
-    office.assign("Sigma", "first")
+    office.assign("quant_lead", "first")
     await office.idle()
-    office.assign("Sigma", "second")
+    office.assign("quant_lead", "second")
     await office.idle()
-    system = [c for c in llm.calls if c["who"] == "Sigma"][-1]["params"]["system"]
+    system = [c for c in llm.calls if c["who"] == "quant_lead"][-1]["params"]["system"]
     assert "Stott prefers ranges over point estimates." in system
     assert "Stott wants the bear case first." in system
 
@@ -179,11 +179,11 @@ def test_half_day_horizons_match_the_engine(tmp_path):
 
 async def test_tool_failures_come_back_as_errors_not_dead_tasks(make_office):
     office, llm = make_office()
-    llm.script("Quill", tool_turn(("read_file", {"ticker": "META", "path": "brief.md", "offset": "ten"})),
+    llm.script("er_lead", tool_turn(("read_file", {"ticker": "META", "path": "brief.md", "offset": "ten"})),
                text_turn("recovered"))
-    tid = office.assign("Quill", "x")
+    tid = office.assign("er_lead", "x")
     await office.idle()
-    r = _results(llm, "Quill")[0]
+    r = _results(llm, "er_lead")[0]
     assert r["is_error"] and "The tool failed: ValueError" in r["content"]
     assert office.store.task(tid)["status"] == "done"
 
@@ -191,12 +191,12 @@ async def test_tool_failures_come_back_as_errors_not_dead_tasks(make_office):
 async def test_research_cannot_see_quant_drafts(make_office):
     office, llm = make_office()
     register_model(office, "RMBS", 1)
-    llm.script("Quill", tool_turn(("get_model", {"ticker": "RMBS", "version": 1}),
+    llm.script("er_lead", tool_turn(("get_model", {"ticker": "RMBS", "version": 1}),
                                   ("read_file", {"ticker": "RMBS", "path": "quant/notes/x.md"})),
                text_turn("ok"))
-    office.assign("Quill", "x")
+    office.assign("er_lead", "x")
     await office.idle()
-    r = _results(llm, "Quill")
+    r = _results(llm, "er_lead")
     assert "draft" in r[0]["content"] and "private until a model is approved" in r[1]["content"]
 
 
@@ -205,19 +205,19 @@ async def test_simulations_only_touch_drafts_and_builds_never_collide(make_offic
     import asyncio
 
     office, llm = make_office()
-    llm.script("Delta", tool_turn(("build_model", {"ticker": "META"})), text_turn("a"))
-    llm.script("Sigma", tool_turn(("build_model", {"ticker": "META"})), text_turn("b"))
-    office.assign("Delta", "build")
-    office.assign("Sigma", "build too")
+    llm.script("quant_associate", tool_turn(("build_model", {"ticker": "META"})), text_turn("a"))
+    llm.script("quant_lead", tool_turn(("build_model", {"ticker": "META"})), text_turn("b"))
+    office.assign("quant_associate", "build")
+    office.assign("quant_lead", "build too")
     await office.idle()
     assert [m["version"] for m in office.store.models("META")] == [1, 2]
     aid = office.request_approval("quant_lead", kind="model", title="v2", summary="s",
                                   payload={"ticker": "META", "version": 2}, task_id=None)
     del aid
-    llm.script("Delta", tool_turn(("run_simulations", {"ticker": "META"})), text_turn("c"))
-    office.assign("Delta", "simulate")
+    llm.script("quant_associate", tool_turn(("run_simulations", {"ticker": "META"})), text_turn("c"))
+    office.assign("quant_associate", "simulate")
     await office.idle()
-    assert "frozen" in _results(llm, "Delta", 3)[0]["content"]
+    assert "frozen" in _results(llm, "quant_associate", 3)[0]["content"]
     await asyncio.sleep(0)
 
 
@@ -230,10 +230,10 @@ def test_monte_carlo_counts_growth_paths_as_uncertainty():
 
 async def test_desk_notes_have_their_own_allowance(make_office):
     office, llm = make_office()
-    llm.script("Quill", tool_turn(("post_to_group", {"group": "stott", "text": "one"}),
+    llm.script("er_lead", tool_turn(("post_to_group", {"group": "stott", "text": "one"}),
                                   ("post_to_group", {"group": "stott", "text": "two different"}),
                                   ("note_to_self", {"note": "still allowed"})),
                text_turn("ok"))
-    office.assign("Quill", "x")
+    office.assign("er_lead", "x")
     await office.idle()
-    assert "Saved to your desk notes" in _results(llm, "Quill")[2]["content"]
+    assert "Saved to your desk notes" in _results(llm, "er_lead")[2]["content"]

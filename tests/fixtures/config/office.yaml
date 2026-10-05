@@ -1,0 +1,75 @@
+# Conscious Investments HQ: office-wide settings. Edit freely; the server reloads on restart.
+
+# Model per tier. Each agent picks a tier (or an explicit model id) with `model:` in roster.yaml.
+models:
+  lead:                       # Quill, Scout, Vera, Harbor: judgment, thesis, final prose
+    id: claude-sonnet-5-5
+    effort: high
+    thinking_display: summarized   # readable summaries of reasoning in the agent's text box
+    max_tokens: 32000
+  associate:                  # Ledger, Pip, Tally, Wren, Juno: tool runs, data pulls, first drafts, routing
+    id: claude-haiku-4-5
+    thinking_budget_tokens: 2048   # Haiku 4.5 uses a thinking token budget, not effort (0 = off)
+    max_tokens: 16000
+
+# USD per million tokens (Anthropic first-party rates, checked 2026-09-29).
+# Cache writes: 5-minute TTL = 1.25x input, 1-hour TTL = 2x input. Cache reads = 0.1x input.
+pricing:
+  claude-sonnet-5-5: { input: 2.00, output: 10.00, cache_read: 0.20, cache_write_5m: 2.50, cache_write_1h: 4.00 }
+  claude-haiku-4-5:  { input: 1.00, output: 5.00,  cache_read: 0.10, cache_write_5m: 1.25, cache_write_1h: 2.00 }
+
+# Server tools billed per use, on top of tokens (web fetch has no per-use fee).
+pricing_server_tools:
+  web_search_per_1k: 10.00   # USD per 1,000 web searches
+
+delegation:                   # a lead hands a narrow job to its associate, who returns a compact summary
+  per_delegation_cap_usd: 0.50
+  max_turns: 25
+  max_context_tokens: 150000   # headroom below Haiku 4.5's 200K window, so the guard trips first
+
+budget:
+  daily_cap_usd: 10.00        # hard cap; at the cap in-flight steps finish, then everyone clocks out
+  audit_reserve_usd: 0.25     # held back so Audit can still raise an alert after clock-out
+  per_task_cap_usd: 3.00
+  timezone: America/New_York  # the daily budget resets at local midnight
+
+limits:
+  max_concurrent_agents: 3
+  max_turns_per_task: 40
+  max_agent_exchanges: 6      # consecutive agent-to-agent messages before Juno must step in
+  repeat_similarity: 0.9      # near-duplicate messages above this are blocked as a loop
+  repeat_tool_calls: 3        # the same tool with identical input this many times = a loop; task pauses
+  max_delegations_per_task: 5
+
+portfolio:
+  starting_capital_usd: 100000
+  benchmark: SPY
+
+# The Captain's tone filter. rules = free built-in rewriter (default; always used by the demo
+# office). llm = Haiku rewrite billed to Juno, and only works while api.enabled is true.
+tone:
+  engine: rules
+
+# MASTER API SWITCH. While false, nothing in the office can call the Anthropic API: agent
+# turns, the LLM tone filter and `hq smoke` all stop with a clear message and spend $0.
+# Building, tests and `hq serve --demo` never need it. Only Stott flips this, and only for a
+# real run he has approved with a cost estimate (see CLAUDE.md rule 3).
+api:
+  enabled: FALSE
+
+# Client Relations. Nothing is ever posted for you: an approved issue is marked ready to paste.
+client_relations:
+  publisher: outbox            # outbox = ready-to-paste files in outbox/ (the only one for now)
+  # Printed under every newsletter and client memo. Edit it to match what you actually hold.
+  holdings_disclosure: >-
+    The author holds no position in the securities discussed. The Conscious Investments model
+    portfolio is a paper portfolio.
+
+# The public site (`hq serve --public`, behind a Cloudflare Tunnel). Visitors can only watch the
+# floor and read finished work; you sign in with HQ_CAPTAIN_PASSWORD from .env.
+public:
+  hosts:
+    - consciousinvestments.org
+    - www.consciousinvestments.org
+
+cadence: on_assignment         # the office only works when the Captain assigns work

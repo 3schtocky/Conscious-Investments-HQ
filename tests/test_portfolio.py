@@ -31,7 +31,7 @@ async def office_llm(make_office, monkeypatch):
     prices = dict(PRICES)
     monkeypatch.setattr("hq.quotes.latest", lambda tickers: {t: prices.get(t) for t in tickers})
     office.test_prices = prices
-    for who in ("Quill", "Juno", "Sigma"):        # each decision is sent back to whoever asked
+    for who in ("er_lead", "chief_of_staff", "quant_lead"):        # each decision is sent back to whoever asked
         llm.script(who, *[text_turn("Noted.") for _ in range(30)])
     yield office, llm
     await office.idle()
@@ -201,17 +201,17 @@ def test_who_may_propose(make_office):
 
 async def test_agents_propose_through_the_tools(office_llm):
     office, llm = office_llm
-    llm.scripts["Quill"].clear()
-    llm.script("Quill",
+    llm.scripts["er_lead"].clear()
+    llm.script("er_lead",
                tool_turn(("read_portfolio", {}),
                          ("propose_position", {"ticker": "RMBS", "size_pct": 4, "thesis": "x"}),
                          ("request_approval", {"kind": "portfolio", "title": "Buy RMBS", "summary": "x"}),
                          ("propose_exit", {"ticker": "RMBS", "reason": "x"}),
                          ("propose_position", {"ticker": "rmbs", "size_pct": 5, "thesis": "Design wins; 5% until the next print."})),
                text_turn("Proposed."), text_turn("Thanks."))
-    office.assign("Quill", "Propose RMBS for the portfolio")
+    office.assign("er_lead", "Propose RMBS for the portfolio")
     await office.idle()
-    r = _results(llm, "Quill")
+    r = _results(llm, "er_lead")
     assert "no positions yet" in json.loads(r[0]["content"])["summary"]
     assert r[1]["is_error"] and "3, 5 or 8 percent" in r[1]["content"]
     assert r[2]["is_error"] and "propose_position or propose_exit" in r[2]["content"]
@@ -227,10 +227,10 @@ async def test_newsletter_material_carries_the_scoreboard(office_llm):
     office, llm = office_llm
     enter(office, size=5)
     office.test_prices.update(RMBS=120.0, SPY=510.0)
-    llm.script("Wren", tool_turn(("newsletter_material", {})), text_turn("Read."))
-    office.assign("Wren", "What can we publish?")
+    llm.script("cr_associate", tool_turn(("newsletter_material", {})), text_turn("Read."))
+    office.assign("cr_associate", "What can we publish?")
     await office.idle()
-    board = json.loads(_results(llm, "Wren")[0]["content"])["scoreboard"]
+    board = json.loads(_results(llm, "cr_associate")[0]["content"])["scoreboard"]
     assert board.startswith("Paper portfolio since") and "+1.0% against +2.0%" in board
 
 
@@ -292,12 +292,12 @@ async def test_missing_quotes_never_produce_a_quotable_return(office_llm):
     s = office.portfolio_view(out)
     assert s["priced"] is False and "can't be scored" in s["summary"]
     office.test_prices["RMBS"] = None
-    llm.scripts["Quill"].clear()
-    llm.script("Quill", tool_turn(("read_portfolio", {}), ("propose_exit", {"ticker": "RMBS", "reason": "Thesis broke."})),
+    llm.scripts["er_lead"].clear()
+    llm.script("er_lead", tool_turn(("read_portfolio", {}), ("propose_exit", {"ticker": "RMBS", "reason": "Thesis broke."})),
                text_turn("Read."), text_turn("Ok."))
-    office.assign("Quill", "Check the portfolio")
+    office.assign("er_lead", "Check the portfolio")
     await office.idle()
-    r = _results(llm, "Quill")
+    r = _results(llm, "er_lead")
     assert json.loads(r[0]["content"])["return_pct"] is None
     card = office.store.approvals("pending")[-1]
     assert "no quote right now" in card["summary"] and "$0.00" not in card["summary"]

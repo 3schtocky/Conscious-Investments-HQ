@@ -47,7 +47,7 @@ export class WatchlistPanel {
     this.root.append(h("p", { class: "muted small watch-intro" },
       `Names Screening shortlisted. Each is scored from the day it was flagged against the S&P 500 (SPY). Nothing is researched until ${this.state.captain.nickname} sends it.`));
     if (!this.items.length) {
-      this.root.append(h("p", { class: "empty" }, "No names yet. Ask Scout for a Gems or Core screen and the shortlist lands here."));
+      this.root.append(h("p", { class: "empty" }, `No names yet. Ask ${this.state.name("screen_lead")} for a Gems or Core screen and the shortlist lands here.`));
       return;
     }
     for (const w of this.items) this.root.append(this.card(w));
@@ -93,7 +93,7 @@ export class WatchlistPanel {
       this.readOnly ? null : h("div", { class: "row" },
         w.pitch ? h("button", { class: "btn ghost", onclick: toggle }, this.open.has(w.id) ? "Hide pitch" : "Read pitch") : null,
         sent ? null : h("button", { class: "btn", disabled: this.busy.has(w.id), onclick: research },
-          this.busy.has(w.id) ? "Sending…" : "Send to research (via Juno)"),
+          this.busy.has(w.id) ? "Sending…" : `Send to research (via ${this.state.name("chief_of_staff")})`),
         h("button", { class: "btn ghost danger", onclick: drop }, "Drop")),
       pitchBox);
   }

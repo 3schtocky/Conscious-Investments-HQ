@@ -48,10 +48,10 @@ def test_screening_tools_by_role():
 
 async def test_read_screen_skips_thin_rows_and_includes_8k_events(make_office, fake_erb):
     office, llm = make_office()
-    llm.script("Pip", tool_turn(("read_screen", {"preset": "gems", "top": 5})), text_turn("read"))
-    office.assign("Pip", "read it")
+    llm.script("screen_associate", tool_turn(("read_screen", {"preset": "gems", "top": 5})), text_turn("read"))
+    office.assign("screen_associate", "read it")
     await office.idle()
-    out = json.loads(_results(llm, "Pip")[0]["content"])
+    out = json.loads(_results(llm, "screen_associate")[0]["content"])
     assert out["run"] == "2026-09-30-gems"
     assert [r["ticker"] for r in out["rows"]] == ["BFLY", "OUST"]   # XXXX has 1 of 4 factors
     assert out["recent_8k_events"]["BFLY"][0]["items"] == ["1.01 Material agreement"]
@@ -59,12 +59,12 @@ async def test_read_screen_skips_thin_rows_and_includes_8k_events(make_office, f
 
 async def test_screening_writes_pitches_but_not_briefs(make_office, fake_erb):
     office, llm = make_office()
-    llm.script("Pip", tool_turn(("write_file", {"ticker": "BFLY", "path": "pitch.md", "content": "# BFLY"}),
+    llm.script("screen_associate", tool_turn(("write_file", {"ticker": "BFLY", "path": "pitch.md", "content": "# BFLY"}),
                                 ("write_file", {"ticker": "BFLY", "path": "brief.md", "content": "x"})),
                text_turn("ok"))
-    office.assign("Pip", "write")
+    office.assign("screen_associate", "write")
     await office.idle()
-    r = _results(llm, "Pip")
+    r = _results(llm, "screen_associate")
     assert "Saved pitch.md" in r[0]["content"] and "pitch.md or notes" in r[1]["content"]
 
 
@@ -72,10 +72,10 @@ async def test_watchlist_scorecard_and_send_to_research(make_office, fake_erb):
     office, llm = make_office()
     (fake_erb / "coverage" / "BFLY").mkdir(parents=True, exist_ok=True)
     (fake_erb / "coverage" / "BFLY" / "pitch.md").write_text("# pitch")
-    llm.script("Scout", tool_turn(("add_to_watchlist", {"ticker": "BFLY", "source": "gems 2026-09-30 #10",
+    llm.script("screen_lead", tool_turn(("add_to_watchlist", {"ticker": "BFLY", "source": "gems 2026-09-30 #10",
                                                         "thesis": "Growth accelerating 25% to 40%."})),
                text_turn("added"))
-    office.assign("Scout", "shortlist")
+    office.assign("screen_lead", "shortlist")
     await office.idle()
     [w] = office.store.watchlist()
     assert (w["ticker"], w["price_at_add"], w["spy_at_add"], w["pitch"]) == ("BFLY", 10.0, 500.0, "pitch.md")
@@ -87,7 +87,7 @@ async def test_watchlist_scorecard_and_send_to_research(make_office, fake_erb):
                      thesis="Updated thesis.", pitch=None, price=11.0, spy=510.0)
     assert len(office.store.watchlist()) == 1 and office.store.watchlist()[0]["thesis"] == "Updated thesis."
 
-    llm.script("Juno", text_turn("Routed to Quill."))
+    llm.script("chief_of_staff", text_turn("Routed to Quill."))
     out = office.send_watch_to_research(w["id"])
     await office.idle()
     juno = office.store.task(out["task_id"])
@@ -116,7 +116,7 @@ def test_watchlist_endpoints(make_office, fake_erb):
     office, llm = make_office()
     wid = office.add_watch(ticker="BFLY", added_by="screen_lead", source="gems #1", thesis="t",
                            pitch=None, price=8.0, spy=480.0)
-    llm.script("Juno", text_turn("ok"))
+    llm.script("chief_of_staff", text_turn("ok"))
     with TestClient(create_app(office_factory=lambda: office)) as c:
         [row] = c.get("/api/watchlist").json()
         assert row["price_now"] == 10.0 and row["return"] == pytest.approx(0.25)
@@ -157,11 +157,11 @@ async def test_pitch_memo_never_overwrites_a_filled_pitch_and_needs_a_screen(mak
     office, llm = make_office()
     (fake_erb / "coverage" / "BFLY").mkdir(parents=True, exist_ok=True)
     (fake_erb / "coverage" / "BFLY" / "pitch.md").write_text("# BFLY\nFilled-in thesis.")
-    llm.script("Pip", tool_turn(("pitch_memo", {"ticker": "BFLY", "preset": "gems"}),
+    llm.script("screen_associate", tool_turn(("pitch_memo", {"ticker": "BFLY", "preset": "gems"}),
                                 ("pitch_memo", {"ticker": "BFLY", "preset": "core"})), text_turn("ok"))
-    office.assign("Pip", "pitch")
+    office.assign("screen_associate", "pitch")
     await office.idle()
-    r = _results(llm, "Pip")
+    r = _results(llm, "screen_associate")
     assert "already has a pitch.md (kept" in r[0]["content"]
     assert (fake_erb / "coverage" / "BFLY" / "pitch.md").read_text() == "# BFLY\nFilled-in thesis."
     assert "No core screen yet" in r[1]["content"]

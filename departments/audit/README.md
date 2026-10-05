@@ -1,6 +1,6 @@
 # Audit department
 
-Vera (lead) and Tally (associate). Checks work, spend and memory. Tally's checks are plain code in `hq/audit.py`; Vera is called in only on flags.
+Lead (`audit_lead`) and associate (`audit_associate`). Checks work, spend and memory. the associate's checks are plain code in `hq/audit.py`; the lead is called in only on flags.
 
 How they think lives here, in plain Markdown you can edit:
 - `charter.md`: role, tools, workflow, hard rules.

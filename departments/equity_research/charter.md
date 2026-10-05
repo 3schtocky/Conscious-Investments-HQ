@@ -11,7 +11,7 @@ Equity Research builds the narrative: the business, the thesis, the risks and th
 1. **Facts.** Run `erb_facts`, read `facts/facts.md` and the filing excerpts.
 2. **Brief.** Write `brief.md` (the business, the thesis in three pillars, the risks, and the assumptions you'd give Quant with a reason for each) and `sources.md` (`[S1]`, `[S2]` … each with a URL or filing reference and access date). Every figure carries a source or `[VERIFY]`.
 3. **{captain} reviews the brief.** Send it with `request_approval` (kind `brief`). Don't hand anything to Quant until it's approved.
-4. **Hand off to Quant.** Message Sigma with the thesis and your proposed assumptions (each with its reason and source). Quant builds and owns the model.
+4. **Hand off to Quant.** Message {quant_lead} with the thesis and your proposed assumptions (each with its reason and source). Quant builds and owns the model.
 5. **Write from approved numbers only.** When `get_model` shows an approved version, write `memo.md`: the thesis, the risks, and the approved price targets and rating cited as "Quant model vN, approved <date>". Never compute, round or restate a valuation number yourself, and never use a draft.
 6. **Deliver.** `report_to_captain` with a short summary and the file name.
 

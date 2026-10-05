@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import text_turn, tool_turn
+from conftest import nick, text_turn, tool_turn
 from fastapi.routing import APIRoute
 from starlette.websockets import WebSocketDisconnect
 
@@ -97,11 +97,11 @@ def test_sign_in_locks_after_wrong_passwords_and_the_cookie_is_strict(site):
 def test_the_captain_keeps_the_whole_office_but_only_from_the_site_itself(site):
     visitor, captain = site
     assert captain.get("/api/state").json()["agents"] and captain.get("/api/audit").status_code == 200
-    ok = captain.post("/api/agents/Quill/pause", json={"reason": "check"}, headers={"Origin": SITE})
+    ok = captain.post("/api/agents/er_lead/pause", json={"reason": "check"}, headers={"Origin": SITE})
     assert ok.status_code == 200 and captain.office.agents["er_lead"].paused
     # a signed-in Captain visiting another site: that site cannot use his cookie
     for origin in ("https://evil.example", "http://127.0.0.1:8750", "null"):
-        r = captain.post("/api/agents/Quill/resume", headers={"Origin": origin})
+        r = captain.post("/api/agents/er_lead/resume", headers={"Origin": origin})
         assert r.status_code == 403, origin
     assert captain.office.agents["er_lead"].paused
     # reaching the server by its local name gives no special rights in public mode
@@ -113,16 +113,16 @@ def test_the_captain_keeps_the_whole_office_but_only_from_the_site_itself(site):
 
 
 async def _busy_office(office, llm):
-    llm.script("Juno", tool_turn(("assign_task", {"to": "Quill", "title": "RMBS memo", "brief": "SECRET-CAPTAIN-WORDS brief"})),
+    llm.script("chief_of_staff", tool_turn(("assign_task", {"to": "er_lead", "title": "RMBS memo", "brief": "SECRET-CAPTAIN-WORDS brief"})),
                tool_turn(("report_to_captain", {"text": "SECRET-REPORT"})), text_turn("Routed."))
-    llm.script("Quill", tool_turn(("send_message", {"to": ["Ledger"], "text": "SECRET-CHAT"}),
+    llm.script("er_lead", tool_turn(("send_message", {"to": ["er_associate"], "text": "SECRET-CHAT"}),
                                   ("note_to_self", {"note": "SECRET-NOTE about $48"}),
-                                  ("delegate", {"to": "Ledger", "job": "SECRET-CHAT job"})),
+                                  ("delegate", {"to": "er_associate", "job": "SECRET-CHAT job"})),
                text_turn("SECRET-THINKING done.", thinking="SECRET-THINKING"))
-    llm.script("Ledger", tool_turn(("submit_result", {"findings": "SECRET-CHAT result", "confidence": "high"})),
+    llm.script("er_associate", tool_turn(("submit_result", {"findings": "SECRET-CHAT result", "confidence": "high"})),
                text_turn("SECRET-CHAT reply"))
     office.captain_send("office", "SECRET-CAPTAIN-WORDS please", original="SECRET-ORIGINAL")
-    office.pause("Pip", by="captain", reason="SECRET-PAUSE-REASON")
+    office.pause("screen_associate", by="captain", reason="SECRET-PAUSE-REASON")
     outbox.save_draft(office, agent_id="cr_associate", title="Draft note", body="SECRET-DRAFT body.",
                       x_post="SECRET-DRAFT", linkedin_post="SECRET-DRAFT")
     await office.idle()
@@ -184,7 +184,7 @@ def test_visitors_read_only_finished_work(site):
                      pitch="pitch.md", price=80.0, spy=400.0)
     [w] = visitor.get("/api/public/watchlist").json()
     assert (w["ticker"], w["thesis"], w["pitch"], w["added_by"]) == ("BFLY", "Growth is speeding up", None, "")
-    assert w["return"] == pytest.approx(0.25) and w["added_by_name"] == "Scout"
+    assert w["return"] == pytest.approx(0.25) and w["added_by_name"] == nick("screen_lead")
 
     draft = outbox.save_draft(office, agent_id="cr_associate", title="Weekly note", body="Plain words.",
                               x_post="Out.", linkedin_post="Out.")

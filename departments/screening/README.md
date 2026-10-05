@@ -1,6 +1,6 @@
 # Screening department
 
-Pip (associate) and Scout (lead). Finds the ideas: Gems and Core screens, a sanity-checked shortlist of up to five, one-page pitches, the watchlist.
+Lead (`screen_lead`) and associate (`screen_associate`). Finds the ideas: Gems and Core screens, a sanity-checked shortlist of up to five, one-page pitches, the watchlist.
 
 How they think lives here, in plain Markdown you can edit:
 - `charter.md`: role, tools, workflow, hard rules.

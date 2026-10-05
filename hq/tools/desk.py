@@ -348,7 +348,7 @@ async def _get_model(ctx: ToolContext, inp: dict) -> str:
             drafts = store.models(t)
             hint = (f" Latest draft is v{drafts[-1]['version']} ({drafts[-1]['status']}); it is not "
                     "the firm's numbers until approved." if drafts else "")
-            return f"No approved model for {t}.{hint} Ask Quant (Sigma) for one; never use unapproved figures."
+            return f"No approved model for {t}.{hint} Ask Quant for one; never use unapproved figures."
     else:
         m = store.model(t, int(version))
         if m is None:

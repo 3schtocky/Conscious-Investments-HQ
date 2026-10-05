@@ -40,11 +40,11 @@ def test_another_website_cannot_drive_or_read_the_office(client):
     office = client.office
     # its own page works
     assert client.get("/api/state").status_code == 200
-    assert client.post("/api/agents/Quill/pause", json={"reason": "check"},
+    assert client.post("/api/agents/er_lead/pause", json={"reason": "check"},
                        headers={"Origin": "http://127.0.0.1:8750"}).status_code == 200
     assert office.agents["er_lead"].paused
     # a cross-site page cannot unpause, send work (which would spend credits) or decide a card
-    assert client.post("/api/agents/Quill/resume", headers=evil).status_code == 403
+    assert client.post("/api/agents/er_lead/resume", headers=evil).status_code == 403
     assert office.agents["er_lead"].paused
     assert client.post("/api/captain/send", json={"to": "office", "text": "Research NVDA"}, headers=evil).status_code == 403
     assert office.store.tasks() == []

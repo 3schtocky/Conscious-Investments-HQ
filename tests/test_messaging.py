@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import text_turn, tool_turn
+from conftest import nick, text_turn, tool_turn
 
 from hq.engine.llm import api_problem
 
@@ -25,26 +25,26 @@ def _result_of(llm, who: str, call_index: int = 1) -> str:
 # Juno's tools ---------------------------------------------------------------------------------
 async def test_assign_task_all_leads_reaches_every_lead(make_office):
     office, llm = make_office()
-    llm.script("Juno", tool_turn(("assign_task", {"to": "all_leads", "title": "Focus on EOSE",
+    llm.script("chief_of_staff", tool_turn(("assign_task", {"to": "all_leads", "title": "Focus on EOSE",
                                                   "brief": "Only EOSE work until further notice."})),
                text_turn("Done."))
-    for lead in ("Quill", "Scout", "Sigma", "Vera", "Harbor"):
+    for lead in ("er_lead", "screen_lead", "quant_lead", "audit_lead", "cr_lead"):
         llm.script(lead, text_turn("Understood."))
-    await _run(office, "Juno", "Everyone: only EOSE.")
+    await _run(office, "chief_of_staff", "Everyone: only EOSE.")
     got = {t["assignee"] for t in office.store.tasks() if t["assigned_by"] == "chief_of_staff"}
     assert got == {"er_lead", "screen_lead", "quant_lead", "audit_lead", "cr_lead"}
-    assert "Assigned to Quill" in _result_of(llm, "Juno")
+    assert "Assigned to Quill" in _result_of(llm, "chief_of_staff")
 
 
 async def test_assign_task_takes_a_list_and_refuses_associates(make_office):
     office, llm = make_office()
-    llm.script("Juno",
-               tool_turn(("assign_task", {"to": ["Quill", "Sigma"], "title": "T", "brief": "B"}),
-                         ("assign_task", {"to": ["Ledger"], "title": "T2", "brief": "B2"})),
+    llm.script("chief_of_staff",
+               tool_turn(("assign_task", {"to": ["er_lead", "quant_lead"], "title": "T", "brief": "B"}),
+                         ("assign_task", {"to": ["er_associate"], "title": "T2", "brief": "B2"})),
                text_turn("Done."))
-    llm.script("Quill", text_turn("ok"))
-    llm.script("Sigma", text_turn("ok"))
-    await _run(office, "Juno", "Start.")
+    llm.script("er_lead", text_turn("ok"))
+    llm.script("quant_lead", text_turn("ok"))
+    await _run(office, "chief_of_staff", "Start.")
     out = llm.calls[1]["params"]["messages"][-1]["content"]
     assert "Quill (task #" in out[0]["content"] and "Sigma (task #" in out[0]["content"]
     assert out[1].get("is_error") and "associate" in out[1]["content"]
@@ -57,10 +57,10 @@ async def test_read_office_shows_who_does_what_and_what_is_stuck(make_office):
     office.store.set_task_status(1, "paused", reason="tool_loop: looped")
     office.request_approval("quant_lead", kind="other", title="A card", summary="s", payload={},
                             task_id=None)
-    llm.script("Juno", tool_turn(("read_office", {})), text_turn("Looked."))
-    await _run(office, "Juno", "What is going on?")
-    report = json.loads(_result_of(llm, "Juno"))
-    assert {c["name"] for c in report["colleagues"]} >= {"Quill", "Sigma", "Juno"}
+    llm.script("chief_of_staff", tool_turn(("read_office", {})), text_turn("Looked."))
+    await _run(office, "chief_of_staff", "What is going on?")
+    report = json.loads(_result_of(llm, "chief_of_staff"))
+    assert {c["name"] for c in report["colleagues"]} >= {nick("er_lead"), nick("quant_lead"), nick("chief_of_staff")}
     assert report["unfinished_work"][0]["title"] == "Stuck thing"
     assert report["unfinished_work"][0]["why"].startswith("tool_loop")
     assert report["waiting_on_captain"][0]["title"] == "A card"
@@ -70,8 +70,8 @@ async def test_read_office_shows_who_does_what_and_what_is_stuck(make_office):
 # replies reach the Captain ----------------------------------------------------------------------
 async def test_plain_answer_to_the_captain_is_delivered(make_office):
     office, llm = make_office()
-    llm.script("Juno", text_turn("Quill is on EOSE; Sigma is building the model."))
-    tid = await _run(office, "Juno", "What's going on?")
+    llm.script("chief_of_staff", text_turn("Quill is on EOSE; Sigma is building the model."))
+    tid = await _run(office, "chief_of_staff", "What's going on?")
     reply = [m for m in office.store.chat("dm:captain|chief_of_staff") if m["sender"] == "chief_of_staff"]
     assert [m["text"] for m in reply] == ["Quill is on EOSE; Sigma is building the model."]
     assert reply[0]["task_id"] == tid
@@ -79,27 +79,27 @@ async def test_plain_answer_to_the_captain_is_delivered(make_office):
 
 async def test_an_agent_that_already_reported_is_not_repeated(make_office):
     office, llm = make_office()
-    llm.script("Juno", tool_turn(("report_to_captain", {"text": "All quiet."})),
+    llm.script("chief_of_staff", tool_turn(("report_to_captain", {"text": "All quiet."})),
                text_turn("Reported."))
-    await _run(office, "Juno", "Status?")
+    await _run(office, "chief_of_staff", "Status?")
     reply = [m for m in office.store.chat("dm:captain|chief_of_staff") if m["sender"] == "chief_of_staff"]
     assert [m["text"] for m in reply] == ["All quiet."]
 
 
 async def test_colleague_recaps_are_not_forwarded_to_the_captain(make_office):
     office, llm = make_office()
-    llm.script("Quill", text_turn("Recap for the lead."))
-    office.assign("Quill", "Do a thing.", by="chief_of_staff")
+    llm.script("er_lead", text_turn("Recap for the lead."))
+    office.assign("er_lead", "Do a thing.", by="chief_of_staff")
     await office.idle()
     assert [m for m in office.store.chat("dm:captain|er_lead") if m["sender"] == "er_lead"] == []
 
 
 # stuck work restarts ----------------------------------------------------------------------------
 async def _loop_then_finish(office, llm):
-    same = ("delegate", {"to": "Ledger", "job": "same job"})
-    llm.script("Quill", tool_turn(same), tool_turn(same), tool_turn(same))
-    llm.script("Ledger", *[text_turn("did it")] * 3)
-    return await _run(office, "Quill", "Loop.")
+    same = ("delegate", {"to": "er_associate", "job": "same job"})
+    llm.script("er_lead", tool_turn(same), tool_turn(same), tool_turn(same))
+    llm.script("er_associate", *[text_turn("did it")] * 3)
+    return await _run(office, "er_lead", "Loop.")
 
 
 async def test_a_looping_task_can_be_resumed_with_fresh_limits(make_office):
@@ -107,7 +107,7 @@ async def test_a_looping_task_can_be_resumed_with_fresh_limits(make_office):
     tid = await _loop_then_finish(office, llm)
     assert office.store.task(tid)["status_reason"].startswith("tool_loop")
     incident = office.store.incidents()[0]
-    llm.script("Quill", text_turn("Changed approach and finished."))
+    llm.script("er_lead", text_turn("Changed approach and finished."))
     assert office.resume_from_incident(incident["id"]) == [tid]
     await office.idle()
     assert office.store.task(tid)["status"] == "done"
@@ -157,10 +157,10 @@ async def test_out_of_credit_pauses_work_once_and_resumes_together(make_office):
     async def refuse(params):
         raise out_of_credit
 
-    llm.script("Quill", refuse)
-    llm.script("Scout", refuse)
-    a = office.assign("Quill", "First.")
-    b = office.assign("Scout", "Second.")
+    llm.script("er_lead", refuse)
+    llm.script("screen_lead", refuse)
+    a = office.assign("er_lead", "First.")
+    b = office.assign("screen_lead", "Second.")
     await office.idle()
     for t in (a, b):
         task = office.store.task(t)
@@ -168,8 +168,8 @@ async def test_out_of_credit_pauses_work_once_and_resumes_together(make_office):
     incidents = office.store.incidents()
     assert [i["kind"] for i in incidents] == ["api_credit"]   # one incident, not one per task
     assert "out of credit" in incidents[0]["detail"]
-    llm.script("Quill", text_turn("Back at it."))
-    llm.script("Scout", text_turn("Back at it too."))
+    llm.script("er_lead", text_turn("Back at it."))
+    llm.script("screen_lead", text_turn("Back at it too."))
     assert sorted(office.resume_from_incident(incidents[0]["id"])) == [a, b]
     await office.idle()
     assert {office.store.task(a)["status"], office.store.task(b)["status"]} == {"done"}
@@ -187,7 +187,7 @@ def test_resume_endpoint(make_office):
                                      title="Stuck", body="x")
         office.store.set_task_status(t, "paused", reason="turn_cap: limit")
         inc = office.raise_incident("er_lead", t, "turn_cap", "limit")
-        llm.script("Quill", text_turn("Finished."))
+        llm.script("er_lead", text_turn("Finished."))
         r = c.post(f"/api/incidents/{inc}/resume")
         assert r.status_code == 200 and r.json() == {"resumed": [t]}
         assert c.post(f"/api/incidents/{inc}/resume").status_code == 404   # already closed

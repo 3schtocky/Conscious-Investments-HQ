@@ -84,6 +84,21 @@ def validate_avatar(avatar: Any) -> Any:
     return out
 
 
+_NICK_BANNED = re.compile(r"[`*{}<>\\]")
+
+
+def clean_nickname(raw: Any) -> str:
+    """A display name is cosmetic and can be anything the user likes, with two limits: it must fit
+    in a name tag, and it can't hold the few characters the prompts and chat formatting use as
+    markup (backticks, asterisks, braces, angle brackets, backslashes) or control characters."""
+    nick = re.sub(r"\s+", " ", str(raw)).strip()
+    if not 1 <= len(nick) <= 24:
+        raise RosterError("Nicknames are 1 to 24 characters.")
+    if _NICK_BANNED.search(nick) or any(ord(c) < 32 or ord(c) == 127 for c in nick):
+        raise RosterError("Nicknames can't contain ` * { } < > \\ or control characters.")
+    return nick
+
+
 def update_member(member_id: str, changes: dict) -> dict:
     """Apply Settings edits to an agent (or `captain`). Returns the updated entry."""
     allowed = {"nickname", "avatar", "persona", "model"}
@@ -101,9 +116,7 @@ def update_member(member_id: str, changes: dict) -> dict:
             if entry is None:
                 raise RosterError(f"No agent {member_id!r}.")
         if "nickname" in changes:
-            nick = str(changes["nickname"]).strip()
-            if not 1 <= len(nick) <= 24:
-                raise RosterError("Nicknames are 1 to 24 characters.")
+            nick = clean_nickname(changes["nickname"])
             taken = {a["nickname"].lower() for a in data["agents"] if a["id"] != member_id}
             taken |= {a["id"].lower() for a in data["agents"]} - {member_id}
             if nick.lower() in taken or (nick.lower() == "captain" and member_id != "captain"):

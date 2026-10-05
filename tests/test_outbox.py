@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import register_model, text_turn, tool_turn
+from conftest import nick, register_model, text_turn, tool_turn
 
 from hq import outbox
 from hq.tools import desk
@@ -115,30 +115,30 @@ async def test_newsletter_from_draft_to_ready_to_paste(office_llm):
     bad = {"title": "Weekly note", "body": BODY.replace("$2.00", "$9.99"), "x_post": X, "linkedin_post": LI}
     good = {**bad, "body": BODY}
     issue = f"{office.ledger.today()}-weekly-note"
-    llm.script("Harbor", tool_turn(("delegate", {"to": "Wren", "job": "Draft the weekly note."})),
+    llm.script("cr_lead", tool_turn(("delegate", {"to": "cr_associate", "job": "Draft the weekly note."})),
                tool_turn(("finalize_newsletter", {"issue": issue})),             # refused: still blocked
                tool_turn(("save_newsletter", good), ("finalize_newsletter", {"issue": issue, "note": "First issue."})),
                tool_turn(("save_newsletter", good), ("request_approval", {"kind": "newsletter", "title": "x", "summary": "y"})),
                text_turn("In the Outbox."), text_turn("Thanks."))
-    llm.script("Wren", tool_turn(("newsletter_material", {})), tool_turn(("save_newsletter", bad)),
+    llm.script("cr_associate", tool_turn(("newsletter_material", {})), tool_turn(("save_newsletter", bad)),
                tool_turn(("submit_result", {"findings": f"Saved as {issue}", "confidence": "medium"})))
-    office.assign("Harbor", "Prepare this week's newsletter")
+    office.assign("cr_lead", "Prepare this week's newsletter")
     await office.idle()
 
-    material = json.loads(_results(llm, "Wren", 1)[0]["content"])
+    material = json.loads(_results(llm, "cr_associate", 1)[0]["content"])
     assert material["researched_names"] == [{"ticker": "RMBS", "rating": "Neutral",
                                              "price_targets": {"bear": 1.0, "base": 2.0, "bull": 3.0},
                                              "cite_as": f"Quant model v1, approved {office.ledger.today()}"}]
     [w] = material["watchlist"]
     assert (w["ticker"], w["return_since_flagged"], w["vs_sp500"]) == ("BFLY", 0.1, 0.09)
-    saved = json.loads(_results(llm, "Wren", 2)[0]["content"])
+    saved = json.loads(_results(llm, "cr_associate", 2)[0]["content"])
     assert saved["status"] == "blocked" and "does not match the approved model for RMBS" in saved["errors"][0]
 
-    refused = _results(llm, "Harbor", 2)[0]
+    refused = _results(llm, "cr_lead", 2)[0]
     assert refused["is_error"] and "can't go to Stott yet" in refused["content"]
-    done = _results(llm, "Harbor", 3)
+    done = _results(llm, "cr_lead", 3)
     assert json.loads(done[0]["content"])["errors"] == [] and "approval #1 is on Stott's desk" in done[1]["content"]
-    late = _results(llm, "Harbor", 4)
+    late = _results(llm, "cr_lead", 4)
     assert late[0]["is_error"] and "waiting for a decision" in late[0]["content"]       # frozen once filed
     assert late[1]["is_error"] and "finalize_newsletter" in late[1]["content"]          # no side door
 
@@ -164,20 +164,20 @@ async def test_newsletter_from_draft_to_ready_to_paste(office_llm):
     meta = outbox.load(office.outbox_dir, issue)
     assert meta["status"] == "approved" and "copy the article into Substack" in meta["next_step"]
     view = office.outbox_view()
-    assert view["publisher"] == "outbox" and view["issues"][0]["drafted_by_name"] == "Wren"
+    assert view["publisher"] == "outbox" and view["issues"][0]["drafted_by_name"] == nick("cr_associate")
 
 
 async def test_changes_requested_reopens_the_issue(office_llm):
     office, llm = office_llm
     draft = {"title": "Weekly note", "body": BODY, "x_post": X, "linkedin_post": LI}
     issue = f"{office.ledger.today()}-weekly-note"
-    llm.script("Harbor", tool_turn(("save_newsletter", draft), ("finalize_newsletter", {"issue": issue})),
+    llm.script("cr_lead", tool_turn(("save_newsletter", draft), ("finalize_newsletter", {"issue": issue})),
                text_turn("Filed."),
                tool_turn(("save_newsletter", {**draft, "issue": issue, "title": "Weekly note, revised",
                                               "body": BODY + "\nA sharper close.\n"}),
                          ("finalize_newsletter", {"issue": issue})),
                text_turn("Revised and filed again."))
-    office.assign("Harbor", "Newsletter")
+    office.assign("cr_lead", "Newsletter")
     await office.idle()
     office.decide(office.store.approvals("pending")[0]["id"], "changes", "Sharper close, please.")
     await office.idle()
@@ -192,11 +192,11 @@ async def test_an_approval_withdrawn_after_drafting_blocks_the_issue(office_llm)
     issue = f"{office.ledger.today()}-weekly-note"
     outbox.save_draft(office, agent_id="cr_associate", title="Weekly note", body=BODY, x_post=X, linkedin_post=LI)
     office.store.set_model_status("RMBS", 1, "superseded")      # the model stopped being official
-    llm.script("Harbor", tool_turn(("finalize_newsletter", {"issue": issue}), ("read_newsletter", {"issue": "nope"})),
+    llm.script("cr_lead", tool_turn(("finalize_newsletter", {"issue": issue}), ("read_newsletter", {"issue": "nope"})),
                text_turn("Blocked."))
-    office.assign("Harbor", "Finalize")
+    office.assign("cr_lead", "Finalize")
     await office.idle()
-    r = _results(llm, "Harbor")
+    r = _results(llm, "cr_lead")
     assert r[0]["is_error"] and "no approved name beside it" in r[0]["content"]
     assert r[1]["is_error"] and "No newsletter issue" in r[1]["content"]
     assert outbox.load(office.outbox_dir, issue)["status"] == "blocked" and not office.store.approvals()
@@ -219,11 +219,11 @@ async def test_package_memo_only_ships_approved_finished_work(office_llm, covera
     folder = coverage / "RMBS"
     folder.mkdir()
     calls = [("package_memo", {"ticker": "ZZZZ"}), ("package_memo", {"ticker": "RMBS"})]
-    llm.script("Harbor", tool_turn(*calls), text_turn("Not ready."))
+    llm.script("cr_lead", tool_turn(*calls), text_turn("Not ready."))
     (folder / "memo.md").write_text("# Rambus\n\nBase price target $5.00 [M]. Growth was [VERIFY: 10-Q].\n")
-    office.assign("Harbor", "Package the memos")
+    office.assign("cr_lead", "Package the memos")
     await office.idle()
-    r = _results(llm, "Harbor")
+    r = _results(llm, "cr_lead")
     assert r[0]["is_error"] and "No memo.md for ZZZZ" in r[0]["content"]
     assert r[1]["is_error"] and "isn't client-ready" in r[1]["content"]
     assert "[VERIFY]" in r[1]["content"] and "does not match approved model v1" in r[1]["content"]
@@ -233,8 +233,8 @@ async def test_package_memo_only_ships_approved_finished_work(office_llm, covera
                                     "and we rate the shares Neutral.\n\n## Risks\n\n- Customer concentration [S1]\n\n"
                                     "| Scenario | Target |\n|---|---|\n| Bear | $1.00 |\n| Bull | $3.00 |\n")
     (folder / "sources.md").write_text("- [S1] 10-K FY'25\n")
-    llm.script("Harbor", tool_turn(("package_memo", {"ticker": "rmbs"})), text_turn("Packaged."), text_turn("Thanks."))
-    office.assign("Harbor", "Package RMBS")
+    llm.script("cr_lead", tool_turn(("package_memo", {"ticker": "rmbs"})), text_turn("Packaged."), text_turn("Thanks."))
+    office.assign("cr_lead", "Package RMBS")
     await office.idle()
     [card] = office.store.approvals("pending")
     day = office.ledger.today()
@@ -318,10 +318,10 @@ def test_issue_ids_never_collide_and_revisions_keep_their_id(office_llm):
 async def test_approval_is_refused_when_the_approved_numbers_moved(office_llm):
     office, llm = office_llm
     issue = f"{office.ledger.today()}-weekly-note"
-    llm.script("Harbor", tool_turn(("save_newsletter", {"title": "Weekly note", "body": BODY, "x_post": X,
+    llm.script("cr_lead", tool_turn(("save_newsletter", {"title": "Weekly note", "body": BODY, "x_post": X,
                                                         "linkedin_post": LI}),
                                    ("finalize_newsletter", {"issue": issue})), text_turn("Filed."), text_turn("Ok."))
-    office.assign("Harbor", "Newsletter")
+    office.assign("cr_lead", "Newsletter")
     await office.idle()
     [card] = office.store.approvals("pending")
     office.store.set_model_status("RMBS", 1, "superseded")               # Quant's numbers moved on
@@ -353,11 +353,11 @@ async def test_a_packaged_memo_is_not_replaced_while_on_the_captains_desk(office
     folder.mkdir()
     (folder / "memo.md").write_text("# Berkshire\n\nBRK-B base price target $2.00 [M].\n")
     (folder / "sources.md").write_text("- [S1] 10-K\n")
-    llm.script("Harbor", tool_turn(("package_memo", {"ticker": "BRK-B"})),
+    llm.script("cr_lead", tool_turn(("package_memo", {"ticker": "BRK-B"})),
                tool_turn(("package_memo", {"ticker": "BRK-B"})), text_turn("Packaged once."), text_turn("Ok."))
-    office.assign("Harbor", "Package BRK-B")
+    office.assign("cr_lead", "Package BRK-B")
     await office.idle()
-    again = _results(llm, "Harbor", 2)[0]
+    again = _results(llm, "cr_lead", 2)[0]
     assert again["is_error"] and "waiting for a decision (approval #1)" in again["content"]
     [card] = office.store.approvals("pending")
     office.decide(card["id"], "approved")                                # a hyphenated ticker's id still resolves

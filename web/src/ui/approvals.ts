@@ -84,7 +84,7 @@ export class ApprovalsPanel {
         : h("div", { class: "decided" }, DECIDED[a.status] ?? a.status, a.note ? ` · "${a.note}"` : ""));
   }
 
-  /** What Tally's free code checks made of this card (cards from before Phase 6 have none). */
+  /** What the Audit associate's free code checks made of this card (cards from before Phase 6 have none). */
   private auditEl(a: Approval): HTMLElement | null {
     const found = a.payload.audit;
     if (!found) return null;
@@ -93,7 +93,7 @@ export class ApprovalsPanel {
     const all = found.filter((f) => f.severity === "flag");
     const flags = all.filter((f) => !settled(f)).length;
     const label = flags ? `Audit: ${flags} flag${flags === 1 ? "" : "s"}` : all.length ? "Audit: flags cleared" : "Audit: notes only";
-    const state: Record<string, string> = { open: "open", reviewing: "Vera is reviewing", cleared: "cleared", upheld: "upheld by Vera", dismissed: "dismissed by you" };
+    const state: Record<string, string> = { open: "open", reviewing: `${this.state.name("audit_lead")} is reviewing`, cleared: "cleared", upheld: `upheld by ${this.state.name("audit_lead")}`, dismissed: "dismissed by you" };
     return h("div", { class: "card-audit" },
       h("span", { class: `chip${flags ? " warn" : all.length ? " good" : ""}` }, label),
       h("ul", {}, ...found.map((f) => h("li", {}, `${f.subject}: ${f.detail}${f.status ? ` (${state[f.status] ?? f.status})` : ""}`))));

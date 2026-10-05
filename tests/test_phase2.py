@@ -95,14 +95,14 @@ def test_member_edit_endpoint_reloads_roster(client):
     r = client.put("/api/members/er_lead", json={"nickname": "Quincy"})
     assert r.status_code == 200
     assert client.office.agents["er_lead"].nickname == "Quincy"
-    bad = client.put("/api/members/er_lead", json={"nickname": "Ledger"})
+    bad = client.put("/api/members/er_lead", json={"nickname": "er_associate"})
     assert bad.status_code == 400 and "taken" in bad.json()["detail"]
 
 
 def test_pause_resume_endpoints(client):
-    assert client.post("/api/agents/Quill/pause", json={"reason": "check"}).status_code == 200
+    assert client.post("/api/agents/er_lead/pause", json={"reason": "check"}).status_code == 200
     assert client.office.agents["er_lead"].paused
-    assert client.post("/api/agents/Quill/resume").status_code == 200
+    assert client.post("/api/agents/er_lead/resume").status_code == 200
     assert not client.office.agents["er_lead"].paused
 
 
@@ -179,16 +179,16 @@ async def test_model_change_mid_task_waits_for_the_next_task(make_office):
     async def first(params):
         started.set()
         await asyncio.sleep(0.02)
-        return tool_turn(("send_message", {"to": ["Ledger"], "text": "hi"}))
+        return tool_turn(("send_message", {"to": ["er_associate"], "text": "hi"}))
 
-    llm.script("Quill", first, text_turn("done"))
-    llm.script("Ledger", text_turn("ok"))
-    office.assign("Quill", "x")
+    llm.script("er_lead", first, text_turn("done"))
+    llm.script("er_associate", text_turn("ok"))
+    office.assign("er_lead", "x")
     await started.wait()
     quill = office.agents["er_lead"]
     quill.model_cfg = {**quill.model_cfg, "id": "switched-model"}   # a Settings edit mid-task
     await office.idle()
-    models = {c["params"]["model"] for c in llm.calls if c["who"] == "Quill"}
+    models = {c["params"]["model"] for c in llm.calls if c["who"] == "er_lead"}
     assert models == {"fake"}
 
 

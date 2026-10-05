@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 import pytest
+from conftest import nick
 
 from hq import demo
 from hq.demo import DemoLLM
@@ -47,7 +48,7 @@ async def test_a_message_to_everyone_goes_to_every_lead(demo_office):
     got = {t["assignee"] for t in office.store.tasks() if t["assigned_by"] == "chief_of_staff"}
     assert got == {"er_lead", "screen_lead", "quant_lead", "audit_lead", "cr_lead"}
     [reply] = _to_captain(office, "chief_of_staff")
-    assert "Quill" in reply["text"] and "Sigma" in reply["text"]
+    assert nick("er_lead") in reply["text"] and nick("quant_lead") in reply["text"]
 
 
 async def test_a_standing_instruction_is_acknowledged_not_researched(demo_office):
@@ -78,11 +79,11 @@ async def test_a_ticker_in_the_request_reaches_the_associate(demo_office):
 
 async def test_a_lead_reports_its_own_status_honestly(demo_office):
     office = demo_office
-    first = office.assign("Quill", "Write up RMBS.")
+    first = office.assign("er_lead", "Write up RMBS.")
     await office.idle()
     office.request_approval("er_lead", kind="brief", title="RMBS brief", summary="s", payload={},
                             task_id=first)
-    office.captain_send("Quill", "How is the coverage report coming along?")
+    office.captain_send("er_lead", "How is the coverage report coming along?")
     await office.idle()
     text = _to_captain(office, "er_lead")[-1]["text"]
     assert 'latest assignment was "Write up RMBS."' in text and "finished" in text
@@ -91,14 +92,14 @@ async def test_a_lead_reports_its_own_status_honestly(demo_office):
 
 async def test_a_lead_with_nothing_on_says_so(demo_office):
     office = demo_office
-    office.captain_send("Scout", "What are you working on?")
+    office.captain_send("screen_lead", "What are you working on?")
     await office.idle()
     assert "Nothing is on my desk" in _to_captain(office, "screen_lead")[-1]["text"]
 
 
 async def test_thanks_gets_a_short_answer_the_captain_sees(demo_office):
     office = demo_office
-    office.captain_send("Quill", "Thanks, great work on that.")
+    office.captain_send("er_lead", "Thanks, great work on that.")
     await office.idle()
     text = _to_captain(office, "er_lead")[-1]["text"]
     assert text.startswith("Thank you, Stott")
