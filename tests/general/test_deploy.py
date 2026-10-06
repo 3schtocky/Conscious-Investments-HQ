@@ -11,7 +11,7 @@ import pytest
 from HQ import deploy, server
 from HQ import public as pub
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PASSWORD = "correct-horse-battery-staple-42"
 
 
