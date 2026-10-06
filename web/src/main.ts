@@ -3,6 +3,7 @@ import { STATIC } from "./static";
 import Phaser from "phaser";
 import "./style.css";
 import "./mobile.css";
+import "./mobile-screens.css";
 import { OfficeScene, type Focus } from "./office/scene";
 import { OfficeState, type OfficeEvent, type Snapshot } from "./state";
 import { h, money } from "./ui/dom";
@@ -24,6 +25,7 @@ import { AgentSheet } from "./ui/agentSheet";
 import { Captions } from "./ui/captions";
 import { MobileHome } from "./ui/mobileHome";
 import { MobileDemo } from "./ui/mobileDemo";
+import { MobileFeed } from "./ui/feedMobile";
 import { isMobileLayout, opensOnHome } from "./ui/mobileModel";
 import { AndroidBack } from "./ui/androidBack";
 import { platformOf } from "./ui/androidModel";
@@ -256,6 +258,7 @@ function startChat(id: string) {
   render();
 }
 const cards = new DeskCards(cardsRoot, state, (id) => pickAgent(id));
+const mobileFeed = new MobileFeed(actRoot, state, (id) => pickAgent(id));   // the phone's work log (ui/feedMobile.ts)
 
 function pickAgent(id: string) {
   if (mobile.active && state.agents.has(id)) { mobile.openAgent(id); return; }   // a phone gets a sheet, not the sidebar
@@ -400,7 +403,7 @@ function frame() {
       structural = false;
       renderTabs();
       renderViews();
-      if (tab === "activity") renderActivity(actRoot, state, wing, pickAgent);
+      if (tab === "activity") { if (mobile.active) mobileFeed.render(); else { actRoot.classList.remove("mf"); renderActivity(actRoot, state, wing, pickAgent); } }
       if (tab === "chat") chatPanel.render(selected);
       if (tab === "demo") demoTour.panel.render();
       if (tab === "settings") settings.render();

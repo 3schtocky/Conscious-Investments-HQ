@@ -1,6 +1,7 @@
 // Portfolio: the paper portfolio and its scoreboard against the S&P 500. No real money.
 import type { OfficeState } from "../state";
 import { clear, h, timeAgo } from "./dom";
+import { isScrubbing, renderMobilePortfolio } from "./portfolioMobile";
 
 interface Row {
   id: number; ticker: string; size_pct: number; entry_price: number; entry_day: string; exit_day: string | null;
@@ -59,9 +60,19 @@ export class PortfolioPanel {
 
   render() {
     const top = this.root.scrollTop;
-    clear(this.root);
     const captain = this.state.captain.nickname;
     const v = this.view;
+    // A phone gets its own layout (portfolioMobile.ts), except while the recorded demo shows its own position card.
+    const phone = document.body.classList.contains("mobile") && !this.state.touring;
+    this.root.classList.toggle("pf", phone);
+    if (phone) {
+      if (isScrubbing()) return;   // a finger is on the chart: leave it alone
+      if (!v) { clear(this.root); this.root.append(h("p", { class: "empty" }, "Loading…")); return; }
+      renderMobilePortfolio(this.root, v, { captain });
+      this.root.scrollTop = top;
+      return;
+    }
+    clear(this.root);
     if (this.state.touring) {
       this.root.append(h("p", { class: "muted small audit-intro" },
         `A paper portfolio: no real money, $100,000 to start. Normally the team sizes a position at 3, 5 or 8 percent. In this demo ${captain} chose 10 percent, so it is shown as an explicit decision and not a standard size.`));

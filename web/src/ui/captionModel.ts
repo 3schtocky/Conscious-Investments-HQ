@@ -17,7 +17,7 @@ const tidy = (s: string, max: number) => {
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 };
 /** Real words, or null when they are hidden ("…" or nothing). */
-const words = (text: unknown, max = 120): string | null => (!text || text === "…" ? null : tidy(String(text), max));
+export const words = (text: unknown, max = 120): string | null => (!text || text === "…" ? null : tidy(String(text), max));
 
 export function captionFor(ev: OfficeEvent, who: Names): string | null {
   const a = who.name(ev.agent);
