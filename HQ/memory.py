@@ -3,7 +3,7 @@
 - `memory/wiki.md`: the Captain's standing guidance and firm facts. Agents can only propose an
   entry; nothing is added until the Captain approves it.
 - `memory/desks/<agent>.md`: short notes an agent leaves for its future self. Each note passes
-  a code screen first (`HQ.audit.screen_note`); a flagged note waits for the Captain.
+  a code screen first (`departments.audit.checks.screen_note`); a flagged note waits for the Captain.
 
 Both are loaded into an agent's prompt when a task starts (frozen for that task).
 Everything lives in memory/ (gitignored).

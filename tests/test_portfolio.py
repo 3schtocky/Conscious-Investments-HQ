@@ -8,7 +8,7 @@ import json
 import pytest
 from conftest import register_model, text_turn, tool_turn
 
-from HQ import portfolio
+from departments.executive import portfolio
 
 PRICES = {"RMBS": 100.0, "META": 50.0, "SPY": 500.0}
 

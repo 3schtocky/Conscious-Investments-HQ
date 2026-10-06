@@ -19,7 +19,7 @@ from HQ.engine.events import EventBus
 from HQ.engine.guards import ConversationGuard, GuardBlock
 from HQ.engine.ledger import BudgetExhausted, Ledger
 from HQ.engine.llm import AnthropicClient, ModelClient
-from HQ.rounds import Rounds
+from departments.executive.rounds import Rounds
 from HQ.store import Store
 
 log = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class Office:
         self._model_locks: dict[str, asyncio.Lock] = {}
         from HQ.memory import MEMORY_DIR
         self.memory_dir = memory_dir or MEMORY_DIR
-        from HQ.outbox import OUTBOX_DIR
+        from departments.client_relations.outbox import OUTBOX_DIR
         self.outbox_dir = outbox_dir or OUTBOX_DIR   # Client Relations' ready-to-publish files
         self._running: set[asyncio.Task] = set()
         self.bulletin: dict[str, list[str]] = {}   # announcements a lead hears with its next task
@@ -381,7 +381,7 @@ class Office:
     def request_approval(self, agent_id: str, *, kind: str, title: str, summary: str,
                          payload: dict, task_id: int | None) -> int:
         # Tally's code checks run on every card before it reaches the Captain (free).
-        from HQ import audit
+        from departments.audit import checks as audit
 
         agent = self.agents.get(agent_id)
         found = []
@@ -530,7 +530,8 @@ class Office:
 
     # paper portfolio -----------------------------------------------------------------------
     def _prices(self, prices: dict | None, extra: list[str] | None = None) -> dict:
-        from HQ import portfolio, quotes
+        from HQ import quotes
+        from departments.executive import portfolio
 
         names = sorted(set(portfolio.tickers(self)) | set(extra or []))
         if prices is not None and all(n in prices for n in names):
@@ -545,7 +546,7 @@ class Office:
     def propose_position(self, agent_id: str, ticker: str, size_pct: int, thesis: str, *,
                          task_id: int | None, prices: dict | None = None) -> int:
         """Put an entry on the Captain's desk, if the rules allow it (ValueError says why not)."""
-        from HQ import portfolio
+        from departments.executive import portfolio
 
         prices = self._prices(prices, [ticker])
         ok = portfolio.check_entry(self, ticker, size_pct, prices)
@@ -566,7 +567,7 @@ class Office:
 
     def propose_exit(self, agent_id: str, ticker: str, reason: str, *, task_id: int | None,
                      prices: dict | None = None, code: str | None = None) -> int:
-        from HQ import portfolio
+        from departments.executive import portfolio
 
         position = next((p for p in self.store.positions("open") if p["ticker"] == ticker), None)
         if position is None:
@@ -596,7 +597,7 @@ class Office:
         """Carry out the Captain's decision on a portfolio card, before the card is closed. An
         approval that can't be filled (the rating changed, no quote, not enough cash) is refused
         with the reason and the card stays open."""
-        from HQ import portfolio
+        from departments.executive import portfolio
 
         p = card["payload"]
         if card["kind"] != "portfolio" or p.get("action") not in ("enter", "exit"):
@@ -616,7 +617,7 @@ class Office:
 
     def portfolio_tick(self, prices: dict | None = None) -> dict:
         """Mark to market and raise exit cards. Plain code on free prices: no API call."""
-        from HQ import portfolio
+        from departments.executive import portfolio
 
         if not self.store.positions():
             return {"marked": False, "flags": []}
@@ -633,7 +634,7 @@ class Office:
         return {"marked": marked, "flags": raised}
 
     def portfolio_view(self, prices: dict | None = None) -> dict:
-        from HQ import portfolio
+        from departments.executive import portfolio
 
         s = portfolio.scoreboard(self, self._prices(prices))
         pending = [{"id": c["id"], "title": c["title"], "action": c["payload"].get("action"),
@@ -648,8 +649,8 @@ class Office:
         Approval hands the issue to the publisher (today: marks the files ready to paste), and
         is refused with a reason if the issue can no longer go out as it stands. Any other
         decision is best effort: a missing Outbox entry must not stop him declining a card."""
-        from HQ import outbox
-        from HQ.publish import get_publisher
+        from departments.client_relations import outbox
+        from departments.client_relations.publish import get_publisher
 
         p = card["payload"]
         issue, memo = p.get("issue"), p.get("deliverable")
@@ -687,7 +688,7 @@ class Office:
                              status=decision)
 
     def outbox_view(self) -> dict:
-        from HQ import outbox
+        from departments.client_relations import outbox
 
         who = lambda a: self.name(a) if a in self.agents else a
         issues = [{**m, "drafted_by_name": who(m.get("drafted_by")),
@@ -758,7 +759,7 @@ class Office:
     def audit_task(self, task: dict) -> list[dict]:
         """Tally's code checks on a finished assignment (free). Audit's own work is not
         re-audited, and delegated jobs are covered through the lead's assignment."""
-        from HQ import audit
+        from departments.audit import checks as audit
 
         agent = self.agents.get(task["assignee"])
         if task["kind"] != "assignment" or agent is None or agent.is_audit:
@@ -857,7 +858,7 @@ class Office:
                      task_id: int | None = None) -> dict:
         """An agent saving to office memory. A clean desk note is saved at once; a flagged note
         and every wiki proposal wait for the Captain."""
-        from HQ import audit
+        from departments.audit import checks as audit
         from HQ.memory import add_desk_note
 
         text = " ".join(text.split())   # one line: a note is one entry in the file
@@ -917,7 +918,7 @@ class Office:
     # the daily audit digest -----------------------------------------------------------------
     def digest(self, day: str | None = None) -> dict:
         """One day's digest, computed fresh from the ledger and logs (no API call)."""
-        from HQ import audit
+        from departments.audit import checks as audit
 
         d = audit.build_digest(self, day or self.ledger.today())
         return {**d, "text": audit.render_digest(d)}

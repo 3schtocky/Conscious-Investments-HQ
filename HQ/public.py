@@ -267,7 +267,7 @@ def portfolio(office: Office, prices: dict) -> dict:
 
 def newsletters(office: Office) -> list[dict]:
     """Issues the Captain approved, newest first. Drafts and issues awaiting him never appear."""
-    from HQ import outbox
+    from departments.client_relations import outbox
 
     return [{"id": m["id"], "title": m["title"], "date": m["date"], "words": m["words"],
              "updated": m["updated"],
@@ -278,7 +278,7 @@ def newsletters(office: Office) -> list[dict]:
 
 def newsletter_file(office: Office, issue_id: str, name: str):
     """Path of one file of an approved issue, or None."""
-    from HQ import outbox
+    from departments.client_relations import outbox
 
     if name not in NEWSLETTER_FILES:
         return None

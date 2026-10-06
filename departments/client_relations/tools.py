@@ -1,6 +1,6 @@
 """Client Relations tools: the newsletter and client-ready memos.
 
-Wren drafts; Harbor finalizes. Every draft passes the code gate in `HQ.outbox.check_issue`
+Wren drafts; Harbor finalizes. Every draft passes the code gate in `departments.client_relations.outbox.check_issue`
 (only approved numbers, no hype, no advice) before it can reach the Captain, and nothing leaves
 the Outbox without his approval. Nothing here calls the Anthropic API or posts anywhere.
 """
@@ -11,7 +11,7 @@ import asyncio
 import json
 from datetime import datetime
 
-from HQ import outbox
+from departments.client_relations import outbox
 from HQ.engine.guards import GuardBlock
 from HQ.tools.office import Tool, ToolContext, _str
 
@@ -53,7 +53,7 @@ async def _newsletter_material(ctx: ToolContext, inp: dict) -> str:
                  "return_since_flagged": None if w["return"] is None else round(w["return"], 4),
                  "vs_sp500": None if w["vs_spy"] is None else round(w["vs_spy"], 4),
                  "status": w["status"]} for w in office.watchlist_view(prices)]
-    from HQ import portfolio
+    from departments.executive import portfolio
 
     board = portfolio.scoreboard(office, await portfolio.fetch_prices(office))
     scoreboard = (portfolio.summary_text(board) if board["return"] is not None else
@@ -128,7 +128,7 @@ READ_NEWSLETTER = Tool(
 
 # finalize_newsletter ---------------------------------------------------------------------------
 async def _finalize_newsletter(ctx: ToolContext, inp: dict) -> str:
-    from HQ.publish import get_publisher
+    from departments.client_relations.publish import get_publisher
 
     office = ctx.office
     meta = _issue(ctx, inp)

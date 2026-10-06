@@ -364,7 +364,7 @@ def _spy_price() -> float:
 
 async def run(office: Office, llm: DemoLLM) -> None:
     """The story, with Stott's three decisions made by code. Every act waits for the office to go quiet."""
-    from HQ import portfolio
+    from departments.executive import portfolio
 
     prices = {T: MU_PRICE, "SPY": _spy_price()}
     act_open(llm)
@@ -404,7 +404,8 @@ MU_PRICE = 1062.29   # the price the report and the model are dated at (2026-10-
 
 def record(speed: float = 12.0) -> tuple[list[dict], Office]:
     """Run the scene once on a fresh throwaway database and return every event, in order."""
-    from HQ import portfolio, quotes
+    from HQ import quotes
+    from departments.executive import portfolio
 
     for suffix in ("", "-wal", "-shm"):
         Path(f"{RECORD_DB}{suffix}").unlink(missing_ok=True)

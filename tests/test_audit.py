@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import pytest
 from conftest import TURN_COST, nick, register_model, text_turn, tool_turn
 
-from HQ import audit
+from departments.audit import checks as audit
 from HQ.engine.runtime import Office
 from HQ.tools import desk
 

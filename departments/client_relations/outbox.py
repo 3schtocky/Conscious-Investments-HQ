@@ -203,7 +203,7 @@ def publishable(office: Office) -> dict:
 
 
 def _check_text(where: str, text: str, pub: dict) -> list[dict]:
-    from HQ import audit
+    from departments.audit import checks as audit
 
     out: list[dict] = []
     approved, watch = pub["approved"], pub["watch"]
@@ -449,7 +449,7 @@ def render_issue(office: Office, issue_id: str) -> dict:
 def package_memo(office: Office, ticker: str, *, pdf: bool = True) -> dict:
     """Turn a finished research memo into a branded client file (.docx, plus .pdf when Word is
     available). The memo must use the approved model's numbers and have nothing left to verify."""
-    from HQ import audit
+    from departments.audit import checks as audit
     from HQ.tools import desk
 
     cdir = desk.coverage_dir(ticker)

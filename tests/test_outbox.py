@@ -8,7 +8,7 @@ import json
 import pytest
 from conftest import nick, register_model, text_turn, tool_turn
 
-from HQ import outbox
+from departments.client_relations import outbox
 from HQ.tools import desk
 
 BODY = ("## The idea\n\nRambus is the name we finished researching this week. Our base price target "
@@ -272,7 +272,7 @@ def test_outbox_endpoints(make_office):
 
 
 def test_unknown_publisher_is_named(make_office):
-    from HQ.publish import OutboxPublisher, get_publisher
+    from departments.client_relations.publish import OutboxPublisher, get_publisher
 
     assert isinstance(get_publisher(), OutboxPublisher) and get_publisher("outbox").name == "outbox"
     with pytest.raises(ValueError, match="Unknown publisher 'substack'"):

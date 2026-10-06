@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 from conftest import nick, text_turn, tool_turn
 
-from HQ import rounds as rounds_mod
+from departments.executive import rounds as rounds_mod
 
 
 @pytest.fixture(autouse=True)

@@ -210,7 +210,7 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
                     log.exception("daily digest failed")
                 try:
                     if office.store.positions():   # mark to market, raise exit flags
-                        from HQ import portfolio
+                        from departments.executive import portfolio
                         office.portfolio_tick(await portfolio.fetch_prices(office))
                 except Exception:
                     log.exception("portfolio tick failed")
@@ -299,7 +299,7 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         return await asyncio.to_thread(quotes.latest, tickers) if rows else {}
 
     async def _portfolio_prices(extra: list[str] | None = None) -> dict:
-        from HQ import portfolio
+        from departments.executive import portfolio
 
         return await portfolio.fetch_prices(office(), extra)
 

@@ -273,7 +273,7 @@ async def _draft_assumptions(ctx: ToolContext, inp: dict) -> str:
 
 
 async def _build_model(ctx: ToolContext, inp: dict) -> str:
-    from HQ.quant.workbook import build_model
+    from departments.quant.workbook import build_model
 
     t = _ticker(inp)
     src = coverage_dir(t) / "assumptions.yaml"
@@ -308,8 +308,8 @@ async def _build_model(ctx: ToolContext, inp: dict) -> str:
 
 
 async def _run_simulations(ctx: ToolContext, inp: dict) -> str:
-    from HQ.quant.simulate import drivers, monte_carlo, write_to_workbook
-    from HQ.quant.workbook import load_assumptions
+    from departments.quant.simulate import drivers, monte_carlo, write_to_workbook
+    from departments.quant.workbook import load_assumptions
 
     t = _ticker(inp)
     versions = ctx.office.store.models(t)
@@ -589,9 +589,9 @@ def desk_tools(wing: str, tier: str) -> list[Tool]:
             tools = [RUN_SCREEN, *tools, ADD_TO_WATCHLIST]
         return tools
     if wing == "client_relations":
-        from HQ.tools.client import client_tools
+        from departments.client_relations.tools import client_tools
         return [*client_tools(tier), LIST_FILES, READ_FILE, SEARCH_FILE, GET_MODEL]
     if wing == "audit":   # Audit reads everything (Quant's drafts included) and writes nothing
-        from HQ.tools.audit import audit_tools
+        from departments.audit.tools import audit_tools
         return [*audit_tools(tier), LIST_FILES, READ_FILE, SEARCH_FILE, GET_MODEL]
     return [GET_MODEL]

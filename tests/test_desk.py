@@ -168,7 +168,7 @@ def test_file_download_endpoint_is_confined(make_office):
 def test_half_day_horizons_match_the_engine(tmp_path):
     import yaml
 
-    from HQ.quant.workbook import build_model
+    from departments.quant.workbook import build_model
     if not HAS_META:
         pytest.skip("needs META coverage")
     a = yaml.safe_load((coverage_dir("META") / "assumptions.yaml").read_text())
@@ -222,7 +222,7 @@ async def test_simulations_only_touch_drafts_and_builds_never_collide(make_offic
 
 
 def test_monte_carlo_counts_growth_paths_as_uncertainty():
-    from HQ.quant.simulate import sigmas
+    from departments.quant.simulate import sigmas
     a = {"projection_years": 3, "revenue": {"base": 100, "growth": [0.10, 0.10, 0.10]},
          "scenarios": {"bull": {"growth_delta": 0.02}, "bear": {"growth_path": [-0.05, 0.0, 0.05]}}}
     assert sigmas(a)["growth_delta"] > 0.03   # the bear path is 10 pts below base on average

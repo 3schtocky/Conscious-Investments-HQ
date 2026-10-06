@@ -10,7 +10,7 @@ from conftest import nick, text_turn, tool_turn
 from fastapi.routing import APIRoute
 from starlette.websockets import WebSocketDisconnect
 
-from HQ import outbox
+from departments.client_relations import outbox
 from HQ import public as pub
 
 SITE = "https://site.test"

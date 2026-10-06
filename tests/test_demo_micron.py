@@ -11,7 +11,8 @@ import re
 
 import pytest
 
-from HQ import demo_export, demo_micron, demo_script, portfolio, quotes
+from HQ import demo_export, demo_micron, demo_script, quotes
+from departments.executive import portfolio
 from HQ import public as pub
 from HQ.config import ERB_DIR
 

@@ -26,7 +26,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from HQ.quant.formula import WorkbookEvaluator, hardcoded_numbers
+from departments.quant.formula import WorkbookEvaluator, hardcoded_numbers
 
 SCENARIOS = ("base", "bull", "bear")
 SHEET = {"base": "Calc Base", "bull": "Calc Bull", "bear": "Calc Bear"}

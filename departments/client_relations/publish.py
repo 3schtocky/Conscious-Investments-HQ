@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from HQ import outbox
+from departments.client_relations import outbox
 
 if TYPE_CHECKING:
     from HQ.engine.runtime import Office

@@ -215,7 +215,7 @@ def model_view(model: dict, events: list[dict]) -> dict:
 
 def position(office, model: dict) -> dict:
     """The open paper position, as the Portfolio tab shows it in the demo."""
-    from HQ import portfolio
+    from departments.executive import portfolio
 
     p = office.store.positions("open")[0]
     board = portfolio.scoreboard(office, {"MU": p["entry_price"], portfolio.benchmark(): p["spy_at_entry"]})

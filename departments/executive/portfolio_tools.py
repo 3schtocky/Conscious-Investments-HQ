@@ -1,14 +1,14 @@
 """Paper portfolio tools: read the scoreboard, propose an entry, propose an exit.
 
 Every entry and exit is an approval card; nothing changes until the Captain decides, and no real
-money is involved. The rules live in `HQ.portfolio` and are enforced in code.
+money is involved. The rules live in `departments.executive.portfolio` and are enforced in code.
 """
 
 from __future__ import annotations
 
 import json
 
-from HQ import portfolio
+from departments.executive import portfolio
 from HQ.engine.guards import GuardBlock
 from HQ.tools.office import Tool, ToolContext, _str
 

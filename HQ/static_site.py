@@ -34,7 +34,8 @@ def _prices(office: Office, offline: bool) -> tuple[dict, dict]:
     if offline:
         return {}, {}
     try:
-        from HQ import portfolio, quotes
+        from HQ import quotes
+        from departments.executive import portfolio
 
         rows = office.store.watchlist()
         tickers = sorted({w["ticker"] for w in rows} | {"SPY"})
@@ -69,7 +70,7 @@ def build_showcase(speed: float = 8.0, rounds: int = 1) -> Path:
         await office.idle()
         # The showcase plays the Captain once: approve the newsletter issue and the portfolio entry
         # (real prices, placeholder demo model) so a guest sees those tabs filled. Demo data only.
-        from HQ import portfolio
+        from departments.executive import portfolio
 
         for card in office.store.approvals("pending"):
             if card["kind"] in ("newsletter", "portfolio"):
