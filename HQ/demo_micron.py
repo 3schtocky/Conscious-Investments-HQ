@@ -404,8 +404,8 @@ MU_PRICE = 1062.29   # the price the report and the model are dated at (2026-10-
 
 def record(speed: float = 12.0) -> tuple[list[dict], Office]:
     """Run the scene once on a fresh throwaway database and return every event, in order."""
-    from HQ import quotes
     from departments.executive import portfolio
+    from HQ import quotes
 
     for suffix in ("", "-wal", "-shm"):
         Path(f"{RECORD_DB}{suffix}").unlink(missing_ok=True)

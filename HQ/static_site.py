@@ -34,8 +34,8 @@ def _prices(office: Office, offline: bool) -> tuple[dict, dict]:
     if offline:
         return {}, {}
     try:
-        from HQ import quotes
         from departments.executive import portfolio
+        from HQ import quotes
 
         rows = office.store.watchlist()
         tickers = sorted({w["ticker"] for w in rows} | {"SPY"})

@@ -435,7 +435,7 @@ def scene_gem_hunt(office: Office, llm: DemoLLM) -> None:
     """Free dry run of Screening with REAL tools on today's Gems screen: Scout reads the ranked
     list, skips flagged names, Pip writes real pitch memos, and the picks land on the watchlist.
     Only the agents' words are scripted."""
-    from HQ.tools.desk import latest_screen_dir
+    from departments.screening.tools import latest_screen_dir
 
     run = latest_screen_dir("gems")
     if run is None:

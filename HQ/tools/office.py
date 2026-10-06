@@ -466,8 +466,8 @@ def tools_for(tier: str, agent_id: str, wing: str | None = None) -> list[Tool]:
     base = base + [NOTE_TO_SELF]
     if tier == "lead" or agent_id == "chief_of_staff":
         base = base + [PROPOSE_WIKI]
-    from HQ.tools.desk import desk_tools
     from departments.executive.portfolio_tools import portfolio_tools
+    from HQ.tools.desk import desk_tools
     extra = [*desk_tools(wing, tier), *portfolio_tools(agent_id)]
     return base + [t for t in extra if t.name not in {b.name for b in base}]
 

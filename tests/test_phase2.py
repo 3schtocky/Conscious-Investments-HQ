@@ -117,7 +117,7 @@ def test_websocket_streams_events(client):
 async def test_every_demo_scene_runs_clean(make_office, monkeypatch):
     from HQ.demo import SCENES, DemoLLM
 
-    monkeypatch.setattr("HQ.tools.desk.latest_screen_dir", lambda preset: None)   # no network in tests
+    monkeypatch.setattr("departments.screening.tools.latest_screen_dir", lambda preset: None)   # no network in tests
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000)
@@ -137,7 +137,7 @@ async def test_every_demo_scene_runs_clean(make_office, monkeypatch):
 async def test_demo_loop_resets_guard_between_cycles(make_office, monkeypatch):
     from HQ.demo import SCENES, DemoLLM, run_demo
 
-    monkeypatch.setattr("HQ.tools.desk.latest_screen_dir", lambda preset: None)   # no network in tests
+    monkeypatch.setattr("departments.screening.tools.latest_screen_dir", lambda preset: None)   # no network in tests
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000)
@@ -193,7 +193,7 @@ async def test_model_change_mid_task_waits_for_the_next_task(make_office):
 
 
 async def test_demo_keeps_its_pretend_budget_in_range(make_office, monkeypatch):
-    monkeypatch.setattr("HQ.tools.desk.latest_screen_dir", lambda preset: None)
+    monkeypatch.setattr("departments.screening.tools.latest_screen_dir", lambda preset: None)
     from HQ.demo import DemoLLM, run_demo
 
     office, _ = make_office(daily_cap=1.0)   # a few loops of pretend spend per "day"
@@ -239,7 +239,7 @@ def test_agents_call_the_captain_by_his_settings_name(make_office):
 
 
 async def test_demo_keeps_only_a_few_pending_cards(make_office, monkeypatch):
-    monkeypatch.setattr("HQ.tools.desk.latest_screen_dir", lambda preset: None)
+    monkeypatch.setattr("departments.screening.tools.latest_screen_dir", lambda preset: None)
     from HQ.demo import DEMO_PENDING_KEEP, DemoLLM, run_demo
 
     office, _ = make_office()

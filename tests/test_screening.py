@@ -8,6 +8,7 @@ from datetime import datetime
 import pytest
 from conftest import text_turn, tool_turn
 
+from departments.screening import tools as screening_tools
 from HQ.tools import desk
 
 
@@ -30,6 +31,7 @@ def fake_erb(tmp_path, monkeypatch):
     run.joinpath("signals.json").write_text(json.dumps({"BFLY": [{"filed": "2026-08-01",
                                                                    "items": ["1.01 Material agreement"], "url": "u"}]}))
     monkeypatch.setattr(desk, "ERB_DIR", root)
+    monkeypatch.setattr(screening_tools, "ERB_DIR", root)
     monkeypatch.setattr("HQ.quotes.latest", lambda tickers: {t: {"BFLY": 10.0, "SPY": 500.0}.get(t, 20.0) for t in tickers})
     return root
 
@@ -140,6 +142,7 @@ async def test_demo_gems_scene_offline(make_office, fake_erb, monkeypatch):
         return 0, "ok"
 
     monkeypatch.setattr(desk, "run_erb", fake_run_erb)
+    monkeypatch.setattr(screening_tools, "run_erb", fake_run_erb)
     office, _ = make_office()
     llm = DemoLLM(speed=1000, office=office)
     office._llm = llm

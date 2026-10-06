@@ -42,3 +42,7 @@ asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["departments/equity_research/Equity Research"]
+
+[tool.ruff.lint]
+ignore = ["N999"]   # the shared package is deliberately named HQ

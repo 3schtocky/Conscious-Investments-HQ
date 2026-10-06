@@ -12,6 +12,7 @@ import logging
 import re
 from pathlib import Path
 
+from departments.executive.rounds import Rounds
 from HQ.config import DATA_DIR, ROOT, office, roster
 from HQ.engine.agent import Agent
 from HQ.engine.comms import Comms, is_delegate
@@ -19,7 +20,6 @@ from HQ.engine.events import EventBus
 from HQ.engine.guards import ConversationGuard, GuardBlock
 from HQ.engine.ledger import BudgetExhausted, Ledger
 from HQ.engine.llm import AnthropicClient, ModelClient
-from departments.executive.rounds import Rounds
 from HQ.store import Store
 
 log = logging.getLogger(__name__)
@@ -530,8 +530,8 @@ class Office:
 
     # paper portfolio -----------------------------------------------------------------------
     def _prices(self, prices: dict | None, extra: list[str] | None = None) -> dict:
-        from HQ import quotes
         from departments.executive import portfolio
+        from HQ import quotes
 
         names = sorted(set(portfolio.tickers(self)) | set(extra or []))
         if prices is not None and all(n in prices for n in names):
