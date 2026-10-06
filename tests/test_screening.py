@@ -8,7 +8,7 @@ from datetime import datetime
 import pytest
 from conftest import text_turn, tool_turn
 
-from hq.tools import desk
+from HQ.tools import desk
 
 
 def _results(llm, who, call=1):
@@ -30,13 +30,13 @@ def fake_erb(tmp_path, monkeypatch):
     run.joinpath("signals.json").write_text(json.dumps({"BFLY": [{"filed": "2026-08-01",
                                                                    "items": ["1.01 Material agreement"], "url": "u"}]}))
     monkeypatch.setattr(desk, "ERB_DIR", root)
-    monkeypatch.setattr("hq.quotes.latest", lambda tickers: {t: {"BFLY": 10.0, "SPY": 500.0}.get(t, 20.0) for t in tickers})
+    monkeypatch.setattr("HQ.quotes.latest", lambda tickers: {t: {"BFLY": 10.0, "SPY": 500.0}.get(t, 20.0) for t in tickers})
     return root
 
 
 def test_screening_tools_by_role():
-    from hq.engine.llm import web_tools
-    from hq.tools.office import tools_for
+    from HQ.engine.llm import web_tools
+    from HQ.tools.office import tools_for
 
     names = lambda tier, aid: [t.name for t in tools_for(tier, aid, "screening")]
     scout, pip = names("lead", "screen_lead"), names("associate", "screen_associate")
@@ -111,7 +111,7 @@ def test_weekly_reminder_once_per_monday(make_office):
 def test_watchlist_endpoints(make_office, fake_erb):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, llm = make_office()
     wid = office.add_watch(ticker="BFLY", added_by="screen_lead", source="gems #1", thesis="t",
@@ -128,7 +128,7 @@ def test_watchlist_endpoints(make_office, fake_erb):
 
 async def test_demo_gems_scene_offline(make_office, fake_erb, monkeypatch):
     """The real-tools Gems dry run, with erb's memo command stubbed (no network)."""
-    from hq.demo import DemoLLM, scene_gem_hunt
+    from HQ.demo import DemoLLM, scene_gem_hunt
 
     async def fake_run_erb(*args, timeout=900):
         if args[0] == "memo":

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from conftest import nick, text_turn, tool_turn
 
-from hq.digest import office_digest, person_digest, wing_digest
+from HQ.digest import office_digest, person_digest, wing_digest
 
 
 async def test_digest_reads_a_lead_mid_task_without_a_model_call(make_office):

@@ -11,9 +11,9 @@ import re
 
 import pytest
 
-from hq import demo_export, demo_micron, demo_script, portfolio, quotes
-from hq import public as pub
-from hq.config import ERB_DIR
+from HQ import demo_export, demo_micron, demo_script, portfolio, quotes
+from HQ import public as pub
+from HQ.config import ERB_DIR
 
 COVERAGE = ERB_DIR / "coverage" / "MU"
 pytestmark = pytest.mark.skipif(not (COVERAGE / "model.json").exists(), reason="no Micron coverage in this checkout")

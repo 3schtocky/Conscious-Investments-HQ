@@ -10,8 +10,8 @@ from conftest import nick, text_turn, tool_turn
 from fastapi.routing import APIRoute
 from starlette.websockets import WebSocketDisconnect
 
-from hq import outbox
-from hq import public as pub
+from HQ import outbox
+from HQ import public as pub
 
 SITE = "https://site.test"
 PASSWORD = "correct-horse-battery-staple-42"
@@ -23,12 +23,12 @@ SECRETS = ("SECRET-CAPTAIN-WORDS", "SECRET-ORIGINAL", "SECRET-THINKING", "SECRET
 def site(make_office, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     monkeypatch.setenv(pub.PASSWORD_ENV, PASSWORD)
     monkeypatch.setattr(pub, "hosts", lambda: {"site.test"})
-    monkeypatch.setattr("hq.server.LOGIN_DELAY", 0)
-    monkeypatch.setattr("hq.quotes.latest", lambda tickers: {t: 100.0 if t != "SPY" else 500.0 for t in tickers})
+    monkeypatch.setattr("HQ.server.LOGIN_DELAY", 0)
+    monkeypatch.setattr("HQ.quotes.latest", lambda tickers: {t: 100.0 if t != "SPY" else 500.0 for t in tickers})
     office, llm = make_office()
     app = create_app(office_factory=lambda: office, public=True)
     captain = TestClient(app, base_url=SITE)          # same running app; only its cookie differs
@@ -237,7 +237,7 @@ def test_the_live_stream_in_public_mode(site):
 def test_local_mode_is_unchanged(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, _ = make_office()
     with TestClient(create_app(office_factory=lambda: office)) as c:
@@ -263,7 +263,7 @@ def test_one_visitor_cannot_take_every_seat(site, monkeypatch):
 
 
 def test_quotes_share_one_download_and_remember_misses(monkeypatch):
-    from hq import quotes
+    from HQ import quotes
 
     calls = []
     monkeypatch.setattr(quotes, "_cache", {})
@@ -276,11 +276,11 @@ def test_quotes_share_one_download_and_remember_misses(monkeypatch):
 
 
 def test_captain_password_is_written_privately_and_replaces_the_old_one(tmp_path, monkeypatch, capsys):
-    from hq import cli
+    from HQ import cli
 
     env = tmp_path / ".env"
     env.write_text("ANTHROPIC_API_KEY=keep-me\nexport HQ_CAPTAIN_PASSWORD=old\n  HQ_CAPTAIN_PASSWORD=older\n")
-    monkeypatch.setattr("hq.config.ROOT", tmp_path)
+    monkeypatch.setattr("HQ.config.ROOT", tmp_path)
     monkeypatch.delenv(pub.PASSWORD_ENV, raising=False)
     assert cli.captain_password() == 0
     lines = env.read_text().splitlines()

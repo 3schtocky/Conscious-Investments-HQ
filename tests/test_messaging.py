@@ -7,7 +7,7 @@ import json
 import pytest
 from conftest import nick, text_turn, tool_turn
 
-from hq.engine.llm import api_problem
+from HQ.engine.llm import api_problem
 
 
 async def _run(office, who: str, body: str) -> int:
@@ -178,7 +178,7 @@ async def test_out_of_credit_pauses_work_once_and_resumes_together(make_office):
 def test_resume_endpoint(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, llm = make_office()
     with TestClient(create_app(office_factory=lambda: office)) as c:

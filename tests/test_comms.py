@@ -7,7 +7,7 @@ import json
 
 from conftest import nick, text_turn, tool_turn
 
-from hq.digest import wing_digest
+from HQ.digest import wing_digest
 
 
 def _results(llm, who: str, call: int = 1) -> list[dict]:
@@ -146,7 +146,7 @@ async def test_comms_failure_falls_back_to_the_inbox(make_office):
 
 def test_wing_digest_is_in_comms_tool_output(make_office):
     office, _ = make_office()
-    from hq.tools.comms import comms_tools
+    from HQ.tools.comms import comms_tools
 
     names = [t.name for t in comms_tools()]
     assert names == ["wing_status", "ask_delegate", "send_message", "relay_request", "post_to_group"]

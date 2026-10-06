@@ -7,8 +7,8 @@ import asyncio
 import pytest
 from conftest import nick, register_model, text_turn, tool_turn
 
-from hq.engine.llm import TurnResult
-from hq.engine.tone import RuleRewriter, check, key_facts
+from HQ.engine.llm import TurnResult
+from HQ.engine.tone import RuleRewriter, check, key_facts
 
 
 def _drain(q) -> list:
@@ -72,7 +72,7 @@ async def test_llm_rewriter_bills_juno_and_uses_haiku(make_office):
     office.tone_engine = "llm"
     preview = await office.tone_preview("er_lead", "rerun it")
     assert preview["rewrite"] == "Hi Quill, please rerun it." and preview["engine"] == "llm"
-    from hq.config import model_config
+    from HQ.config import model_config
     assert seen["model"] == model_config("associate")[1]["id"]
     assert "messages from Stott, the Captain" in seen["system"]
     assert "transformational leader" in seen["system"] and seen["max_tokens"] == 1024
@@ -191,7 +191,7 @@ async def test_request_approval_validation(make_office):
 
 
 def test_tool_lists_by_role(make_office):
-    from hq.tools.office import tools_for
+    from HQ.tools.office import tools_for
 
     names = lambda tier, aid: [t.name for t in tools_for(tier, aid)]
     assert names("associate", "chief_of_staff") == ["send_message", "assign_task", "read_office",
@@ -208,7 +208,7 @@ def test_tool_lists_by_role(make_office):
 def client(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, llm = make_office()
     office.tone_engine = "rules"
@@ -243,7 +243,7 @@ def test_decide_endpoint_errors(client):
 
 # demo reacts to the Captain -----------------------------------------------------------------
 async def test_demo_office_answers_the_captain_for_free(make_office):
-    from hq.demo import DemoLLM
+    from HQ.demo import DemoLLM
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000, office=office)
@@ -259,7 +259,7 @@ async def test_demo_office_answers_the_captain_for_free(make_office):
 
 # the master API switch ----------------------------------------------------------------------
 async def test_api_switch_off_pauses_tasks_and_tone_falls_back_to_rules(make_office):
-    from hq import config
+    from HQ import config
 
     office, _ = make_office()
     office._llm = None               # the real client, which checks the switch
@@ -286,7 +286,7 @@ async def test_incident_events_carry_the_incident_id(make_office):
 
 
 def test_titles_skip_the_greeting_paragraph():
-    from hq.engine.runtime import _title
+    from HQ.engine.runtime import _title
 
     assert _title("Hi team, thanks for the strong work so far.\n\nRun a Monte Carlo on NWST.\n\n"
                   "Thank you.") == "Run a Monte Carlo on NWST."

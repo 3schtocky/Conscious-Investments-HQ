@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from hq import deploy, server
-from hq import public as pub
+from HQ import deploy, server
+from HQ import public as pub
 
 ROOT = Path(__file__).resolve().parents[1]
 PASSWORD = "correct-horse-battery-staple-42"
@@ -53,7 +53,7 @@ def test_optional_notes_do_not_block(ready, monkeypatch):
 
 
 def test_the_api_switch_is_reported_plainly(ready, monkeypatch):
-    from hq import config
+    from HQ import config
 
     cfg = dict(config.office())
     cfg["api"] = {"enabled": True}

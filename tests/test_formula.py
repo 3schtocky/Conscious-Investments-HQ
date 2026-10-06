@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 from openpyxl import Workbook
 
-from hq.quant.formula import FormulaError, WorkbookEvaluator, hardcoded_numbers
+from HQ.quant.formula import FormulaError, WorkbookEvaluator, hardcoded_numbers
 
 
 def _wb(**cells):

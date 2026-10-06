@@ -6,7 +6,7 @@ from conftest import register_model, text_turn, tool_turn
 
 
 async def test_stott_announcement_reaches_everyone_and_replies_stay_in_the_thread(make_office):
-    from hq.demo import DemoLLM
+    from HQ.demo import DemoLLM
 
     office, _ = make_office()
     office._llm = DemoLLM(speed=1000, office=office)
@@ -27,7 +27,7 @@ async def test_stott_announcement_reaches_everyone_and_replies_stay_in_the_threa
 
 
 async def test_juno_announces_in_her_group_and_everyone_else_replies(make_office):
-    from hq.demo import DemoLLM
+    from HQ.demo import DemoLLM
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000, office=office)
@@ -85,7 +85,7 @@ async def test_document_history(make_office):
 def test_documents_and_all_endpoints(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, _ = make_office()
     office.tone_engine = "rules"
@@ -111,7 +111,7 @@ async def test_rejected_group_posts_dont_use_up_the_allowance(make_office):
 
 
 async def test_demo_answers_every_announcement(make_office):
-    from hq.demo import DemoLLM
+    from HQ.demo import DemoLLM
 
     office, _ = make_office()
     office._llm = DemoLLM(speed=1000, office=office)

@@ -8,8 +8,8 @@ import json
 import pytest
 from conftest import nick, register_model, text_turn, tool_turn
 
-from hq import outbox
-from hq.tools import desk
+from HQ import outbox
+from HQ.tools import desk
 
 BODY = ("## The idea\n\nRambus is the name we finished researching this week. Our base price target "
         "for RMBS is $2.00 and we rate it Neutral, per Quant model v1.\n\n## What we're watching\n\n"
@@ -30,7 +30,7 @@ def office_llm(make_office, monkeypatch):
     office.store.set_model_status("RMBS", 1, "approved")
     office.add_watch(ticker="BFLY", added_by="screen_lead", source="gems 2026-09-30 #1",
                      thesis="Growth is speeding up", pitch=None, price=10.0, spy=500.0)
-    monkeypatch.setattr("hq.quotes.latest", lambda tickers: {t: {"BFLY": 11.0, "SPY": 505.0}.get(t) for t in tickers})
+    monkeypatch.setattr("HQ.quotes.latest", lambda tickers: {t: {"BFLY": 11.0, "SPY": 505.0}.get(t) for t in tickers})
     return office, llm
 
 
@@ -100,7 +100,7 @@ def test_markdown_becomes_safe_html():
 
 # ---- the tools --------------------------------------------------------------------------------
 def test_client_relations_tools_by_role():
-    from hq.tools.office import tools_for
+    from HQ.tools.office import tools_for
 
     names = lambda tier, aid, wing: {t.name for t in tools_for(tier, aid, wing)}
     harbor, wren = names("lead", "cr_lead", "client_relations"), names("associate", "cr_associate", "client_relations")
@@ -255,7 +255,7 @@ async def test_package_memo_only_ships_approved_finished_work(office_llm, covera
 def test_outbox_endpoints(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, _ = make_office()
     meta = outbox.save_draft(office, agent_id="cr_associate", title="Weekly note", body="Plain words.",
@@ -272,7 +272,7 @@ def test_outbox_endpoints(make_office):
 
 
 def test_unknown_publisher_is_named(make_office):
-    from hq.publish import OutboxPublisher, get_publisher
+    from HQ.publish import OutboxPublisher, get_publisher
 
     assert isinstance(get_publisher(), OutboxPublisher) and get_publisher("outbox").name == "outbox"
     with pytest.raises(ValueError, match="Unknown publisher 'substack'"):
@@ -281,7 +281,7 @@ def test_unknown_publisher_is_named(make_office):
 
 # ---- the demo scene ---------------------------------------------------------------------------
 async def test_demo_newsletter_scene_passes_the_real_checks(office_llm):
-    from hq.demo import DemoLLM, scene_newsletter
+    from HQ.demo import DemoLLM, scene_newsletter
 
     office, _ = office_llm
     llm = DemoLLM(speed=1000, office=office)
@@ -366,7 +366,7 @@ async def test_a_packaged_memo_is_not_replaced_while_on_the_captains_desk(office
 
 
 def test_newsletter_kind_is_not_offered_on_the_generic_approval_tool(make_office):
-    from hq.tools.office import REQUEST_APPROVAL, definitions
+    from HQ.tools.office import REQUEST_APPROVAL, definitions
 
     [d] = definitions([REQUEST_APPROVAL], captain="Stott")
     assert "newsletter" not in d["input_schema"]["properties"]["kind"]["enum"]

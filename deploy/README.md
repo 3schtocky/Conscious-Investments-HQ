@@ -1,7 +1,7 @@
 # Putting the office on consciousinvestments.org
 
 The office keeps running on your Mac. A Cloudflare Tunnel publishes it; visitors only ever see the
-sanitized public views (`hq/public.py`). Work through these in order. Everything marked **you** needs
+sanitized public views (`HQ/public.py`). Work through these in order. Everything marked **you** needs
 your Cloudflare account; the rest is one command.
 
 ## 1. See what's missing

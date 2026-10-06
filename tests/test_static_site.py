@@ -2,8 +2,8 @@
 
 import json
 
-from hq import static_site
-from hq.store import Store
+from HQ import static_site
+from HQ.store import Store
 
 
 def test_export_writes_sanitized_views(tmp_path):

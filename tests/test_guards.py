@@ -1,6 +1,6 @@
 import pytest
 
-from hq.engine.guards import ConversationGuard, GuardBlock, GuardTripped, TaskGuard
+from HQ.engine.guards import ConversationGuard, GuardBlock, GuardTripped, TaskGuard
 
 
 def _talk(g, a, b, text):

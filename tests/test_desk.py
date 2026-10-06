@@ -8,7 +8,7 @@ import pytest
 from conftest import register_model, text_turn, tool_turn
 from openpyxl import load_workbook
 
-from hq.tools.desk import coverage_dir
+from HQ.tools.desk import coverage_dir
 
 HAS_META = (coverage_dir("META") / "assumptions.yaml").exists()
 needs_meta = pytest.mark.skipif(not HAS_META, reason="needs local META coverage in the submodule")
@@ -39,7 +39,7 @@ async def test_files_are_confined_and_write_rights_follow_the_wing(make_office):
 
 
 def test_tool_lists_by_wing():
-    from hq.tools.office import tools_for
+    from HQ.tools.office import tools_for
 
     names = lambda tier, aid, wing: [t.name for t in tools_for(tier, aid, wing)]
     quill = names("lead", "er_lead", "equity_research")
@@ -56,7 +56,7 @@ def test_tool_lists_by_wing():
 
 
 def test_web_search_only_for_research():
-    from hq.engine.llm import web_tools
+    from HQ.engine.llm import web_tools
 
     assert [t["type"] for t in web_tools({"id": "claude-sonnet-5-5"}, "equity_research")] == \
         ["web_search_20260209", "web_fetch_20260209"]
@@ -152,7 +152,7 @@ async def test_desk_notes_and_wiki_reach_the_next_task(make_office):
 def test_file_download_endpoint_is_confined(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, _ = make_office()
     (office.quant_dir / "META").mkdir(parents=True)
@@ -168,7 +168,7 @@ def test_file_download_endpoint_is_confined(make_office):
 def test_half_day_horizons_match_the_engine(tmp_path):
     import yaml
 
-    from hq.quant.workbook import build_model
+    from HQ.quant.workbook import build_model
     if not HAS_META:
         pytest.skip("needs META coverage")
     a = yaml.safe_load((coverage_dir("META") / "assumptions.yaml").read_text())
@@ -222,7 +222,7 @@ async def test_simulations_only_touch_drafts_and_builds_never_collide(make_offic
 
 
 def test_monte_carlo_counts_growth_paths_as_uncertainty():
-    from hq.quant.simulate import sigmas
+    from HQ.quant.simulate import sigmas
     a = {"projection_years": 3, "revenue": {"base": 100, "growth": [0.10, 0.10, 0.10]},
          "scenarios": {"bull": {"growth_delta": 0.02}, "bear": {"growth_path": [-0.05, 0.0, 0.05]}}}
     assert sigmas(a)["growth_delta"] > 0.03   # the bear path is 10 pts below base on average

@@ -5,14 +5,14 @@ from __future__ import annotations
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from hq.server import _hostname, request_allowed
+from HQ.server import _hostname, request_allowed
 
 
 @pytest.fixture
 def client(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, _ = make_office()
     with TestClient(create_app(office_factory=lambda: office), base_url="http://127.0.0.1:8750") as c:

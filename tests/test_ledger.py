@@ -1,6 +1,6 @@
 import pytest
 
-from hq.engine.ledger import usage_cost
+from HQ.engine.ledger import usage_cost
 
 
 def test_sonnet_plain_usage():

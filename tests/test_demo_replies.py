@@ -7,8 +7,8 @@ import re
 import pytest
 from conftest import nick
 
-from hq import demo
-from hq.demo import DemoLLM
+from HQ import demo
+from HQ.demo import DemoLLM
 
 
 @pytest.fixture

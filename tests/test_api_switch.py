@@ -6,8 +6,8 @@ import copy
 
 import pytest
 
-from hq import config
-from hq.engine import llm
+from HQ import config
+from HQ.engine import llm
 
 
 def test_tests_run_with_the_api_off_and_tone_is_free():
@@ -45,7 +45,7 @@ async def test_switching_off_mid_session_blocks_the_next_call(monkeypatch):
 
 
 def test_smoke_and_run_agent_stop_before_any_call(monkeypatch, capsys):
-    from hq import cli
+    from HQ import cli
 
     _with_api(monkeypatch, False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")

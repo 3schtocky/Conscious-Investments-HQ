@@ -18,10 +18,10 @@ from pathlib import Path
 
 import pytest
 
-from hq.engine.ledger import Ledger
-from hq.engine.llm import TurnResult
-from hq.engine.runtime import Office
-from hq.store import Store
+from HQ.engine.ledger import Ledger
+from HQ.engine.llm import TurnResult
+from HQ.engine.runtime import Office
+from HQ.store import Store
 
 _ids = itertools.count(1)
 USAGE = {"input_tokens": 1000, "output_tokens": 200, "cache_read_input_tokens": 0,
@@ -83,7 +83,7 @@ class FakeLLM:
 def _pinned_config(monkeypatch, tmp_path_factory):
     """Run on a copy of the committed config, so renames and other Settings edits in the live
     config/ folder never change what a test sees."""
-    from hq import config, roster_edit
+    from HQ import config, roster_edit
 
     pinned = tmp_path_factory.mktemp("config")
     shutil.copytree(Path(__file__).parent / "fixtures" / "config", pinned, dirs_exist_ok=True)
@@ -99,18 +99,18 @@ def _pinned_config(monkeypatch, tmp_path_factory):
 def _never_spend(monkeypatch, _pinned_config):
     """Tests never reach the real API, whatever config/office.yaml says: the switch is forced
     off, and the SDK is pointed at a dead local port as a second line of defence."""
-    from hq import config
+    from HQ import config
 
     real = config.office()
     safe = copy.deepcopy(real)
     safe.setdefault("api", {})["enabled"] = False
     monkeypatch.setattr(config, "office", lambda: safe)
-    for mod in ("hq.engine.ledger", "hq.engine.agent", "hq.engine.runtime", "hq.engine.guards"):
+    for mod in ("HQ.engine.ledger", "HQ.engine.agent", "HQ.engine.runtime", "HQ.engine.guards"):
         monkeypatch.setattr(f"{mod}.office", lambda: safe)
     # No test reaches Yahoo either: quotes come back empty unless a test supplies its own.
-    monkeypatch.setattr("hq.quotes._download", lambda tickers: dict.fromkeys(tickers))
-    monkeypatch.setattr("hq.quotes._cache", {})
-    monkeypatch.setattr("hq.server.EXTRA_HOSTS", {"testserver"})   # the test client's host name
+    monkeypatch.setattr("HQ.quotes._download", lambda tickers: dict.fromkeys(tickers))
+    monkeypatch.setattr("HQ.quotes._cache", {})
+    monkeypatch.setattr("HQ.server.EXTRA_HOSTS", {"testserver"})   # the test client's host name
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-valid")
 
@@ -118,7 +118,7 @@ def _never_spend(monkeypatch, _pinned_config):
 @pytest.fixture
 def make_office(monkeypatch, tmp_path):
     # Price the fake model like Sonnet so spend is non-zero and predictable.
-    from hq import config
+    from HQ import config
 
     patched = copy.deepcopy(config.office())   # already the API-off copy from _never_spend
     patched["pricing"]["fake"] = {"input": 2.0, "output": 10.0, "cache_read": 0.2,
@@ -126,8 +126,8 @@ def make_office(monkeypatch, tmp_path):
     for tier in patched["models"].values():
         tier["id"] = "fake"
     monkeypatch.setattr(config, "office", lambda: patched)
-    for mod in ("hq.engine.ledger", "hq.engine.agent", "hq.engine.runtime",
-                "hq.engine.guards"):
+    for mod in ("HQ.engine.ledger", "HQ.engine.agent", "HQ.engine.runtime",
+                "HQ.engine.guards"):
         monkeypatch.setattr(f"{mod}.office", lambda: patched)
 
     def _make(daily_cap: float = 10.0, audit_reserve: float = 0.25):
@@ -146,7 +146,7 @@ def make_office(monkeypatch, tmp_path):
 def nick(agent_id: str) -> str:
     """An agent's display name in the pinned test roster. Use it where the app shows a nickname
     (names in chat text, tool results and views); everywhere else tests use the role id."""
-    from hq import config
+    from HQ import config
 
     return next(a["nickname"] for a in config.roster()["agents"] if a["id"] == agent_id)
 

@@ -8,7 +8,7 @@ import json
 
 from conftest import text_turn, tool_turn
 
-from hq.engine.runtime import Office
+from HQ.engine.runtime import Office
 
 
 def _calls(llm, who):
@@ -46,7 +46,7 @@ async def test_pause_holds_work_and_resume_continues_it(make_office):
 
 
 async def test_the_captain_can_talk_to_a_busy_agent_while_the_office_is_paused(make_office, tmp_path, monkeypatch):
-    from hq.tools import desk
+    from HQ.tools import desk
 
     monkeypatch.setattr(desk, "ERB_DIR", tmp_path / "erb")
     office, llm = make_office()
@@ -137,8 +137,8 @@ async def test_a_paused_associate_answers_in_plain_text_and_then_finishes_its_jo
 async def test_the_pause_survives_a_restart_and_visitors_only_see_that_it_is_paused(make_office):
     from fastapi.testclient import TestClient
 
-    from hq import public as pub
-    from hq.server import create_app
+    from HQ import public as pub
+    from HQ.server import create_app
 
     office, llm = make_office()
     with TestClient(create_app(office_factory=lambda: office)) as c:
@@ -156,7 +156,7 @@ async def test_the_pause_survives_a_restart_and_visitors_only_see_that_it_is_pau
 
 
 async def test_demo_agents_answer_during_a_pause_without_losing_their_script(make_office):
-    from hq.demo import DemoLLM, think
+    from HQ.demo import DemoLLM, think
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000, office=office)

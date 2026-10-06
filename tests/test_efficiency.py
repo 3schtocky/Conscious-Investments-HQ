@@ -7,13 +7,13 @@ import json
 import pytest
 from conftest import text_turn, tool_turn
 
-from hq.engine.guards import GuardTripped, TaskGuard
+from HQ.engine.guards import GuardTripped, TaskGuard
 
 
 @pytest.fixture
 def coverage(monkeypatch, tmp_path):
     """A throwaway ticker folder, so no test writes into the real research files."""
-    monkeypatch.setattr("hq.tools.desk.ERB_DIR", tmp_path / "erb")
+    monkeypatch.setattr("HQ.tools.desk.ERB_DIR", tmp_path / "erb")
     root = tmp_path / "erb" / "coverage" / "ZZZZ"
     (root / "facts" / "filings").mkdir(parents=True)
     (root / "facts" / "facts.md").write_text("# Facts\nRevenue grew 40%.\nCash is $120 million.\n")
@@ -103,7 +103,7 @@ async def test_search_caps_the_hits(make_office, coverage):
 
 
 def test_every_wing_that_reads_files_can_search_them():
-    from hq.tools.office import tools_for
+    from HQ.tools.office import tools_for
 
     for aid, tier, wing in (("er_lead", "lead", "equity_research"), ("er_associate", "associate", "equity_research"),
                             ("quant_associate", "associate", "quant"), ("screen_lead", "lead", "screening"),

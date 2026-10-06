@@ -10,7 +10,7 @@ uv run hq export-static --db <path-to>/data/demo.db     # scripted demo office: 
 # or: uv run hq export-static --db <path-to>/data/office.db   # real work only (sparse today)
 cd web && npm run build:static                           # -> web/dist-site
 ```
-Exports use the same sanitizers as the live public site (`hq/public.py`): movement and who works, never
+Exports use the same sanitizers as the live public site (`HQ/public.py`): movement and who works, never
 words. Add `--offline` to skip live price lookups.
 
 ## Preview

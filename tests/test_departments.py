@@ -6,8 +6,8 @@ from __future__ import annotations
 import pytest
 from conftest import nick, text_turn
 
-from hq import demo
-from hq.departments import brief
+from HQ import demo
+from HQ.departments import brief
 
 
 def test_charters_name_colleagues_by_role_and_the_current_nickname_is_filled_in(make_office):
@@ -59,7 +59,7 @@ async def test_the_demo_scenes_work_after_a_rename(make_office):
 def test_display_names_can_be_almost_anything(tmp_path, monkeypatch):
     import shutil
 
-    from hq import config, roster_edit
+    from HQ import config, roster_edit
 
     shutil.copy(config.CONFIG_DIR / "roster.yaml", tmp_path / "roster.yaml")
     monkeypatch.setattr(roster_edit, "ROSTER", tmp_path / "roster.yaml")

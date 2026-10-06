@@ -8,7 +8,7 @@ import shutil
 
 import pytest
 
-from hq import roster_edit
+from HQ import roster_edit
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def roster_copy(tmp_path, monkeypatch):
     shutil.copy(roster_edit.ROSTER, path)
     monkeypatch.setattr(roster_edit, "ROSTER", path)
     monkeypatch.setattr(roster_edit, "AVATAR_DIR", tmp_path / "avatars")
-    from hq import config
+    from HQ import config
     shutil.copy(config.CONFIG_DIR / "mission.md", tmp_path / "mission.md")
     monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
     return path
@@ -75,7 +75,7 @@ def test_avatar_upload_png_only(roster_copy):
 def client(make_office, roster_copy):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, llm = make_office()
     app = create_app(office_factory=lambda: office)
@@ -115,9 +115,9 @@ def test_websocket_streams_events(client):
 
 # demo scenes ------------------------------------------------------------------------------
 async def test_every_demo_scene_runs_clean(make_office, monkeypatch):
-    from hq.demo import SCENES, DemoLLM
+    from HQ.demo import SCENES, DemoLLM
 
-    monkeypatch.setattr("hq.tools.desk.latest_screen_dir", lambda preset: None)   # no network in tests
+    monkeypatch.setattr("HQ.tools.desk.latest_screen_dir", lambda preset: None)   # no network in tests
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000)
@@ -135,9 +135,9 @@ async def test_every_demo_scene_runs_clean(make_office, monkeypatch):
 
 
 async def test_demo_loop_resets_guard_between_cycles(make_office, monkeypatch):
-    from hq.demo import SCENES, DemoLLM, run_demo
+    from HQ.demo import SCENES, DemoLLM, run_demo
 
-    monkeypatch.setattr("hq.tools.desk.latest_screen_dir", lambda preset: None)   # no network in tests
+    monkeypatch.setattr("HQ.tools.desk.latest_screen_dir", lambda preset: None)   # no network in tests
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000)
@@ -193,8 +193,8 @@ async def test_model_change_mid_task_waits_for_the_next_task(make_office):
 
 
 async def test_demo_keeps_its_pretend_budget_in_range(make_office, monkeypatch):
-    monkeypatch.setattr("hq.tools.desk.latest_screen_dir", lambda preset: None)
-    from hq.demo import DemoLLM, run_demo
+    monkeypatch.setattr("HQ.tools.desk.latest_screen_dir", lambda preset: None)
+    from HQ.demo import DemoLLM, run_demo
 
     office, _ = make_office(daily_cap=1.0)   # a few loops of pretend spend per "day"
     llm = DemoLLM(speed=1000)
@@ -220,7 +220,7 @@ def test_quant_wing_in_roster_and_prompts(make_office):
     quill = office.agents["er_lead"].system_prompt()
     assert "Your department: Quant" not in quill and "Sigma (`quant_lead`)" in quill
     # Sigma can delegate to Delta (same wing) but not to Ledger
-    from hq.tools.office import tools_for
+    from HQ.tools.office import tools_for
     assert "delegate" in [t.name for t in tools_for(sigma.tier, sigma.id)]
 
 
@@ -230,7 +230,7 @@ def test_agents_call_the_captain_by_his_settings_name(make_office):
     prompt = office.agents["quant_lead"].system_prompt()
     assert "{captain}" not in prompt and "escalate to Stott with the numbers" in prompt
     assert "Stott (Ethan Stott) is the Captain of the fund" in prompt
-    from hq.tools.office import definitions, tools_for
+    from HQ.tools.office import definitions, tools_for
     defs = definitions(tools_for("lead", "er_lead"), captain=office.captain_name)
     report = next(d for d in defs if d["name"] == "report_to_captain")
     assert report["description"].startswith("Send a message to Stott, the Captain")
@@ -239,8 +239,8 @@ def test_agents_call_the_captain_by_his_settings_name(make_office):
 
 
 async def test_demo_keeps_only_a_few_pending_cards(make_office, monkeypatch):
-    monkeypatch.setattr("hq.tools.desk.latest_screen_dir", lambda preset: None)
-    from hq.demo import DEMO_PENDING_KEEP, DemoLLM, run_demo
+    monkeypatch.setattr("HQ.tools.desk.latest_screen_dir", lambda preset: None)
+    from HQ.demo import DEMO_PENDING_KEEP, DemoLLM, run_demo
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000, office=office)

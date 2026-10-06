@@ -9,9 +9,9 @@ from datetime import datetime, timedelta
 import pytest
 from conftest import TURN_COST, nick, register_model, text_turn, tool_turn
 
-from hq import audit
-from hq.engine.runtime import Office
-from hq.tools import desk
+from HQ import audit
+from HQ.engine.runtime import Office
+from HQ.tools import desk
 
 
 def _results(llm, who, call=1):
@@ -348,7 +348,7 @@ async def test_a_paused_colleague_does_no_work_until_unpaused(make_office):
 
 
 def test_only_vera_holds_the_pause(make_office):
-    from hq.tools.office import tools_for
+    from HQ.tools.office import tools_for
 
     names = lambda tier, aid, wing: {t.name for t in tools_for(tier, aid, wing)}
     assert {"pause_agent", "resolve_finding", "file_incident"} <= names("lead", "audit_lead", "audit")
@@ -393,7 +393,7 @@ async def test_clean_notes_save_and_flagged_notes_wait_for_the_captain(make_offi
 
 
 async def test_wiki_changes_always_wait_for_the_captain(make_office):
-    from hq.tools.office import tools_for
+    from HQ.tools.office import tools_for
 
     office, llm = make_office()
     entry = "Screening cards never state a price target."
@@ -469,7 +469,7 @@ async def test_digest_is_posted_once_for_each_finished_day_with_work(make_office
 def client(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, llm = make_office()
     with TestClient(create_app(office_factory=lambda: office)) as c:
@@ -507,7 +507,7 @@ def test_audit_endpoints(client):
 
 # ---- the demo scene -------------------------------------------------------------------------------
 async def test_demo_audit_scene_runs_the_real_checks(make_office):
-    from hq.demo import DemoLLM, scene_audit
+    from HQ.demo import DemoLLM, scene_audit
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000, office=office)
@@ -526,7 +526,7 @@ async def test_demo_audit_scene_runs_the_real_checks(make_office):
 
 
 async def test_demo_vera_improvises_a_review_nobody_scripted(make_office):
-    from hq.demo import DemoLLM
+    from HQ.demo import DemoLLM
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000, office=office)

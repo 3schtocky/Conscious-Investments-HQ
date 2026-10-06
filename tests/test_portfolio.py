@@ -8,7 +8,7 @@ import json
 import pytest
 from conftest import register_model, text_turn, tool_turn
 
-from hq import portfolio
+from HQ import portfolio
 
 PRICES = {"RMBS": 100.0, "META": 50.0, "SPY": 500.0}
 
@@ -29,7 +29,7 @@ async def office_llm(make_office, monkeypatch):
     office, llm = make_office()
     approve_model(office, "RMBS")
     prices = dict(PRICES)
-    monkeypatch.setattr("hq.quotes.latest", lambda tickers: {t: prices.get(t) for t in tickers})
+    monkeypatch.setattr("HQ.quotes.latest", lambda tickers: {t: prices.get(t) for t in tickers})
     office.test_prices = prices
     for who in ("er_lead", "chief_of_staff", "quant_lead"):        # each decision is sent back to whoever asked
         llm.script(who, *[text_turn("Noted.") for _ in range(30)])
@@ -185,7 +185,7 @@ async def test_stop_loss_flag(office_llm):
 
 # ---- tools --------------------------------------------------------------------------------------
 def test_who_may_propose(make_office):
-    from hq.tools.office import REQUEST_APPROVAL, definitions, tools_for
+    from HQ.tools.office import REQUEST_APPROVAL, definitions, tools_for
 
     names = lambda tier, aid, wing: {t.name for t in tools_for(tier, aid, wing)}
     for tier, aid, wing in (("lead", "er_lead", "equity_research"), ("lead", "quant_lead", "quant"),
@@ -238,7 +238,7 @@ async def test_newsletter_material_carries_the_scoreboard(office_llm):
 async def test_portfolio_endpoints(office_llm):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, _ = office_llm
     card = office.propose_position("er_lead", "RMBS", 5, "Thesis.", task_id=None)
@@ -256,14 +256,14 @@ async def test_portfolio_endpoints(office_llm):
 
 # ---- the demo scene -----------------------------------------------------------------------------
 async def test_demo_portfolio_scene_uses_the_real_rules(make_office, monkeypatch):
-    from hq.demo import DEMO_HOLDING, DemoLLM, prepare_demo_portfolio, scene_portfolio
+    from HQ.demo import DEMO_HOLDING, DemoLLM, prepare_demo_portfolio, scene_portfolio
 
     office, _ = make_office()
     llm = DemoLLM(speed=1000, office=office)
     office._llm = llm
     scene_portfolio(office, llm)                       # no model yet: the scene sits out
     assert office.store.tasks() == [] and not await prepare_demo_portfolio(office)   # offline: no price
-    monkeypatch.setattr("hq.quotes.latest", lambda tickers: {t: 100.0 if t != "SPY" else 500.0 for t in tickers})
+    monkeypatch.setattr("HQ.quotes.latest", lambda tickers: {t: 100.0 if t != "SPY" else 500.0 for t in tickers})
     assert await prepare_demo_portfolio(office) and await prepare_demo_portfolio(office)   # once
     assert len(office.store.models(DEMO_HOLDING)) == 1
     scene_portfolio(office, llm)

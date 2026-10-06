@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 from conftest import nick, text_turn, tool_turn
 
-from hq import rounds as rounds_mod
+from HQ import rounds as rounds_mod
 
 
 @pytest.fixture(autouse=True)
@@ -104,7 +104,7 @@ async def test_juno_walks_the_floor_on_request_even_when_paused(make_office):
 def test_rounds_endpoints(make_office):
     from fastapi.testclient import TestClient
 
-    from hq.server import create_app
+    from HQ.server import create_app
 
     office, _ = make_office()
     office.tone_engine = "rules"
@@ -116,7 +116,7 @@ def test_rounds_endpoints(make_office):
 
 
 async def test_demo_delegates_answer_juno_from_the_live_digest(make_office):
-    from hq.demo import DemoLLM
+    from HQ.demo import DemoLLM
 
     office, _ = make_office()
     office._llm = DemoLLM(speed=1000, office=office)

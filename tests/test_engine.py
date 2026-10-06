@@ -33,7 +33,7 @@ async def test_simple_task_completes_and_is_logged(make_office):
 
 
 async def test_request_params_per_model_family():
-    from hq.engine.llm import request_params
+    from HQ.engine.llm import request_params
 
     sonnet = request_params({"id": "claude-sonnet-5-5", "effort": "high",
                              "thinking_display": "summarized", "max_tokens": 32000},
@@ -51,7 +51,7 @@ async def test_request_params_per_model_family():
 
 
 def test_block_to_param_keeps_everything_the_api_returned():
-    from hq.engine.llm import block_to_param
+    from HQ.engine.llm import block_to_param
 
     assert block_to_param({"type": "text", "text": "hi", "citations": None,
                            "parsed_output": {}}) == {"type": "text", "text": "hi"}
@@ -208,7 +208,7 @@ async def test_turn_cap_pauses_task_with_incident(make_office):
                                                       "text": f"update number {i} " + "x" * i * 30}))
                           for i in range(5)])
     llm.script("er_associate", *[text_turn("ack")] * 5)
-    import hq.engine.agent as agent_mod
+    import HQ.engine.agent as agent_mod
     cfg = agent_mod.office()
     cfg["limits"]["max_turns_per_task"] = 3
     tid = await _run(office, "er_lead", "Chatter.")
@@ -339,7 +339,7 @@ async def test_resume_twice_runs_task_once(make_office):
 
 
 def test_explicit_model_id_keeps_associate_tier():
-    from hq.config import model_config
+    from HQ.config import model_config
 
     assert model_config("associate")[0] == "associate"
     tier, cfg = model_config("claude-haiku-4-5")
