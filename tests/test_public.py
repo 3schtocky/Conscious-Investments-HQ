@@ -337,3 +337,11 @@ def test_health_says_only_whether_the_office_answers(site):
     assert visitor.get("/api/public/health").json() == {"ok": True, "paused": False, "clocked_out": False}
     captain.office.hold()
     assert visitor.get("/api/public/health").json()["paused"] is True
+
+
+def test_outreach_events_never_reach_visitors(site):
+    from hq import public as pub
+
+    _, captain = site
+    for kind in ("outreach_draft", "outreach_ready", "outreach_status"):
+        assert pub.event(captain.office, {"type": kind, "agent": "cr_lead", "email": "x", "status": "approved"}) is None

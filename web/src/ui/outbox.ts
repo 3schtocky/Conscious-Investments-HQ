@@ -12,10 +12,17 @@ interface Deliverable {
   id: string; ticker: string; title: string; date: string; status: string; files: Record<string, string>;
   model_version: number; updated: number;
 }
-interface OutboxView { issues: Issue[]; deliverables: Deliverable[]; publisher: string }
+interface Outreach {
+  id: string; to_name: string; to_email: string; org: string; segment: string; reason: string; subject: string;
+  body: string; words: number; date: string; status: string; problems: Problem[]; drafted_by_name: string;
+  updated: number; approval_id: number | null; files: Record<string, string>; next_step?: string;
+}
+interface OutboxView { issues: Issue[]; deliverables: Deliverable[]; outreach?: Outreach[]; outreach_from?: string; publisher: string }
+
+const SEGMENT: Record<string, string> = { business: "Business or professional", retail: "Individual investor", inbound: "Asked to hear from us" };
 
 const STATUS: Record<string, string> = { draft: "Draft", finalizing: "Being finalized", blocked: "Checks failing", awaiting: "Waiting for you",
-  approved: "Approved: ready to paste", changes: "Changes requested", rejected: "Declined", expired: "Expired (demo tidy-up)" };
+  approved: "Approved: ready", changes: "Changes requested", rejected: "Declined", expired: "Expired (demo tidy-up)" };
 
 export class OutboxPanel {
   view: OutboxView | null = null;
@@ -29,7 +36,8 @@ export class OutboxPanel {
   /** Issues and client files approved and ready for the Captain to post or send. */
   get count(): number {
     if (!this.view) return 0;
-    return this.view.issues.filter((i) => i.status === "approved").length;
+    return this.view.issues.filter((i) => i.status === "approved").length
+      + (this.view.outreach ?? []).filter((e) => e.status === "approved").length;
   }
 
   async refresh() {
@@ -83,6 +91,10 @@ export class OutboxPanel {
     this.root.append(h("h4", { class: "section" }, "Newsletter"));
     if (!v.issues.length) this.root.append(h("p", { class: "empty" }, `No issues yet. Ask ${this.state.name("cr_lead")} for this week's newsletter.`));
     for (const i of v.issues) this.root.append(this.issueEl(i));
+    this.root.append(h("h4", { class: "section" }, "Outreach"));
+    const mails = v.outreach ?? [];
+    if (!mails.length) this.root.append(h("p", { class: "empty" }, `No outreach emails yet. Tell ${this.state.name("cr_lead")} who to write to and why.`));
+    for (const e of mails) this.root.append(this.outreachEl(e, v.outreach_from ?? ""));
     if (v.deliverables.length) {
       this.root.append(h("h4", { class: "section" }, "Client memos"));
       for (const d of v.deliverables) this.root.append(this.deliverableEl(d));
@@ -119,6 +131,34 @@ export class OutboxPanel {
         h("button", { class: "btn ghost small-btn", onclick: () => this.openApprovals() }, "Decide in Approvals")) : null,
       built ? h("details", { class: "digest-past" }, h("summary", {}, "Social posts"),
         h("pre", { class: "digest-text" }, `X (${i.x_post.length}/280)\n${i.x_post}\n\nLinkedIn\n${i.linkedin_post}`)) : null);
+  }
+
+  private outreachEl(e: Outreach, from: string): HTMLElement {
+    const errors = e.problems.filter((p) => p.level === "error");
+    const warnings = e.problems.filter((p) => p.level === "warning");
+    const tone = e.status === "approved" ? " good" : e.status === "blocked" || e.status === "awaiting" ? " warn" : "";
+    const who = e.to_name ? `${e.to_name} <${e.to_email}>` : e.to_email;
+    return h("div", { class: `audit-card outbox s-${e.status}` },
+      h("div", { class: "approval-head" },
+        h("span", { class: `chip${tone}` }, STATUS[e.status] ?? e.status),
+        h("span", { class: "chip" }, SEGMENT[e.segment] ?? e.segment),
+        h("span", { class: "feed-time" }, timeAgo(e.updated))),
+      h("div", { class: "outbox-title" }, e.subject),
+      h("div", { class: "muted small" }, `To ${who}${e.org ? ` · ${e.org}` : ""} · ${e.words} words · drafted by ${e.drafted_by_name}`),
+      h("div", { class: "muted small" }, `Why: ${e.reason || "not stated"}`),
+      errors.length ? h("ul", { class: "outbox-problems errors" }, ...errors.map((p) => h("li", {}, `${p.where}: ${p.msg}`))) : null,
+      warnings.length ? h("ul", { class: "outbox-problems" }, ...warnings.map((p) => h("li", {}, `${p.where}: ${p.msg}`))) : null,
+      e.status === "approved" && e.next_step ? h("div", { class: "outbox-next small" }, e.next_step) : null,
+      e.files["email.html"] ? h("div", { class: "row" },
+        h("a", { class: "btn small-btn", href: `/outbox/${e.files["email.html"]}`, target: "_blank", rel: "noopener" }, "Open the email"),
+        this.copyBtn(`to-${e.id}`, "Copy To", () => this.copyText(`to-${e.id}`, e.to_email)),
+        this.copyBtn(`su-${e.id}`, "Copy subject", () => this.copyText(`su-${e.id}`, e.subject)),
+        this.copyBtn(`em-${e.id}`, "Copy email", async () => {
+          try { this.copyText(`em-${e.id}`, (await (await fetch(`/outbox/${e.files["email.txt"]}`)).text()).split("\n\n").slice(1).join("\n\n")); } catch { /* blocked */ }
+        })) : null,
+      e.status === "awaiting" ? h("div", { class: "row" },
+        h("button", { class: "btn ghost small-btn", onclick: () => this.openApprovals() }, "Decide in Approvals")) : null,
+      h("div", { class: "muted small" }, `From ${from}. Nothing is sent until ${this.state.captain.nickname} approves.`));
   }
 
   private deliverableEl(d: Deliverable): HTMLElement {

@@ -19,7 +19,8 @@ LEADERSHIP = {"captain", "chief_of_staff"}   # messages from these reset a ping-
 # After one of these runs the world has changed, so an identical earlier call (rebuilding a model
 # after editing its assumptions, re-reading a file just written) is progress, not a loop.
 STATE_CHANGING = {"write_file", "draft_assumptions", "erb_facts", "save_newsletter",
-                  "finalize_newsletter", "run_screen", "pitch_memo"}
+                  "finalize_newsletter", "run_screen", "pitch_memo",
+                  "save_outreach", "finalize_outreach"}
 
 
 class GuardBlock(Exception):

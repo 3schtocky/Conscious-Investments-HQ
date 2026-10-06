@@ -64,6 +64,14 @@ client_relations:
     The author holds no position in the securities discussed. The Conscious Investments model
     portfolio is a paper portfolio.
 
+  # Outreach: one-to-one emails from contact@ about our product, only when you ask for one.
+  # Nothing sends until you approve it. postal_address is REQUIRED before any email can be finalized.
+  outreach:
+    from_address: contact@consciousinvestments.org
+    from_name: Conscious Investments
+    postal_address: ""           # e.g. "123 Main St, Suite 4, City, ST 00000" (a P.O. box or mail drop is fine)
+    mailer: draft                # draft = you send it yourself from the Outbox text (the only one for now)
+
 # The public site (`hq serve --public`, behind a Cloudflare Tunnel). Visitors can only watch the
 # floor and read finished work; you sign in with HQ_CAPTAIN_PASSWORD from .env.
 public:

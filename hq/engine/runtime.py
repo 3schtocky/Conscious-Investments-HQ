@@ -675,6 +675,8 @@ class Office:
                 except (KeyError, OSError):
                     log.exception("could not update outbox issue %s", issue)
             self.bus.publish("outbox_status", card["agent"], card["task_id"], issue=issue, status=decision)
+        elif card["kind"] == "outreach" and p.get("email"):
+            self._outreach_decided(card, decision)
         elif card["kind"] == "deliverable" and memo:
             try:
                 outbox.set_deliverable_status(self.outbox_dir, memo, decision)
@@ -686,13 +688,46 @@ class Office:
             self.bus.publish("outbox_status", card["agent"], card["task_id"], deliverable=memo,
                              status=decision)
 
+    def _outreach_decided(self, card: dict, decision: str) -> None:
+        """Approval re-runs the code gate against today's facts (an address may have opted out
+        since the card was filed) and only then hands the email to the mailer. Anything else
+        is best effort."""
+        from hq import outreach
+        from hq.publish import get_mailer
+
+        email_id = card["payload"]["email"]
+        if decision == "approved":
+            try:
+                errors = [e for e in outreach.recheck(self, email_id) if e["level"] == "error"]
+            except (KeyError, OSError) as ex:
+                raise ValueError(f"The email's files are missing from the Outbox ({ex}). Ask for it "
+                                 "to be finalized again.") from ex
+            if errors:
+                raise ValueError("This email can no longer go out: " + "; ".join(e["msg"] for e in errors[:3])
+                                 + " Decline it or request changes.")
+            try:
+                mailer = get_mailer(card["payload"].get("mailer"))
+            except ValueError:
+                mailer = get_mailer("draft")   # a renamed mailer must not strand the email
+            mailer.deliver(self, email_id)
+        else:
+            try:
+                outreach.set_status(self, email_id, decision)
+            except (KeyError, OSError):
+                log.exception("could not update outreach email %s", email_id)
+        self.bus.publish("outreach_status", card["agent"], card["task_id"], email=email_id, status=decision)
+
     def outbox_view(self) -> dict:
         from hq import outbox
 
         who = lambda a: self.name(a) if a in self.agents else a
         issues = [{**m, "drafted_by_name": who(m.get("drafted_by")),
                    "revised_by_name": who(m.get("revised_by"))} for m in outbox.issues(self.outbox_dir)]
-        return {"issues": issues, "deliverables": outbox.deliverables(self.outbox_dir),
+        from hq import outreach
+
+        mails = [{**m, "drafted_by_name": who(m.get("drafted_by"))} for m in outreach.emails(self)]
+        return {"issues": issues, "deliverables": outbox.deliverables(self.outbox_dir), "outreach": mails,
+                "outreach_from": outreach.settings()["from_address"],
                 "publisher": outbox.settings()["publisher"]}
 
     def model_lock(self, ticker: str) -> asyncio.Lock:

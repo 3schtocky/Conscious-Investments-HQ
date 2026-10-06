@@ -27,6 +27,7 @@ _VERBS = {
     "run_screen": "ran a screen", "read_screen": "read a screen",
     "pitch_memo": "wrote a pitch memo", "save_newsletter": "saved a newsletter draft",
     "finalize_newsletter": "finalized a newsletter",
+    "save_outreach": "saved an outreach draft", "finalize_outreach": "finalized an outreach email",
 }
 _SKIP = {"read_office", "wing_status"}   # looking around is not progress
 

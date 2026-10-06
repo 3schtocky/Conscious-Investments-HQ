@@ -371,3 +371,129 @@ def test_newsletter_kind_is_not_offered_on_the_generic_approval_tool(make_office
     [d] = definitions([REQUEST_APPROVAL], captain="Stott")
     assert "newsletter" not in d["input_schema"]["properties"]["kind"]["enum"]
     assert "newsletter" not in d["description"]
+
+
+# ---- outreach emails ----------------------------------------------------------------------------
+from hq import outreach
+
+MAIL = ("Dear Ms Rao,\n\nWe read your piece on small-cap semiconductors and thought our work might be useful "
+        "to your readers. Conscious Investments is an independent research imprint run by an AI-assisted "
+        "office and reviewed by its author. Each week we publish a short note that carries only price "
+        "targets and ratings we have formally approved, and the office itself can be watched at "
+        "https://consciousinvestments.org as the work happens.\n\nIf it is of interest, the latest note "
+        "is on the site, and a reply is always welcome.\n\nWith thanks,\nEthan Stott")
+
+
+@pytest.fixture
+def mail_office(office_llm, monkeypatch):
+    office, llm = office_llm
+    cfg = {"client_relations": {"outreach": {"postal_address": "1 Main St, Springfield, IL 62701"}}}
+    monkeypatch.setattr("hq.outreach.office_config", lambda: cfg)
+    return office, llm
+
+
+def draft(office, **kw):
+    args = {"agent_id": "cr_associate", "to_name": "Maya Rao", "to_email": "maya@example.com",
+            "org": "Chip Weekly", "segment": "business",
+            "reason": "we thought our research may be useful to your readers",
+            "subject": "Independent research you can watch being made", "body": MAIL}
+    args.update(kw)
+    return outreach.save_draft(office, **args)
+
+
+def err(meta):
+    return {p["code"] for p in meta["problems"] if p["level"] == "error"}
+
+
+def test_clean_outreach_passes_and_footer_is_code_built(mail_office):
+    office, _ = mail_office
+    meta = draft(office)
+    assert err(meta) == set() and meta["status"] == "draft"
+    assert outreach.recheck(office, meta["id"]) == meta["problems"]
+    meta = outreach.render(office, meta["id"])
+    text = (office.outbox_dir / meta["files"]["email.txt"]).read_text()
+    assert text.startswith("To: Maya Rao <maya@example.com>\nFrom: Conscious Investments <contact@consciousinvestments.org>")
+    assert "1 Main St, Springfield" in text and '"unsubscribe"' in text and "not investment advice" in text.lower().replace("nothing here is investment advice", "not investment advice")
+    assert "You are receiving this because we thought our research" in text
+
+
+def test_outreach_gate(mail_office):
+    office, _ = mail_office
+    assert "address" in err(draft(office, to_email="not-an-email"))
+    assert "address" in err(draft(office, to_email="contact@consciousinvestments.org"))
+    assert "segment" in err(draft(office, segment="whale"))
+    assert "reason" in err(draft(office, reason=""))
+    assert "deceptive" in err(draft(office, subject="Re: our chat"))
+    assert "spammy" in err(draft(office, subject="Act now!"))
+    assert "link" in err(draft(office, body=MAIL + "\nhttps://evil.example.com/x"))
+    assert "hype" in err(draft(office, body=MAIL.replace("useful", "a massive game changer")))
+    assert "unapproved-target" in err(draft(office, body=MAIL + "\nBFLY has a price target of $20."))
+    assert "length" in {p["code"] for p in draft(office, body="Hello. Please read our note.")["problems"]}   # a warning
+    assert {p["code"] for p in draft(office, segment="retail")["problems"]} >= {"retail"}
+    assert "advice" in err(draft(office, body=MAIL + "\nYou should buy RMBS now."))
+
+
+def test_suppression_and_contact_limits(mail_office):
+    office, _ = mail_office
+    first = draft(office)
+    outreach.set_status(office, first["id"], "approved", approved_at=__import__("time").time())
+    assert "gap" in err(draft(office, subject="A second note"))          # too soon after the first
+    outreach.suppress(office, "maya@example.com", "asked to stop")
+    assert "suppressed" in err(draft(office, to_email="Maya@Example.com"))
+    outreach.suppress(office, "@blocked.org", "domain asked")
+    assert "suppressed" in err(draft(office, to_email="anyone@blocked.org"))
+    with pytest.raises(ValueError):
+        outreach.suppress(office, "nonsense", "x")
+
+
+def test_outreach_needs_a_postal_address(office_llm, monkeypatch):
+    office, _ = office_llm
+    monkeypatch.setattr("hq.outreach.office_config", dict)
+    meta = draft(office)
+    assert "postal-address" in {p["code"] for p in outreach.recheck(office, meta["id"]) if p["level"] == "error"}
+
+
+def test_outreach_tools_by_role():
+    from hq.tools.office import tools_for
+
+    names = lambda tier, aid, wing: {t.name for t in tools_for(tier, aid, wing)}
+    harbor, wren = names("lead", "cr_lead", "client_relations"), names("associate", "cr_associate", "client_relations")
+    assert {"outreach_context", "save_outreach", "read_outreach", "finalize_outreach", "suppress_contact"} <= harbor
+    assert {"outreach_context", "save_outreach", "read_outreach"} <= wren
+    assert not {"finalize_outreach", "suppress_contact"} & wren
+    assert not {"save_outreach", "finalize_outreach"} & names("lead", "er_lead", "equity_research")
+
+
+async def test_outreach_flow_and_approval(mail_office):
+    office, llm = mail_office
+    fields = {"to_name": "Maya Rao", "to_email": "maya@example.com", "org": "Chip Weekly", "segment": "business",
+              "reason": "we thought our research may be useful to your readers",
+              "subject": "Independent research you can watch being made", "body": MAIL}
+    email = f"{office.ledger.today()}-chip-weekly"
+    llm.script("cr_lead", tool_turn(("outreach_context", {"to_email": "maya@example.com"})),
+               tool_turn(("save_outreach", fields)),
+               tool_turn(("finalize_outreach", {"email": email, "note": "Warm intro."})),
+               tool_turn(("save_outreach", fields)),           # frozen once filed
+               text_turn("On your desk."), text_turn("Thanks."))
+    office.assign("cr_lead", "Write to Maya Rao at Chip Weekly")
+    await office.idle()
+
+    ctx = json.loads(_results(llm, "cr_lead", 1)[0]["content"])
+    assert ctx["contact_history"] == [] and ctx["suppressed"] is False and ctx["links_allowed"] == ["consciousinvestments.org"]
+    saved = json.loads(_results(llm, "cr_lead", 2)[0]["content"])
+    assert saved["errors"] == [] and saved["email"] == email
+    assert "approval #1 is on Stott's desk" in _results(llm, "cr_lead", 3)[0]["content"]
+    late = _results(llm, "cr_lead", 4)[0]
+    assert late["is_error"] and "waiting for a decision" in late["content"]
+
+    [card] = office.store.approvals("pending")
+    assert card["kind"] == "outreach" and "maya@example.com" in card["summary"] and "Warm intro." in card["summary"]
+    assert "Nothing is sent until you approve" in card["summary"]
+    outreach.suppress(office, "maya@example.com", "asked to stop")        # opts out before he decides
+    with pytest.raises(ValueError, match="no longer go out"):
+        office.decide(card["id"], "approved")
+    (outreach.root(office) / "suppressed.json").write_text("[]")
+    office.decide(card["id"], "approved")
+    meta = outreach.load(office, email)
+    assert meta["status"] == "approved" and "contact@consciousinvestments.org" in meta["next_step"]
+    assert office.outbox_view()["outreach"][0]["id"] == email

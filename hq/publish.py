@@ -51,3 +51,41 @@ def get_publisher(name: str | None = None) -> Publisher:
     except KeyError as e:
         raise ValueError(f"Unknown publisher {name!r} in office.yaml (client_relations.publisher). "
                          f"Available: {', '.join(PUBLISHERS)}.") from e
+
+
+# ---- outreach mailers ---------------------------------------------------------------------------
+class DraftMailer:
+    """Phase A: nothing is sent. An approved email is marked ready, and the Captain sends it
+    himself from contact@consciousinvestments.org with the text from the Outbox."""
+
+    name = "draft"
+    on_approval = "On approval it is marked ready for you to send yourself."
+
+    def prepare(self, office: Office, email_id: str) -> dict:
+        from hq import outreach
+
+        return outreach.render(office, email_id)
+
+    def deliver(self, office: Office, email_id: str) -> dict:
+        import time
+
+        from hq import outreach
+
+        return outreach.set_status(
+            office, email_id, "approved", approved_at=time.time(),
+            next_step="Copy the To, Subject and body into your mail app and send it from "
+                      f"{outreach.settings()['from_address']}.")
+
+
+MAILERS: dict[str, type] = {"draft": DraftMailer}
+
+
+def get_mailer(name: str | None = None):
+    from hq import outreach
+
+    name = name or outreach.settings()["mailer"]
+    try:
+        return MAILERS[name]()
+    except KeyError as e:
+        raise ValueError(f"Unknown mailer {name!r} in office.yaml (client_relations.outreach.mailer). "
+                         f"Available: {', '.join(MAILERS)}.") from e
