@@ -1,4 +1,4 @@
-"""Packaging the investor deck: the built .pptx, Tally's source map, the PDF, and the Outbox record.
+"""Packaging the slidedeck: the built .pptx, Tally's source map, the PDF, and the Outbox record.
 
 The source map ties every figure printed on every slide (code-built and written alike) to a
 source in the ticker's pool (the approved model, Quant's Model Brief, the facts, filings), using
@@ -39,7 +39,7 @@ def meta_path(office: Office, ticker: str, day: str | None = None) -> Path:
 
 
 def load(office: Office, deck_id: str) -> dict | None:
-    """A deck by id, `<TICKER>-<yyyy-mm-dd>`."""
+    """A slidedeck by id, `<TICKER>-<yyyy-mm-dd>`."""
     ticker, _, day = deck_id.partition("-")
     if not ticker or not day:
         return None
@@ -50,7 +50,7 @@ def load(office: Office, deck_id: str) -> dict | None:
 def set_status(office: Office, deck_id: str, status: str, **extra) -> dict:
     meta = load(office, deck_id)
     if meta is None:
-        raise KeyError(f"No investor deck {deck_id!r} in the Outbox.")
+        raise KeyError(f"No slidedeck {deck_id!r} in the Outbox.")
     meta.update(status=status, updated=time.time(), **extra)
     meta_path(office, meta["ticker"], meta["date"]).write_text(json.dumps(meta, indent=1))
     return meta
@@ -58,7 +58,7 @@ def set_status(office: Office, deck_id: str, status: str, **extra) -> dict:
 
 def decks(office: Office) -> list[dict]:
     out = []
-    for p in sorted((office.outbox_dir / "decks").glob("*/*/meta.json")):
+    for p in sorted((office.outbox_dir / "slidedecks").glob("*/*/meta.json")):
         try:
             out.append(json.loads(p.read_text()))
         except ValueError:
@@ -98,7 +98,7 @@ def source_map(office: Office, ticker: str, pptx: Path) -> dict:
 
 
 def render_map(sm: dict, *, version: int, day: str) -> str:
-    lines = [f"# {sm['ticker']} investor deck: source map", "",
+    lines = [f"# {sm['ticker']} slidedeck: source map", "",
              (f"Quant model v{version}, {day}. Tally's code tied {sm['matched']} of {sm['figures']} printed figures to a source "
               f"({len(sm['exceptions'])} exceptions)."), ""]
     for s in sm["slides"]:
@@ -124,19 +124,19 @@ def export_pdf(pptx: Path, pdf: Path) -> bool:
 
 # ---- the package ---------------------------------------------------------------------------------
 def package(office: Office, ticker: str, *, pdf: bool = True) -> dict:
-    """Build the deck from today's clean copy, tie out every figure, export the PDF, record it in the Outbox."""
+    """Build the slidedeck from today's clean copy, tie out every figure, export the PDF, record it in the Outbox."""
     saved = deck.load_copy(office, ticker)
     if saved is None:
-        raise ValueError(f"No saved deck copy for {ticker} today. Save one with save_deck_copy and build_deck first.")
+        raise ValueError(f"No saved slidedeck copy for {ticker} today. Save one with save_slidedeck_copy and build_slidedeck first.")
     if not saved["clean"]:
-        raise ValueError("Today's saved copy still has errors; fix them with save_deck_copy.")
+        raise ValueError("Today's saved copy still has errors; fix them with save_slidedeck_copy.")
     r = handoff.readiness(office, ticker)
     if not all(c["ok"] for c in r["conditions"]):
-        raise ValueError("Not ready for a deck: " + "; ".join(c["detail"] for c in r["conditions"] if not c["ok"]))
+        raise ValueError("Not ready for a slidedeck: " + "; ".join(c["detail"] for c in r["conditions"] if not c["ok"]))
     day = office.ledger.today()
     current = load(office, f"{ticker}-{day}")
     if current and current["status"] in LOCKED:
-        raise ValueError(f"Today's {ticker} deck is {LOCKED[current['status']]}; it can't be replaced. If something changed, "
+        raise ValueError(f"Today's {ticker} slidedeck is {LOCKED[current['status']]}; it can't be replaced. If something changed, "
                          "ask for the card to be sent back first.")
     d = deck.deck_dir(office, ticker, day)
     base = deck.file_stem(office, ticker, "Slidedeck", day)
@@ -150,10 +150,10 @@ def package(office: Office, ticker: str, *, pdf: bool = True) -> dict:
         listed = "; ".join(f"slide {e['slide']} {e['figure']}" for e in sm["exceptions"][:6])
         raise ValueError(f"{len(sm['exceptions'])} printed figures tie to no source (see the source map file): {listed}. "
                          "Fix the words or ask Research and Quant to put the figure in their files.")
-    files = {"pptx": f"decks/{ticker}/{day}/{pptx.name}", "source_map": f"decks/{ticker}/{day}/{map_name}.md"}
+    files = {"pptx": f"slidedecks/{ticker}/{day}/{pptx.name}", "source_map": f"slidedecks/{ticker}/{day}/{map_name}.md"}
     if pdf and export_pdf(pptx, d / f"{base}.pdf"):
-        files["pdf"] = f"decks/{ticker}/{day}/{base}.pdf"
-    meta = {"id": f"{ticker}-{day}", "ticker": ticker, "date": day, "title": f"{ticker} investor deck", "status": "draft",
+        files["pdf"] = f"slidedecks/{ticker}/{day}/{base}.pdf"
+    meta = {"id": f"{ticker}-{day}", "ticker": ticker, "date": day, "title": f"{ticker} slidedeck", "status": "draft",
             "files": files, "model_version": version, "slides": len(deck.SLIDES), "figures": sm["figures"],
             "matched": sm["matched"], "by": saved["by"], "approval_id": None, "issue": None, "updated": time.time()}
     meta_path(office, ticker, day).write_text(json.dumps(meta, indent=1))
@@ -161,17 +161,17 @@ def package(office: Office, ticker: str, *, pdf: bool = True) -> dict:
 
 
 def recheck(office: Office, deck_id: str) -> list[str]:
-    """Why this deck can no longer go out as it stands (empty = fine): the copy is re-gated against today's facts."""
+    """Why this slidedeck can no longer go out as it stands (empty = fine): the copy is re-gated against today's facts."""
     meta = load(office, deck_id)
     if meta is None:
-        return ["the deck's files are missing from the Outbox"]
+        return ["the slidedeck's files are missing from the Outbox"]
     t = meta["ticker"]
     problems = []
     model = office.store.approved_model(t)
     if model is None or model["version"] != meta["model_version"]:
         problems.append(f"the approved model is no longer v{meta['model_version']}")
     elif not handoff.readiness_holds(office, t, model["version"]):
-        problems.append("the rating, report or Model Brief changed since the deck was finalized")
+        problems.append("the rating, report or Model Brief changed since the slidedeck was finalized")
     saved = deck.load_copy(office, t, meta["date"])
     if saved is None:
         problems.append("the saved copy is missing")

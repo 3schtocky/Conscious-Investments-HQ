@@ -1,5 +1,5 @@
 """Model Brief and hand-off tools. Quant writes the brief; Client Relations reads it and checks
-whether a name is ready for a deck. Plain code behind each tool; no model calls."""
+whether a name is ready for a slidedeck. Plain code behind each tool; no model calls."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ async def _save_model_brief(ctx: ToolContext, inp: dict) -> str:
     return json.dumps(out, indent=1)
 
 
-async def _deck_readiness(ctx: ToolContext, inp: dict) -> str:
+async def _slidedeck_readiness(ctx: ToolContext, inp: dict) -> str:
     r = handoff.readiness(ctx.office, _ticker(inp))
     r["missing"] = [c["detail"] for c in r["conditions"] if not c["ok"]]
     return json.dumps(r, indent=1)
@@ -96,8 +96,8 @@ SAVE_MODEL_BRIEF = Tool(
     _save_model_brief)
 
 DECK_READINESS = Tool(
-    "deck_readiness",
-    "Is a name ready for an investor deck? Lists the four conditions (approved Outperform model, finished "
+    "slidedeck_readiness",
+    "Is a name ready for a slidedeck? Lists the four conditions (approved Outperform model, finished "
     "initiating-coverage report, Quant's Model Brief, no earlier hand-off) and what is missing. If "
     "something is missing, ask its owner through their delegate with relay_request.",
-    _schema(TICK, ["ticker"]), _deck_readiness)
+    _schema(TICK, ["ticker"]), _slidedeck_readiness)

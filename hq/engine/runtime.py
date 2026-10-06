@@ -711,7 +711,7 @@ class Office:
                              status=decision)
 
     def _deck_decided(self, card: dict, decision: str) -> None:
-        """Approval re-runs the deck's gate and its matching newsletter's against today's facts and is refused with
+        """Approval re-runs the slidedeck's gate and its matching newsletter's against today's facts and is refused with
         the reason if either no longer holds; the package is then marked ready (nothing is sent). Any other
         decision is best effort."""
         from hq import deckpack, outbox
@@ -719,20 +719,20 @@ class Office:
         p = card["payload"]
         deck_id = p.get("deck")
         if decision == "approved":
-            problems = deckpack.recheck(self, deck_id) if deck_id else ["the deck is missing from the Outbox"]
+            problems = deckpack.recheck(self, deck_id) if deck_id else ["the slidedeck is missing from the Outbox"]
             if p.get("issue"):
                 try:
                     problems += [e["msg"] for e in outbox.recheck(self, p["issue"]) if e["level"] == "error"]
                 except (KeyError, OSError):
                     problems.append("the matching newsletter's files are missing")
             if problems:
-                raise ValueError("What is approved changed since this deck was finalized: " + "; ".join(problems[:3])
+                raise ValueError("What is approved changed since this slidedeck was finalized: " + "; ".join(problems[:3])
                                  + ". Request changes so it is revised against the current facts.")
         try:
             deckpack.set_status(self, deck_id, decision)
         except (KeyError, OSError):
             if decision == "approved":
-                raise ValueError("The deck's files are missing from the Outbox. Ask for it to be finalized again.") from None
+                raise ValueError("The slidedeck's files are missing from the Outbox. Ask for it to be finalized again.") from None
             log.exception("could not update outbox deck %s", deck_id)
         self.bus.publish("outbox_status", card["agent"], card["task_id"], deck=deck_id, status=decision)
 

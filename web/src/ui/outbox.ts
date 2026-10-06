@@ -100,7 +100,7 @@ export class OutboxPanel {
     if (!mails.length) this.root.append(h("p", { class: "empty" }, `No outreach emails yet. Tell ${this.state.name("cr_lead")} who to write to and why.`));
     for (const e of mails) this.root.append(this.outreachEl(e, v.outreach_from ?? ""));
     if (v.decks?.length) {
-      this.root.append(h("h4", { class: "section" }, "Investor decks"));
+      this.root.append(h("h4", { class: "section" }, "Slidedecks"));
       for (const d of v.decks) this.root.append(this.deckEl(d));
     }
     if (v.deliverables.length) {
@@ -171,7 +171,7 @@ export class OutboxPanel {
 
   private deckEl(d: Deck): HTMLElement {
     const tone = d.status === "approved" ? " good" : d.status === "awaiting" ? " warn" : "";
-    const label: Record<string, string> = { pptx: "Download deck (.pptx)", pdf: "Open PDF", source_map: "Source map" };
+    const label: Record<string, string> = { pptx: "Download slidedeck (.pptx)", pdf: "Open PDF", source_map: "Source map" };
     return h("div", { class: `audit-card outbox s-${d.status}` },
       h("div", { class: "approval-head" },
         h("span", { class: `chip${tone}` }, STATUS[d.status] ?? d.status),

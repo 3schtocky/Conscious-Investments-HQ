@@ -1,6 +1,6 @@
-# Client Relations playbook: the investor deck
+# Client Relations playbook: the slidedeck
 
-**What the deck is.** The initiating-coverage report and the Quant model, told to an investor in about 17 slides. Code fills the numbers and charts from the approved model; you write the words (`deck_material` lists which slides are yours).
+**What the slidedeck is.** The initiating-coverage report and the Quant model, told to an investor in about 17 slides. Code fills the numbers and charts from the approved model; you write the words (`slidedeck_material` lists which slides are yours).
 
 **Action titles.** A headline says the point of the slide in one sentence (16 words at most), not its topic. "The Street is right on revenue and, we think, too high on margin", not "Valuation notes".
 
@@ -12,4 +12,4 @@
 
 **Speaker notes.** Two or three sentences per slide: what to say and the one question the room is likely to ask. They carry no new figures.
 
-**Before you build.** Read the deck back as an investor who has not read the report: could they explain the thesis after the first three slides? Then run the release standard. Fix at the source slide, not by softening a headline.
+**Before you build.** Read the slidedeck back as an investor who has not read the report: could they explain the thesis after the first three slides? Then run the release standard. Fix at the source slide, not by softening a headline.

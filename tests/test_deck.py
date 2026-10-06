@@ -1,4 +1,4 @@
-"""Client Relations' investor deck: the copy gate and the native PowerPoint, on the real Micron report."""
+"""Client Relations' slidedeck: the copy gate and the native PowerPoint, on the real Micron report."""
 
 from __future__ import annotations
 
@@ -146,24 +146,24 @@ def test_wren_and_harbor_get_the_deck_tools_and_they_work_end_to_end(mu):
     from hq.tools.desk import desk_tools
 
     for tier in ("lead", "associate"):
-        assert {"deck_material", "save_deck_copy", "build_deck"} <= {t.name for t in desk_tools("client_relations", tier)}
+        assert {"slidedeck_material", "save_slidedeck_copy", "build_slidedeck"} <= {t.name for t in desk_tools("client_relations", tier)}
     ctx = lambda who: SimpleNamespace(office=mu, agent=mu.agents[who], task={"id": 1})
     run = lambda coro: asyncio.run(coro)
-    out = json.loads(run(deck_tools._deck_material(ctx("cr_associate"), {"ticker": "MU"})))
+    out = json.loads(run(deck_tools._slidedeck_material(ctx("cr_associate"), {"ticker": "MU"})))
     assert [s["id"] for s in out["slides"]] == deck.IDS and "risk" in " ".join(out["rules"]).lower()
-    with pytest.raises(GuardBlock, match="No saved deck copy"):
-        run(deck_tools._build_deck(ctx("cr_lead"), {"ticker": "MU"}))
+    with pytest.raises(GuardBlock, match="No saved slidedeck copy"):
+        run(deck_tools._build_slidedeck(ctx("cr_lead"), {"ticker": "MU"}))
     bad = json.loads(COPY.read_text())
     bad["slides"]["thesis"]["bullets"][0]["text"] = "MU is worth $999.9 bn."
-    saved = json.loads(run(deck_tools._save_deck_copy(ctx("cr_associate"), {"ticker": "MU", "copy": bad})))
+    saved = json.loads(run(deck_tools._save_slidedeck_copy(ctx("cr_associate"), {"ticker": "MU", "copy": bad})))
     assert saved["errors"] and "Fix every error" in saved["next"]
     with pytest.raises(GuardBlock, match="errors"):
-        run(deck_tools._build_deck(ctx("cr_lead"), {"ticker": "MU"}))
-    good = json.loads(run(deck_tools._save_deck_copy(ctx("cr_associate"), {"ticker": "MU", "copy": COPY.read_text()})))
+        run(deck_tools._build_slidedeck(ctx("cr_lead"), {"ticker": "MU"}))
+    good = json.loads(run(deck_tools._save_slidedeck_copy(ctx("cr_associate"), {"ticker": "MU", "copy": COPY.read_text()})))
     assert good["errors"] == []
-    built = json.loads(run(deck_tools._build_deck(ctx("cr_lead"), {"ticker": "MU"})))
+    built = json.loads(run(deck_tools._build_slidedeck(ctx("cr_lead"), {"ticker": "MU"})))
     assert built["slides"] == 17 and (mu.outbox_dir / built["built"]).is_file()
-    assert json.loads(run(deck_tools._read_deck_copy(ctx("cr_lead"), {"ticker": "MU"})))["clean"]
+    assert json.loads(run(deck_tools._read_slidedeck_copy(ctx("cr_lead"), {"ticker": "MU"})))["clean"]
 
 
 def test_the_package_ties_out_every_printed_figure_and_records_the_deck(mu, monkeypatch):
@@ -175,12 +175,12 @@ def test_the_package_ties_out_every_printed_figure_and_records_the_deck(mu, monk
     try:
         meta = deckpack.package(mu, "MU")
     except ValueError as e:
-        raise AssertionError(f"{e}\n\n" + next((mu.outbox_dir / "decks" / "MU" / mu.ledger.today()).glob("*Source-Map*.md")).read_text()[:6000]) from e
+        raise AssertionError(f"{e}\n\n" + next((mu.outbox_dir / "slidedecks" / "MU" / mu.ledger.today()).glob("*Source-Map*.md")).read_text()[:6000]) from e
     stem = f"CI_Micron-Technology-Inc_MU_%s_{mu.ledger.today()}"
     assert meta["files"]["pptx"].endswith(stem % "Slidedeck" + ".pptx") and meta["files"]["pdf"].endswith(stem % "Slidedeck" + ".pdf")
     assert meta["files"]["source_map"].endswith(stem % "Source-Map" + ".md")
     assert meta["matched"] == meta["figures"] > 50 and set(meta["files"]) == {"pptx", "source_map", "pdf"}
-    assert (mu.outbox_dir / meta["files"]["source_map"]).read_text().startswith("# MU investor deck: source map")
+    assert (mu.outbox_dir / meta["files"]["source_map"]).read_text().startswith("# MU slidedeck: source map")
     assert deckpack.load(mu, meta["id"])["status"] == "draft" and deckpack.recheck(mu, meta["id"]) == []
 
 
@@ -204,7 +204,7 @@ async def finalize(mu, monkeypatch, *, issue=True):
         assert meta["status"] == "draft", meta["problems"]
     ctx = SimpleNamespace(office=mu, agent=mu.agents["cr_lead"], task={"id": 1})
     args = {"ticker": "MU", **({"issue": meta["id"]} if issue else {})}
-    out = await deck_tools._finalize_deck(ctx, args)
+    out = await deck_tools._finalize_slidedeck(ctx, args)
     return meta, out
 
 
@@ -236,7 +236,7 @@ async def test_an_approval_is_refused_when_the_facts_moved_on_and_a_decline_is_a
     assert "No matching newsletter" in card["summary"]
     mu.store._exec("UPDATE models SET summary=? WHERE ticker='MU'",
                    (json.dumps({**mu.store.approved_model("MU")["summary"], "rating": "Neutral"}),))
-    with pytest.raises(ValueError, match="changed since this deck was finalized"):
+    with pytest.raises(ValueError, match="changed since this slidedeck was finalized"):
         mu.decide(card["id"], "approved")
     mu.decide(card["id"], "rejected")
     assert deckpack.load(mu, card["payload"]["deck"])["status"] == "rejected"
@@ -250,16 +250,16 @@ def test_only_the_lead_can_finalize_and_an_unclean_package_is_refused(mu, monkey
     from hq.tools import deck as deck_tools
     from hq.tools.desk import desk_tools
 
-    assert "finalize_deck" in {t.name for t in desk_tools("client_relations", "lead")}
-    assert "finalize_deck" not in {t.name for t in desk_tools("client_relations", "associate")}
+    assert "finalize_slidedeck" in {t.name for t in desk_tools("client_relations", "lead")}
+    assert "finalize_slidedeck" not in {t.name for t in desk_tools("client_relations", "associate")}
     ctx = SimpleNamespace(office=mu, agent=mu.agents["cr_lead"], task={"id": 1})
-    with pytest.raises(GuardBlock, match="No saved deck copy"):
-        asyncio.run(deck_tools._finalize_deck(ctx, {"ticker": "MU"}))
+    with pytest.raises(GuardBlock, match="No saved slidedeck copy"):
+        asyncio.run(deck_tools._finalize_slidedeck(ctx, {"ticker": "MU"}))
     bad = json.loads(COPY.read_text())
     bad["slides"]["thesis"]["bullets"][0]["text"] = "MU is worth $999.9 bn."
     deck.save_copy(mu, "MU", bad, by="Wren")
     with pytest.raises(GuardBlock, match="still has errors"):
-        asyncio.run(deck_tools._finalize_deck(ctx, {"ticker": "MU"}))
+        asyncio.run(deck_tools._finalize_slidedeck(ctx, {"ticker": "MU"}))
 
 
 async def test_harbor_and_wren_work_a_deck_through_the_engine(mu, monkeypatch):
@@ -274,21 +274,21 @@ async def test_harbor_and_wren_work_a_deck_through_the_engine(mu, monkeypatch):
     bad = copy.deepcopy(good)
     bad["slides"]["thesis"]["bullets"][0]["text"] = "MU grew revenue to $999.9 bn in FY'26."
     mu.llm.script("cr_lead",
-                  tool_turn(("deck_readiness", {"ticker": "MU"})),
-                  tool_turn(("delegate", {"to": "cr_associate", "job": "Write the MU deck copy to the outline and save it."})),
-                  tool_turn(("read_deck_copy", {"ticker": "MU"}), ("finalize_deck", {"ticker": "MU"})),
+                  tool_turn(("slidedeck_readiness", {"ticker": "MU"})),
+                  tool_turn(("delegate", {"to": "cr_associate", "job": "Write the MU slidedeck copy to the outline and save it."})),
+                  tool_turn(("read_slidedeck_copy", {"ticker": "MU"}), ("finalize_slidedeck", {"ticker": "MU"})),
                   text_turn("The MU deck is on the Captain's desk."))
     mu.llm.script("cr_associate",
-                  tool_turn(("deck_material", {"ticker": "MU"})),
-                  tool_turn(("save_deck_copy", {"ticker": "MU", "copy": bad})),
-                  tool_turn(("save_deck_copy", {"ticker": "MU", "copy": good})),
+                  tool_turn(("slidedeck_material", {"ticker": "MU"})),
+                  tool_turn(("save_slidedeck_copy", {"ticker": "MU", "copy": bad})),
+                  tool_turn(("save_slidedeck_copy", {"ticker": "MU", "copy": good})),
                   tool_turn(("submit_result", {"findings": "Saved, clean: 17 slides.", "confidence": "high"})))
-    task = mu.store.create_task(assignee="cr_lead", assigned_by="captain", kind="assignment", title="Investor deck: MU", body="Build it.")
+    task = mu.store.create_task(assignee="cr_lead", assigned_by="captain", kind="assignment", title="Slidedeck: MU", body="Build it.")
     mu._schedule("cr_lead", task)
     await mu.idle()
     cards = [c for c in mu.store.approvals("pending") if c["kind"] == "deck"]
     assert len(cards) == 1 and "17 slides" in cards[0]["summary"]
-    assert list((mu.outbox_dir / "decks" / "MU" / mu.ledger.today()).glob("CI_*_MU_Source-Map_*.md"))
+    assert list((mu.outbox_dir / "slidedecks" / "MU" / mu.ledger.today()).glob("CI_*_MU_Source-Map_*.md"))
     assert mu.store.task(task)["status"] == "done"
 
 

@@ -1,6 +1,6 @@
-"""The investor deck's content contract and its code gate.
+"""The slidedeck's content contract and its code gate.
 
-A deck is a fixed catalogue of slides (`SLIDES`). Some slides are *data* slides: code fills them
+A slidedeck is a fixed catalogue of slides (`SLIDES`). Some slides are *data* slides: code fills them
 from the approved Quant model and its Model Brief, so their numbers cannot drift. Others are
 *narrative* slides: Wren writes a headline, bullets and speaker notes, and every bullet names its
 source (a section of the initiating-coverage report, or a part of the Model Brief). Every figure
@@ -63,7 +63,7 @@ def coverage_sections(ticker: str) -> dict[str, str]:
 
 
 def file_stem(office: Office, ticker: str, kind: str, day: str | None = None) -> str:
-    """A deck file's name, built like the report's: CI_<Company-Name>_<TICKER>_<Kind>_<date>. The company part is
+    """A slidedeck file's name, built like the report's: CI_<Company-Name>_<TICKER>_<Kind>_<date>. The company part is
     the one on the finished report's own file name, so the two sort side by side."""
     cdir = desk.coverage_dir(ticker)
     found = next((m.group(1) for p in sorted(cdir.glob("CI_*_Initiating-Coverage_*"))
@@ -78,7 +78,7 @@ def file_stem(office: Office, ticker: str, kind: str, day: str | None = None) ->
 
 
 def deck_dir(office: Office, ticker: str, day: str | None = None) -> Path:
-    return office.outbox_dir / "decks" / ticker / (day or office.ledger.today())
+    return office.outbox_dir / "slidedecks" / ticker / (day or office.ledger.today())
 
 
 # ---- the number universe ------------------------------------------------------------------------
@@ -172,20 +172,20 @@ def slide_text(copy: dict, sid: str) -> list[tuple[str, str]]:
 
 
 def check_copy(office: Office, ticker: str, copy: dict) -> list[dict]:
-    """Every reason this copy may not become a deck (errors) and things worth a second look (warnings)."""
+    """Every reason this copy may not become a slidedeck (errors) and things worth a second look (warnings)."""
     out: list[dict] = []
     model = office.store.approved_model(ticker)
     if model is None:
-        return [_p("error", "no-model", "deck", f"{ticker} has no approved model.")]
+        return [_p("error", "no-model", "slidedeck", f"{ticker} has no approved model.")]
     b = modelbrief.load(office, ticker, model["version"])
     if not b or modelbrief.status(office, ticker)["state"] != "ready":
-        return [_p("error", "no-brief", "deck", "The approved model has no finished Model Brief.")]
+        return [_p("error", "no-brief", "slidedeck", "The approved model has no finished Model Brief.")]
     sections = coverage_sections(ticker)
     if not sections:
-        return [_p("error", "no-report", "deck", f"No report sections for {ticker} in its coverage folder.")]
+        return [_p("error", "no-report", "slidedeck", f"No report sections for {ticker} in its coverage folder.")]
     slides = copy.get("slides")
     if not isinstance(slides, dict):
-        return [_p("error", "shape", "deck", "`slides` must be an object keyed by slide id.")]
+        return [_p("error", "shape", "slidedeck", "`slides` must be an object keyed by slide id.")]
     for sid in slides:
         if sid not in IDS:
             out.append(_p("error", "unknown-slide", sid, f"No slide called '{sid}'. Slides: {', '.join(IDS)}."))
@@ -253,14 +253,14 @@ def check_copy(office: Office, ticker: str, copy: dict) -> list[dict]:
         out.append(_p("error", "risk-parity", "risks", f"The risks have {down} words against {up} for the upside. Give them at least as much room "
                                                       "as the case for the stock."))
     if model["summary"].get("rating") != "Outperform":
-        out.append(_p("error", "rating", "deck", "Decks are made for Outperform names."))
+        out.append(_p("error", "rating", "slidedeck", "Slidedecks are made for Outperform names."))
     mj = desk.coverage_dir(ticker) / "model.json"
     if mj.is_file():
         rep = json.loads(mj.read_text())
         mismatch = [k for k in modelbrief.SCENARIOS
                     if abs(rep["scenarios"][k]["price_target"] - b["facts"]["scenarios"][k]["price_target"]) > 0.005]
         if mismatch:
-            out.append(_p("error", "report-model", "deck", "The report was written on different targets than the approved model "
+            out.append(_p("error", "report-model", "slidedeck", "The report was written on different targets than the approved model "
                                                             f"({', '.join(mismatch)}). Research must refresh the report first."))
     return out
 

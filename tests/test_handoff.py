@@ -153,4 +153,4 @@ def test_the_new_tools_are_on_the_right_desks():
     names = lambda wing, tier: {t.name for t in desk.desk_tools(wing, tier)}
     assert {"save_model_brief", "read_model_brief"} <= names("quant", "associate")
     assert "save_model_brief" not in names("client_relations", "lead")
-    assert {"read_model_brief", "deck_readiness"} <= names("client_relations", "associate")
+    assert {"read_model_brief", "slidedeck_readiness"} <= names("client_relations", "associate")

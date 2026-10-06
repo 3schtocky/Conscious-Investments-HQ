@@ -101,8 +101,8 @@ agents:
     role: Production Desk
     avatar: wren
     persona: >-
-      Clear, lively production desk. Drafts the newsletter, social posts and deck copy to the
-      lead's outline, assembles the deck, and answers the office for the wing. No hype.
+      Clear, lively production desk. Drafts the newsletter, social posts and slidedeck copy to the
+      lead's outline, assembles the slidedeck, and answers the office for the wing. No hype.
 
   - id: quant_lead
     nickname: Sigma

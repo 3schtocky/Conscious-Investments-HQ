@@ -1,4 +1,4 @@
-"""The hand-off to Client Relations: when a researched name is ready for an investor deck.
+"""The hand-off to Client Relations: when a researched name is ready for a slidedeck.
 
 Four things must be true for a ticker: the firm's approved Quant model rates it Outperform, Equity
 Research has finished the initiating-coverage report, Quant has written the Model Brief for that
@@ -43,7 +43,7 @@ def readiness(office: Office, ticker: str) -> dict:
          f"{ticker} has no approved model. Quant builds one and the Captain approves it."},
         {"key": "rating", "ok": rating == "Outperform",
          "detail": "The approved model rates it Outperform." if rating == "Outperform" else
-         (f"The approved model rates it {rating}; decks are made for Outperform names." if model else
+         (f"The approved model rates it {rating}; slidedecks are made for Outperform names." if model else
           "No approved model, so no rating.")},
         {"key": "report", "ok": bool(reports),
          "detail": f"Initiating-coverage report: {', '.join(reports)}." if reports else
@@ -68,11 +68,11 @@ def _summary(office: Office, ticker: str, version: int) -> str:
     b = modelbrief.load(office, ticker, version)
     f, r = b["facts"], b["reading"]
     sc = f["scenarios"]
-    return (f"{ticker} is ready for an investor deck. Approved Quant model v{version} rates it "
+    return (f"{ticker} is ready for a slidedeck. Approved Quant model v{version} rates it "
             f"{f['rating']}: bear ${sc['bear']['price_target']:,.2f}, base ${sc['base']['price_target']:,.2f}, "
             f"bull ${sc['bull']['price_target']:,.2f} against a price of ${f['price']:,.2f} on {f['as_of']}. "
             f"The initiating-coverage report is finished and Quant's Model Brief is written.\n\n"
-            f"Quant's view: {r['view']}\n\nApprove to start the deck: Harbor will outline it from the "
+            f"Quant's view: {r['view']}\n\nApprove to start the slidedeck: Harbor will outline it from the "
             "report and the brief, and nothing is built or spent before you do. Decline to leave it.")
 
 
@@ -103,20 +103,20 @@ def decided(office: Office, card: dict, decision: str) -> int | None:
         return None
     me = office.agents[lead].nickname
     body = (f"{office.captain_name} approved the hand-off for {ticker} (Quant model v{version}, rated "
-            f"Outperform). Prepare the investor deck package.\n\n"
+            f"Outperform). Prepare the slidedeck package.\n\n"
             f"Read first: get_model for the approved numbers, read_model_brief for Quant's brief, and "
             f"the initiating-coverage report in {ticker}'s coverage folder ({', '.join(p.get('report') or [])}; "
             "list_files shows it, read_file reads its sections). If anything is missing or unclear, ask "
             "the owning wing through its delegate with relay_request. Never work around a gap.\n\n"
-            f"{me}: write the slide-by-slide outline (deck_material lists the 17 slides), then delegate the copy to "
+            f"{me}: write the slide-by-slide outline (slidedeck_material lists the 17 slides), then delegate the copy to "
             "your associate with that outline: every slide's headline and, for the narrative slides, bullets that each name a "
-            "source. Your associate saves it with save_deck_copy and fixes every error. Read it back with read_deck_copy, hold "
-            "it to the release standard (claim check, risk parity, plain-English test, no-hype scan, register), then build_deck. "
-            "Have your associate draft the matching weekly note on this name with save_newsletter, then call finalize_deck with "
-            f"its issue id: that puts the deck, source map, PDF and note on {office.captain_name}'s desk as one approval. "
-            "Report in one line what the deck says, what you changed and anything you could not verify.")
+            "source. Your associate saves it with save_slidedeck_copy and fixes every error. Read it back with read_slidedeck_copy, hold "
+            "it to the release standard (claim check, risk parity, plain-English test, no-hype scan, register), then build_slidedeck. "
+            "Have your associate draft the matching weekly note on this name with save_newsletter, then call finalize_slidedeck with "
+            f"its issue id: that puts the slidedeck, source map, PDF and note on {office.captain_name}'s desk as one approval. "
+            "Report in one line what the slidedeck says, what you changed and anything you could not verify.")
     task_id = office.store.create_task(assignee=lead, assigned_by=CAPTAIN, kind="assignment",
-                                       title=f"Investor deck: {ticker}"[:70], body=body)
+                                       title=f"Slidedeck: {ticker}"[:70], body=body)
     office._schedule(lead, task_id)
     return task_id
 

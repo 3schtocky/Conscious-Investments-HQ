@@ -5,7 +5,7 @@ engine (targets, what each method says, the drivers ranked by swing, sensitivity
 so nothing is retyped. Sigma and Delta then add the reading: the view, why each driver matters
 and what would break the model. A brief is `ready` only when the facts exist for the approved
 version and the reading passes `check_reading`. Client Relations reads this brief instead of the
-workbook, and no deck starts without it.
+workbook, and no slidedeck starts without it.
 
 Files: Quant/<T>/<T>_model_v<N>_brief.json (facts and reading) and .md (the same, to read).
 Nothing here calls the Anthropic API.

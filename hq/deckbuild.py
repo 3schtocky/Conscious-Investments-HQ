@@ -1,4 +1,4 @@
-"""Renders the investor deck as a native, editable PowerPoint (python-pptx).
+"""Renders the slidedeck as a native, editable PowerPoint (python-pptx).
 
 Every number on a data slide comes from the approved model's Model Brief facts; the words come
 from the copy that passed `hq.deck.check_copy`. Charts are native PowerPoint charts, so an editor
@@ -565,7 +565,7 @@ KICKERS = {"thesis": "The case", "business": "The company", "mispricing": "The m
 
 
 def build(office: Office, ticker: str, copy: dict, out: Path) -> Path:
-    """Render the deck. The caller has already run `deck.check_copy`; this refuses copy with errors."""
+    """Render the slidedeck. The caller has already run `deck.check_copy`; this refuses copy with errors."""
     problems = deck.errors(deck.check_copy(office, ticker, copy))
     if problems:
         raise ValueError("The copy has errors: " + "; ".join(f"{p['where']}: {p['msg']}" for p in problems[:5]))
