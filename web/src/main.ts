@@ -98,6 +98,17 @@ const stage = h("div", { class: "stage" });
 const overlayLayer = h("div", { class: "overlay" });
 const viewButtons = h("div", { class: "views" });
 const cardsRoot = h("div", { class: "cards" });
+// A mouse wheel (or a trackpad swipe up and down) over the agent cards scrolls them sideways.
+cardsRoot.addEventListener("wheel", (e) => {
+  const canScroll = cardsRoot.scrollWidth > cardsRoot.clientWidth;
+  if (!canScroll || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;   // sideways swipes already work
+  const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;              // lines -> pixels
+  const max = cardsRoot.scrollWidth - cardsRoot.clientWidth;
+  const next = Math.min(max, Math.max(0, cardsRoot.scrollLeft + px));
+  if (next === cardsRoot.scrollLeft) return;                           // at an end: let the page scroll
+  e.preventDefault();
+  cardsRoot.scrollLeft = next;
+}, { passive: false });
 const tabsBar = h("nav", { class: "tabs" });
 const panelRoot = h("div", { class: "panel" });
 const bossBar = h("div", { class: "boss" });
