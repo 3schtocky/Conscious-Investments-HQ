@@ -13,7 +13,7 @@ load_dotenv(ROOT / ".env")
 
 CONFIG_DIR = ROOT / "HQ" / "settings"
 DATA_DIR = ROOT / "data"
-ERB_DIR = ROOT / "Equity Research"
+ERB_DIR = ROOT / "departments" / "equity_research" / "Equity Research"
 
 
 @cache

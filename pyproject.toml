@@ -19,7 +19,7 @@ dependencies = [
 hq = "HQ.cli:main"
 
 [tool.uv.sources]
-erb = { path = "Equity Research", editable = true }
+erb = { path = "departments/equity_research/Equity Research", editable = true }
 
 [build-system]
 requires = ["hatchling"]
