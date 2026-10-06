@@ -17,7 +17,7 @@ from HQ import public as pub
 from HQ.config import DATA_DIR, ROOT
 from HQ.engine.runtime import Office
 
-SITE_DATA = ROOT / "web" / "public" / "data"
+SITE_DATA = ROOT / "GUI" / "web" / "public" / "data"
 
 
 def _snapshot(db: Path, into: Path) -> Path:

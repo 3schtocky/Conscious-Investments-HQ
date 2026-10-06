@@ -57,17 +57,17 @@ When your Mac is off or restarting, Cloudflare shows its own error. To show `off
 
 1. Cloudflare dashboard, **Workers & Pages**, **Create**, **Hello World** worker, name it
    `conscious-hq-offline`, **Deploy**, then **Edit code**.
-2. Replace the code with the contents of `deploy/worker.js` and **Deploy**.
+2. Replace the code with the contents of `GUI/deploy/worker.js` and **Deploy**.
 3. On the worker, **Settings > Domains & Routes > Add > Route**: `consciousinvestments.org/*`
    (and `www.consciousinvestments.org/*`), zone `consciousinvestments.org`.
 
 The worker passes everything straight through while the office is up. If you change
-`deploy/offline.html`, run `python3 deploy/bake.py` and paste the new `worker.js` (a test fails if the
+`GUI/deploy/offline.html`, run `python3 GUI/deploy/bake.py` and paste the new `worker.js` (a test fails if the
 two drift apart).
 
 ## Going live
 ```bash
 uv run hq serve --public   # or let the service start it
 ```
-Remember `api.enabled` in `config/office.yaml`: while it is `FALSE` nothing can spend, and visitors
+Remember `api.enabled` in `HQ/settings/office.yaml`: while it is `FALSE` nothing can spend, and visitors
 watch a replay of the most recent real work whenever the floor is quiet.

@@ -57,7 +57,7 @@ def check_ready() -> None:
             f"({PASSWORD_ENV}). Create one with: uv run hq captain-password")
     if not hosts():
         raise SystemExit("Public mode needs the site's host name under public.hosts in "
-                         "config/office.yaml (e.g. consciousinvestments.org).")
+                         "HQ/settings/office.yaml (e.g. consciousinvestments.org).")
 
 
 class Sessions:

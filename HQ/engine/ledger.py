@@ -53,7 +53,7 @@ def usage_cost(model: str, usage: Any) -> float:
     try:
         p = office()["pricing"][model]
     except KeyError as e:
-        raise KeyError(f"No pricing for model {model!r} in config/office.yaml") from e
+        raise KeyError(f"No pricing for model {model!r} in HQ/settings/office.yaml") from e
 
     u = usage_dict(usage)
     cost = u["input_tokens"] * p["input"]

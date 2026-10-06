@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from HQ.engine.runtime import Office
 
 log = logging.getLogger(__name__)
-PROMPTS = ROOT / "prompts"
+PROMPTS = ROOT / "HQ" / "prompts"
 TERMINAL = {"done", "declined"}
 TRUNCATED_NOTE = ("[Office] Your last reply hit the length limit and was cut off. Continue from "
                   "where it stopped, more concisely.")

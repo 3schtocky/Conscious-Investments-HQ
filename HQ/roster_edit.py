@@ -1,4 +1,4 @@
-"""Edit config/roster.yaml from the Settings panel, keeping its comments and layout.
+"""Edit HQ/settings/roster.yaml from the Settings panel, keeping its comments and layout.
 
 Only presentation and model tier are editable here: nickname, avatar, persona, model. Agent
 ids, wings and roles stay fixed (logs and prompts depend on them).

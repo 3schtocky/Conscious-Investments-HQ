@@ -97,7 +97,7 @@ def _pinned_config(monkeypatch, tmp_path_factory):
 
 @pytest.fixture(autouse=True)
 def _never_spend(monkeypatch, _pinned_config):
-    """Tests never reach the real API, whatever config/office.yaml says: the switch is forced
+    """Tests never reach the real API, whatever HQ/settings/office.yaml says: the switch is forced
     off, and the SDK is pointed at a dead local port as a second line of defence."""
     from HQ import config
 

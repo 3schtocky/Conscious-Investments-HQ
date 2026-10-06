@@ -23,7 +23,7 @@ from HQ.config import DATA_DIR, ROOT
 from HQ.engine.runtime import Office
 
 log = logging.getLogger(__name__)
-WEB_DIST = ROOT / "web" / "dist"
+WEB_DIST = ROOT / "GUI" / "web" / "dist"
 
 
 class MemberEdit(BaseModel):

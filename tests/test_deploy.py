@@ -115,12 +115,12 @@ def test_windows_installer_registers_both_tasks_at_boot_and_keeps_the_pc_awake(r
 
 # the offline page ----------------------------------------------------------------------------
 def test_the_worker_carries_the_current_offline_page():
-    page = (ROOT / "deploy" / "offline.html").read_text()
-    worker = (ROOT / "deploy" / "worker.js").read_text()
+    page = (ROOT / "GUI" / "deploy" / "offline.html").read_text()
+    worker = (ROOT / "GUI" / "deploy" / "worker.js").read_text()
     baked = re.search(r"const OFFLINE_HTML = `(.*?)`;\n", worker, re.DOTALL).group(1)
     unescaped = baked.replace("\\${", "${").replace("\\`", "`").replace("\\\\", "\\")
-    assert unescaped == page, "deploy/worker.js is out of step with deploy/offline.html: re-bake it (see deploy/README.md)"
+    assert unescaped == page, "GUI/deploy/worker.js is out of step with GUI/deploy/offline.html: re-bake it (see GUI/deploy/README.md)"
 
 
 def test_the_offline_page_rechecks_the_health_endpoint_the_site_serves():
-    assert "/api/public/health" in (ROOT / "deploy" / "offline.html").read_text()
+    assert "/api/public/health" in (ROOT / "GUI" / "deploy" / "offline.html").read_text()

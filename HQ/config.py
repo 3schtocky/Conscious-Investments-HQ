@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
-CONFIG_DIR = ROOT / "config"
+CONFIG_DIR = ROOT / "HQ" / "settings"
 DATA_DIR = ROOT / "data"
 ERB_DIR = ROOT / "Equity Research"
 

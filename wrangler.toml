@@ -3,5 +3,5 @@ name = "conscious-investments-hq"
 compatibility_date = "2026-10-01"
 
 [assets]
-directory = "web/dist-site"
+directory = "GUI/web/dist-site"
 not_found_handling = "single-page-application"

@@ -18,12 +18,12 @@ outbox/
 /Quant/
 
 # Web
-web/node_modules/
-web/dist/
+GUI/web/node_modules/
+GUI/web/dist/
 
 # OS
 .DS_Store
 dist-site/
 
 # The guest site's published replay data (demo only, sanitized)
-!web/public/data/
+!GUI/web/public/data/

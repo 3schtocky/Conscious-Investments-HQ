@@ -1,7 +1,7 @@
 """Build the Micron demo that visitors play: `uv run hq export-demo-micron`.
 
 Records the scripted run through the real engine (`HQ.demo_micron`), re-times it onto five minutes
-(`HQ.demo_script`), and writes everything the browser needs to `web/public/demo/micron/`:
+(`HQ.demo_script`), and writes everything the browser needs to `GUI/web/public/demo/micron/`:
 
     tour.json        the timed script
     report.json      the 11 report sections as safe HTML (charts and tables included)
@@ -25,7 +25,7 @@ from pathlib import Path
 from HQ import demo_micron, demo_script
 from HQ.config import ERB_DIR, ROOT
 
-OUT = ROOT / "web" / "public" / "demo" / "micron"
+OUT = ROOT / "GUI" / "web" / "public" / "demo" / "micron"
 COVERAGE = ERB_DIR / "coverage" / "MU"
 BANNER = ("Demo: Micron (MU) illustrative research, not investment advice. Real SEC data and a real "
           "model engine; the agents are scripted and no AI model was called.")

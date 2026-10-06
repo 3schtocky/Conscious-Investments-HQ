@@ -172,7 +172,7 @@ def main() -> None:
     sub.add_parser("captain-password", help="create the Captain's sign-in password for public mode")
     p_exp = sub.add_parser("export-static", help="write the public views as JSON for the Cloudflare Pages site")
     p_exp.add_argument("--db", help="database to export (default data/office.db)")
-    p_exp.add_argument("--out", help="output folder (default web/public/data)")
+    p_exp.add_argument("--out", help="output folder (default GUI/web/public/data)")
     p_exp.add_argument("--outbox", help="outbox folder holding approved issues")
     p_exp.add_argument("--max-events", type=int, default=400, help="replay length")
     p_exp.add_argument("--showcase", action="store_true",
@@ -189,7 +189,7 @@ def main() -> None:
     p_svc.add_argument("--port", type=int, default=8750)
     p_svc.add_argument("--tunnel", default="conscious-hq", help="Cloudflare tunnel name")
     sub.add_parser("export-demo-micron", help="record the 5-minute Micron demo and write it to "
-                                              "web/public/demo/micron (no API calls)")
+                                              "GUI/web/public/demo/micron (no API calls)")
     p_serve = sub.add_parser("serve", help="open the office in your browser")
     p_serve.add_argument("--demo", action="store_true",
                          help="scripted demo office: zero API cost, separate database")

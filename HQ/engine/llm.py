@@ -107,7 +107,7 @@ def require_api() -> None:
 
     if not office().get("api", {}).get("enabled", False):
         raise ApiDisabled(
-            "The Anthropic API is switched off (api.enabled: false in config/office.yaml), so "
+            "The Anthropic API is switched off (api.enabled: false in HQ/settings/office.yaml), so "
             "no credits were spent. Use `hq serve --demo` for free runs; Stott turns the API "
             "on only for an approved real run.")
 

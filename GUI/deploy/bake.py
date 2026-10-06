@@ -1,6 +1,6 @@
-"""Copy deploy/offline.html into deploy/worker.js. Run after editing the offline page:
+"""Copy GUI/deploy/offline.html into GUI/deploy/worker.js. Run after editing the offline page:
 
-    python3 deploy/bake.py
+    python3 GUI/deploy/bake.py
 """
 
 import re

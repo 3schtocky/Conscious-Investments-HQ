@@ -8,13 +8,13 @@ Portfolio and Newsletter views. No server, no API key, nothing can spend. (The l
 ```bash
 uv run hq export-static --db <path-to>/data/demo.db     # scripted demo office: a rich replay, DEMO badge shown
 # or: uv run hq export-static --db <path-to>/data/office.db   # real work only (sparse today)
-cd web && npm run build:static                           # -> web/dist-site
+cd web && npm run build:static                           # -> GUI/web/dist-site
 ```
 Exports use the same sanitizers as the live public site (`HQ/public.py`): movement and who works, never
 words. Add `--offline` to skip live price lookups.
 
 ## Preview
-`cd web/dist-site && python3 -m http.server 8761`, open http://localhost:8761.
+`cd GUI/web/dist-site && python3 -m http.server 8761`, open http://localhost:8761.
 
 ## Connect to Cloudflare (you, once)
 ```bash
