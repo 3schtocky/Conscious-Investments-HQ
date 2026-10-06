@@ -262,9 +262,39 @@ PAUSE_AGENT = Tool(
     _pause_agent)
 
 
+# request_redo ---------------------------------------------------------------------------------
+async def _request_redo(ctx: ToolContext, inp: dict) -> str:
+    from hq import finalaudit
+
+    ids = inp.get("findings")
+    if not isinstance(ids, list) or not ids or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+        raise GuardBlock("`findings` must be a list of finding numbers you have upheld.")
+    try:
+        r = finalaudit.request_redo(ctx.office, ids, by=ctx.agent.id)
+    except (ValueError, KeyError) as e:
+        raise GuardBlock(str(e)) from e
+    out = f"Sent {len(r['tasks'])} redo task{'s' if len(r['tasks']) != 1 else ''} to the owners."
+    if r["escalated"]:
+        out += (f" Finding(s) {', '.join('#' + str(i) for i in r['escalated'])} already had "
+                f"{finalaudit.MAX_REDOS} redos, so they went to {ctx.office.captain_name}'s desk instead.")
+    return out
+
+
+REQUEST_REDO = Tool(
+    "request_redo",
+    "After you have upheld final-audit findings, send them back to their owners: each owner gets one "
+    "fresh task listing only the failed parts and fixes only those. Put the correct source in the "
+    "finding's note when you know it. A part gets two redos; after that it goes to {captain}.",
+    {"type": "object",
+     "properties": {"findings": {"type": "array", "items": {"type": "integer"},
+                                 "description": "Upheld finding numbers."}},
+     "required": ["findings"]},
+    _request_redo)
+
+
 def audit_tools(tier: str) -> list[Tool]:
     """Audit's desk tools. Reading for both; rulings, incidents and the pause for the lead."""
     tools = [AUDIT_LOG, READ_SPEND, READ_FINDINGS]
     if tier == "lead":
-        tools += [RESOLVE_FINDING, FILE_INCIDENT, PAUSE_AGENT]
+        tools += [RESOLVE_FINDING, REQUEST_REDO, FILE_INCIDENT, PAUSE_AGENT]
     return tools

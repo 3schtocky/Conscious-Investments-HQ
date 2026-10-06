@@ -181,6 +181,13 @@ CREATE TABLE IF NOT EXISTS pauses (
     reason TEXT NOT NULL,
     ts REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS audit_redos (
+    id INTEGER PRIMARY KEY,
+    ts REAL NOT NULL,
+    part TEXT NOT NULL,              -- doc|section|figure: what was sent back, stable across rewrites
+    finding_id INTEGER NOT NULL,
+    task_id INTEGER NOT NULL         -- the owner's fresh redo task
+);
 CREATE INDEX IF NOT EXISTS spend_day ON spend(day);
 CREATE INDEX IF NOT EXISTS spend_root ON spend(root_id);
 CREATE INDEX IF NOT EXISTS events_task ON events(task_id);
@@ -580,6 +587,14 @@ class Store:
         for r in rows:
             r["data"] = json.loads(r["data"])
         return rows
+
+    # audit redos -------------------------------------------------------------------------
+    def add_redo(self, part: str, finding_id: int, task_id: int) -> None:
+        self._exec("INSERT INTO audit_redos (ts, part, finding_id, task_id) VALUES (?,?,?,?)",
+                   (time.time(), part, finding_id, task_id))
+
+    def redo_count(self, part: str) -> int:
+        return self._all("SELECT COUNT(*) AS n FROM audit_redos WHERE part=?", (part,))[0]["n"]
 
     # pauses ------------------------------------------------------------------------------
     def set_pause(self, agent: str, by: str, reason: str) -> None:

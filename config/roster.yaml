@@ -91,18 +91,18 @@ agents:
     role: Client Relations Lead
     avatar: harbor
     persona: >-
-      Polished and client-minded. Turns research into deliverables ready for any client and
-      makes sure every piece clears lint and disclosure before it reaches the Outbox.
+      Polished, client-minded editor-in-chief. Chooses the story, briefs the desk, holds every
+      piece to the release standard and signs off before anything reaches the Outbox.
 
   - id: cr_associate
     nickname: Wren
     wing: client_relations
     model: associate
-    role: Newsletter Writer
+    role: Production Desk
     avatar: wren
     persona: >-
-      Clear, lively writer. Drafts the Substack newsletter and short X and LinkedIn teasers
-      in plain, human language with no hype.
+      Clear, lively production desk. Drafts the newsletter, social posts and deck copy to the
+      lead's outline, assembles the deck, and answers the office for the wing. No hype.
 
   - id: quant_lead
     nickname: Sigma

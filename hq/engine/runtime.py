@@ -435,6 +435,12 @@ class Office:
             if newest and m and newest["version"] > m["version"]:
                 raise ValueError(f"v{newest['version']} is already the official model; approving "
                                  f"v{m['version']} would roll it back. Decline this card instead.")
+        if card["kind"] == "handoff" and decision == "approved":
+            from hq import handoff
+
+            if not handoff.readiness_holds(self, p["ticker"], p["version"]):
+                raise ValueError("This hand-off is out of date: the approved model or its brief changed "
+                                 "since the card was filed. Decline it; a fresh card follows when ready.")
         self._outbox_decided(card, decision)   # may refuse an approval (ValueError) before it is recorded
         self._portfolio_decided(card, decision, prices)
         self.store.decide_approval(approval_id, decision, note)
@@ -453,6 +459,20 @@ class Office:
                      "teams covering this equity.")
         self.bus.publish("approval_decided", card["agent"], card["task_id"], approval=approval_id,
                          decision=decision, note=note, title=card["title"], kind=card["kind"])
+        if card["kind"] == "handoff" or (card["kind"] == "model" and decision == "approved"):
+            from hq import handoff
+
+            if card["kind"] == "handoff":
+                handoff.decided(self, card, decision)
+            else:
+                handoff.maybe_offer(self, p.get("ticker", ""))
+        if card["kind"] == "final_audit" or (card["kind"] in ("newsletter", "deliverable") and decision == "approved"):
+            from hq import finalaudit
+
+            if card["kind"] == "final_audit":
+                finalaudit.decided(self, card, decision)
+            else:
+                finalaudit.offer_for_card(self, card)
         agent = self.agents.get(card["agent"])
         if agent is not None:
             self.store.add_chat(channel=f"dm:{CAPTAIN}|{agent.id}", sender=CAPTAIN,
@@ -653,7 +673,9 @@ class Office:
 
         p = card["payload"]
         issue, memo = p.get("issue"), p.get("deliverable")
-        if card["kind"] == "newsletter" and issue:
+        if card["kind"] == "deck":
+            self._deck_decided(card, decision)
+        if card["kind"] in ("newsletter", "deck") and issue:
             if decision == "approved":
                 try:
                     errors = [e for e in outbox.recheck(self, issue) if e["level"] == "error"]
@@ -687,6 +709,32 @@ class Office:
                 log.exception("could not update outbox deliverable %s", memo)
             self.bus.publish("outbox_status", card["agent"], card["task_id"], deliverable=memo,
                              status=decision)
+
+    def _deck_decided(self, card: dict, decision: str) -> None:
+        """Approval re-runs the deck's gate and its matching newsletter's against today's facts and is refused with
+        the reason if either no longer holds; the package is then marked ready (nothing is sent). Any other
+        decision is best effort."""
+        from hq import deckpack, outbox
+
+        p = card["payload"]
+        deck_id = p.get("deck")
+        if decision == "approved":
+            problems = deckpack.recheck(self, deck_id) if deck_id else ["the deck is missing from the Outbox"]
+            if p.get("issue"):
+                try:
+                    problems += [e["msg"] for e in outbox.recheck(self, p["issue"]) if e["level"] == "error"]
+                except (KeyError, OSError):
+                    problems.append("the matching newsletter's files are missing")
+            if problems:
+                raise ValueError("What is approved changed since this deck was finalized: " + "; ".join(problems[:3])
+                                 + ". Request changes so it is revised against the current facts.")
+        try:
+            deckpack.set_status(self, deck_id, decision)
+        except (KeyError, OSError):
+            if decision == "approved":
+                raise ValueError("The deck's files are missing from the Outbox. Ask for it to be finalized again.") from None
+            log.exception("could not update outbox deck %s", deck_id)
+        self.bus.publish("outbox_status", card["agent"], card["task_id"], deck=deck_id, status=decision)
 
     def _outreach_decided(self, card: dict, decision: str) -> None:
         """Approval re-runs the code gate against today's facts (an address may have opted out
@@ -726,7 +774,10 @@ class Office:
         from hq import outreach
 
         mails = [{**m, "drafted_by_name": who(m.get("drafted_by"))} for m in outreach.emails(self)]
+        from hq import deckpack
+
         return {"issues": issues, "deliverables": outbox.deliverables(self.outbox_dir), "outreach": mails,
+                "decks": deckpack.decks(self),
                 "outreach_from": outreach.settings()["from_address"],
                 "publisher": outbox.settings()["publisher"]}
 
@@ -793,11 +844,17 @@ class Office:
     def audit_task(self, task: dict) -> list[dict]:
         """Tally's code checks on a finished assignment (free). Audit's own work is not
         re-audited, and delegated jobs are covered through the lead's assignment."""
-        from hq import audit
+        from hq import audit, finalaudit
 
         agent = self.agents.get(task["assignee"])
         if task["kind"] != "assignment" or agent is None or agent.is_audit:
             return []
+        from hq import handoff
+
+        if task["title"].startswith(finalaudit.REDO_PREFIX):
+            finalaudit.after_redo(self, task)   # a targeted redo ended: close what now ties out
+
+        handoff.scan(self)   # a finished report may complete a hand-off (free; files a card at most)
         return self.record_findings(agent.id, task, audit.check_task(self, task))
 
     def record_findings(self, agent_id: str | None, task: dict | None, findings: list, *,
@@ -987,6 +1044,8 @@ class Office:
 
     def audit_view(self) -> dict:
         """Everything the Audit tab shows."""
+        from hq import finalaudit
+
         who = lambda a: self.name(a) if a in self.agents or a == CAPTAIN else (a or "Office")
         findings = [{**f, "name": who(f["agent"]),
                      "resolved_by_name": who(f["resolved_by"]) if f["resolved_by"] else None}
@@ -997,6 +1056,7 @@ class Office:
                             for d in self.store.digests()],
                 "paused": [{**p, "name": who(p["agent"]), "by_name": who(p["by"])}
                            for p in self.store.pauses() if p["agent"] in self.agents],
+                "final": finalaudit.view(self),
                 "api_available": self.api_available()}
 
     def audit_counts(self) -> dict:

@@ -534,6 +534,15 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
                 raise HTTPException(400, "day must look like 2026-10-01") from e
         return JSONResponse(office().digest(day))
 
+    @app.post("/api/audit/final/{ticker}/run")
+    async def final_audit_run(ticker: str) -> JSONResponse:
+        from hq import finalaudit
+
+        try:
+            return JSONResponse(finalaudit.start(office(), ticker))
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
     @app.post("/api/audit/findings/{finding_id}/review")
     async def finding_review(finding_id: int) -> JSONResponse:
         try:

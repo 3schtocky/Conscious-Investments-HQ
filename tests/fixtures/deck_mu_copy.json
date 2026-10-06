@@ -1,0 +1,180 @@
+{
+ "subtitle": "Memory prices a cycle at its peak; contract floors may make this one shallower",
+ "slides": {
+  "thesis": {
+   "headline": "Memory is priced for a peak, but contract floors may make this cycle shallower",
+   "bullets": [
+    {
+     "text": "MU grew revenue from $37.4 bn in FY'25 to $133.2 bn in FY'26, and 4Q'26 gross margin was 86.8% against 44.7% a year earlier",
+     "source": "report:01_investment_summary"
+    },
+    {
+     "text": "Take-or-pay customer agreements give MU committed volumes, and customers had deposited $12.7 bn by year end",
+     "source": "report:01_investment_summary"
+    },
+    {
+     "text": "We adopt the Street's revenue but fade EBITDA margin from 83.0% in FY'27E to 65.0% in FY'31E, so our FY'28E EPS of $163.68 is 20.5% below the Street",
+     "source": "report:01_investment_summary"
+    },
+    {
+     "text": "At 5.9x NTM EPS, the shares price MU as a cyclical at its peak, and we think the market is too sceptical about how long the revenue lasts",
+     "source": "report:01_investment_summary"
+    }
+   ],
+   "notes": "Open with the call, then the three reasons: growth, contract protection and our more cautious margin."
+  },
+  "call": {
+   "headline": "MU is rated Outperform, with a base target of $1,242.41",
+   "note": "The bear case is a 71.1% loss, so position size matters.",
+   "notes": "Walk the three cases left to right, then the benchmark line."
+  },
+  "business": {
+   "headline": "Micron makes the memory that AI data centers cannot do without",
+   "bullets": [
+    {
+     "text": "MU makes DRAM, NAND and NOR memory, including high-bandwidth memory built for AI",
+     "source": "report:03_business_overview"
+    },
+    {
+     "text": "DRAM generated $28.6 bn (76.5%) of FY'25 revenue and NAND $8.5 bn (22.7%)",
+     "source": "report:03_business_overview"
+    },
+    {
+     "text": "Core Data Center revenue reached $18.0 bn in 4Q'26, up from $1.6 bn a year earlier, with gross margin rising from 41.0% to 90.0%",
+     "source": "report:03_business_overview"
+    },
+    {
+     "text": "Cloud Memory revenue was $16.3 bn in 4Q'26 alone, and we see it as the unit most exposed to a single group of customers",
+     "source": "report:03_business_overview"
+    }
+   ],
+   "notes": "Four business units; the data center units drive the thesis."
+  },
+  "mispricing": {
+   "headline": "The Street is right on revenue and, we think, too high on margin",
+   "bullets": [
+    {
+     "text": "Consensus expects FY'27 revenue of $274.9 bn and FY'28 revenue of $314.2 bn, and our base case takes both as given",
+     "source": "report:04_undervaluation_thesis"
+    },
+    {
+     "text": "Our FY'27E EPS of $159.83 and FY'28E EPS of $163.68 are 9.4% and 20.5% below consensus, because we fade margin",
+     "source": "report:04_undervaluation_thesis"
+    },
+    {
+     "text": "In the year to Sep'22, the last peak, LTM EV/EBITDA had a median of 4.9x, and our 6.0x exit multiple sits inside that range",
+     "source": "report:04_undervaluation_thesis"
+    },
+    {
+     "text": "The 3-year median multiples of 26.4x P/E and 16.1x EV/EBITDA were set on trough and recovery earnings, so they overstate what the market will pay for peak profits",
+     "source": "report:04_undervaluation_thesis"
+    }
+   ],
+   "notes": "The disagreement with the Street is about margin, not sales."
+  },
+  "drivers": {
+   "headline": "A few inputs decide most of the value",
+   "notes": "Read the chart from the top: the longest bar is the input that matters most."
+  },
+  "forecast": {
+   "headline": "We take the Street's revenue and plan for margins to fade",
+   "notes": "Three revenue paths, and the base case below."
+  },
+  "valuation": {
+   "headline": "Three methods, blended, give the target",
+   "note": "The blend weights are in the table; the football field puts the target against the 52-week range and the Street.",
+   "notes": "DCF carries half the weight."
+  },
+  "sensitivity": {
+   "headline": "The target moves most with the discount rate and the exit multiple",
+   "notes": "Green cells are above today's price."
+  },
+  "simulation": {
+   "headline": "Most simulated outcomes land above today's price, with a long way down",
+   "notes": "Be plain about the left tail."
+  },
+  "peers": {
+   "headline": "The supply response will come from MU's named competitors",
+   "bullets": [
+    {
+     "text": "The 10-K names Samsung, SK hynix, Kioxia, Sandisk, CXMT and YMTC as the main competitors in memory and storage",
+     "source": "report:07_peer_group"
+    },
+    {
+     "text": "Samsung and SK hynix matter most, because the supply response to today's pricing will come from their capital spending as much as MU's own",
+     "source": "report:07_peer_group"
+    },
+    {
+     "text": "Governments have provided and may provide significant assistance to competitors or new entrants, which is the least predictable input to our supply view",
+     "source": "report:07_peer_group"
+    }
+   ],
+   "notes": "We describe the peer group and leave out a trading table."
+  },
+  "catalysts": {
+   "headline": "Three dated events decide whether this is a floor or a peak",
+   "bullets": [
+    {
+     "text": "MU reports 1Q'27 results on 2026-12-23 against guidance of revenue of $61.5 bn plus or minus $1.5 bn",
+     "source": "report:05_catalysts_drivers"
+    },
+    {
+     "text": "The FY'26 10-K should disclose the share of revenue under contract, the length of the terms and the level of the floor price",
+     "source": "report:05_catalysts_drivers"
+    },
+    {
+     "text": "The Boise fab projects first DRAM wafers in mid-calendar 2027, and our base case slows revenue growth to 3.0% a year from FY'29E as supply grows",
+     "source": "report:05_catalysts_drivers"
+    }
+   ],
+   "notes": "Each catalyst is dated and moves the base case by a quantifiable amount."
+  },
+  "risks": {
+   "headline": "The cycle, the margin and a narrow rating cushion are the risks that matter",
+   "bullets": [
+    {
+     "text": "The cycle returns early. Memory revenue fell (49.5%) in FY'23, and gross margin reached (9.1%)",
+     "detail": "Revenue could look like our bear case: $180.0 bn in FY'27E and $110.0 bn in FY'28E, a bear target of $306.91 for MU, a (71.1%) return. Mitigant: the agreements are take-or-pay, and net cash of about $68.3 bn can fund a downturn",
+     "source": "report:06_risks"
+    },
+    {
+     "text": "Margin fades faster than we model. A margin of 55.0% in FY'28E instead of 76.0% would cut that year's EBITDA by about $66.0 bn",
+     "detail": "Mitigant: most agreements carry a price floor, and the FY'22 peak EBITDA margin was 54.7%",
+     "source": "report:06_risks"
+    },
+    {
+     "text": "The rating has a narrow margin of safety. The base case clears the 5.0-point band by only 6.9 points",
+     "detail": "A share price above about $1,080 would put the base-case return under the threshold, and the shares are only 1.7% below that level today. We would revisit the rating on any move through those levels",
+     "source": "report:06_risks"
+    },
+    {
+     "text": "Customers are concentrated, and credit follows them. Receivables reached $36.2 bn at year end, up from $9.3 bn",
+     "detail": "If hyperscale buyers delay payment or cancel orders, working capital absorbs cash. Mitigant: MU held $73.5 bn of cash and investments against $5.2 bn of debt",
+     "source": "report:06_risks"
+    },
+    {
+     "text": "Trade policy and government support for competitors can change the supply picture",
+     "detail": "7.1% of FY'25 revenue came from China and 3.0% from Hong Kong, and the 10-K flags tariffs and export controls as risks",
+     "source": "report:06_risks"
+    }
+   ],
+   "notes": "Give the risks as much time as the upside."
+  },
+  "wrong": {
+   "headline": "Four observable signals would tell us we are wrong",
+   "notes": "These come from Quant's Model Brief."
+  },
+  "assumptions": {
+   "headline": "The model's main assumptions",
+   "notes": "Everything here is in the model workbook."
+  },
+  "sources": {
+   "headline": "Where the numbers come from",
+   "notes": ""
+  },
+  "disclosures": {
+   "headline": "Important disclosures",
+   "notes": ""
+  }
+ }
+}

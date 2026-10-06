@@ -18,7 +18,13 @@ interface Digest {
   findings: { flags: number; notes: number; open: number };
   memory: { saved: number; held: number };
 }
+interface FinalPart { id: number; status: string; redos: number; held: boolean }
+interface FinalTicker {
+  ticker: string; open: number; held: number; parts: FinalPart[];
+  last_run: { ts: number; figures: number; matched: number; exceptions: number } | null;
+}
 interface AuditView {
+  final: { tickers: FinalTicker[]; max_redos: number };
   findings: Finding[]; memory: MemoryWrite[]; digest: Digest;
   digests: { day: string; ts: number; text: string }[];
   paused: { agent: string; name: string; by: string; by_name: string; reason: string; ts: number }[];
@@ -27,7 +33,7 @@ interface AuditView {
 
 export const RULE: Record<string, string> = {
   unapproved_figures: "Unapproved figure", verify_left: "[VERIFY] left", valuation_in_pitch: "Valuation in a pitch",
-  missing_sources: "No sources file", tool_errors: "Tool failures", task_spend: "Heavy spend",
+  missing_sources: "No sources file", unsourced_figure: "Unsourced figure", tool_errors: "Tool failures", task_spend: "Heavy spend",
 };
 const statusLabel = (status: string, reviewer: string): string => ({ open: "Open", reviewing: `${reviewer} is reviewing`,
   cleared: "Cleared", upheld: "Upheld", dismissed: "Dismissed by you" } as Record<string, string>)[status] ?? status;
@@ -92,6 +98,8 @@ export class AuditPanel {
     for (const f of flags) this.root.append(this.findingEl(f, v.api_available));
     for (const m of held) this.root.append(this.memoryEl(m));
 
+    this.root.append(h("h4", { class: "section" }, "Final audit"), ...this.finalEls(v));
+
     this.root.append(h("h4", { class: "section" }, `Today (${v.digest.day})`), this.digestEl(v.digest));
 
     const rest = v.findings.filter((f) => !flags.includes(f)).reverse().slice(0, 25);
@@ -111,6 +119,32 @@ export class AuditPanel {
       }
     }
     this.root.scrollTop = top;
+  }
+
+  /** One card per approved name: its last tie-out and where each failed part is in the redo loop. */
+  private finalEls(v: AuditView): HTMLElement[] {
+    const names = v.final?.tickers ?? [];
+    if (!names.length) return [h("p", { class: "empty" }, "Names with an approved model and a finished memo appear here.")];
+    const lead = this.state.name("audit_lead");
+    return names.map((t) => {
+      const key = `final-${t.ticker}`;
+      const r = t.last_run;
+      const redo = t.parts.filter((p) => ["open", "reviewing", "upheld"].includes(p.status));
+      return h("div", { class: "audit-card digest" },
+        h("div", { class: "approval-head" }, h("span", { class: "chip" }, t.ticker),
+          t.held ? h("span", { class: "chip warn" }, `${t.held} held for you`) : null,
+          !t.held && t.open ? h("span", { class: "chip warn" }, `${t.open} to resolve`) : null,
+          r && !t.open ? h("span", { class: "chip good" }, "Clean") : null,
+          r ? h("span", { class: "feed-time" }, timeAgo(r.ts)) : null),
+        h("p", { class: "approval-summary" }, r
+          ? `${r.matched} of ${r.figures} figures tie to a source; ${r.exceptions} sentence${r.exceptions === 1 ? "" : "s"} went to ${lead}.`
+          : "Not audited yet. Code ties every figure to the approved model, facts and filings for free; only unmatched figures go to Audit."),
+        redo.length ? h("div", { class: "muted small" },
+          redo.map((p) => `#${p.id}: ${p.held ? "held for you" : p.redos ? `redo ${p.redos} of ${v.final.max_redos} sent` : p.status}`).join(" · ")) : null,
+        h("div", { class: "row" },
+          h("button", { class: "btn", onclick: () => this.post(key, `/api/audit/final/${t.ticker}/run`) }, r ? "Run again" : "Run final audit")),
+        this.errorEl(key));
+    });
   }
 
   private errorEl(key: string): HTMLElement | null {

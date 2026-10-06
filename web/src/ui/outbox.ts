@@ -12,12 +12,16 @@ interface Deliverable {
   id: string; ticker: string; title: string; date: string; status: string; files: Record<string, string>;
   model_version: number; updated: number;
 }
+interface Deck {
+  id: string; ticker: string; title: string; date: string; status: string; files: Record<string, string>;
+  model_version: number; slides: number; figures: number; matched: number; issue: string | null; updated: number;
+}
 interface Outreach {
   id: string; to_name: string; to_email: string; org: string; segment: string; reason: string; subject: string;
   body: string; words: number; date: string; status: string; problems: Problem[]; drafted_by_name: string;
   updated: number; approval_id: number | null; files: Record<string, string>; next_step?: string;
 }
-interface OutboxView { issues: Issue[]; deliverables: Deliverable[]; outreach?: Outreach[]; outreach_from?: string; publisher: string }
+interface OutboxView { issues: Issue[]; deliverables: Deliverable[]; decks?: Deck[]; outreach?: Outreach[]; outreach_from?: string; publisher: string }
 
 const SEGMENT: Record<string, string> = { business: "Business or professional", retail: "Individual investor", inbound: "Asked to hear from us" };
 
@@ -95,6 +99,10 @@ export class OutboxPanel {
     const mails = v.outreach ?? [];
     if (!mails.length) this.root.append(h("p", { class: "empty" }, `No outreach emails yet. Tell ${this.state.name("cr_lead")} who to write to and why.`));
     for (const e of mails) this.root.append(this.outreachEl(e, v.outreach_from ?? ""));
+    if (v.decks?.length) {
+      this.root.append(h("h4", { class: "section" }, "Investor decks"));
+      for (const d of v.decks) this.root.append(this.deckEl(d));
+    }
     if (v.deliverables.length) {
       this.root.append(h("h4", { class: "section" }, "Client memos"));
       for (const d of v.deliverables) this.root.append(this.deliverableEl(d));
@@ -159,6 +167,22 @@ export class OutboxPanel {
       e.status === "awaiting" ? h("div", { class: "row" },
         h("button", { class: "btn ghost small-btn", onclick: () => this.openApprovals() }, "Decide in Approvals")) : null,
       h("div", { class: "muted small" }, `From ${from}. Nothing is sent until ${this.state.captain.nickname} approves.`));
+  }
+
+  private deckEl(d: Deck): HTMLElement {
+    const tone = d.status === "approved" ? " good" : d.status === "awaiting" ? " warn" : "";
+    const label: Record<string, string> = { pptx: "Download deck (.pptx)", pdf: "Open PDF", source_map: "Source map" };
+    return h("div", { class: `audit-card outbox s-${d.status}` },
+      h("div", { class: "approval-head" },
+        h("span", { class: `chip${tone}` }, STATUS[d.status] ?? d.status),
+        h("span", { class: "chip ticker" }, d.ticker),
+        h("span", { class: "feed-time" }, timeAgo(d.updated))),
+      h("div", { class: "outbox-title" }, d.title),
+      h("div", { class: "muted small" }, `${d.date} · ${d.slides} slides · Quant model v${d.model_version} · ${d.matched} of ${d.figures} figures tied to a source${d.issue ? " · matching note attached" : ""}`),
+      h("div", { class: "row" }, ...Object.entries(d.files).map(([kind, path]) =>
+        h("a", { class: "btn ghost small-btn", href: `/outbox/${path}`, ...(kind === "pptx" ? { download: "" } : { target: "_blank", rel: "noopener" }) }, label[kind] ?? kind))),
+      d.status === "awaiting" ? h("div", { class: "row" },
+        h("button", { class: "btn ghost small-btn", onclick: () => this.openApprovals() }, "Decide in Approvals")) : null);
   }
 
   private deliverableEl(d: Deliverable): HTMLElement {

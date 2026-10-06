@@ -1,6 +1,6 @@
 # Client Relations department
 
-Lead (`cr_lead`) and associate (`cr_associate`). Newsletter drafts and memo packaging from approved numbers only. Code gate in `hq/outbox.py`; output in `outbox/` (gitignored).
+Lead (`cr_lead`) and associate (`cr_associate`). Three jobs from approved numbers only: the weekly newsletter and client memos (gate in `hq/outbox.py`), outreach emails (`hq/outreach.py`), and the investor deck (`hq/deck.py`, `hq/deckbuild.py`, `hq/deckpack.py`; starts from the hand-off card, `hq/handoff.py`). Output in `outbox/` (gitignored). The lead is editor-in-chief, the associate is the production desk and the wing's voice to the office (playbook 06 and 07).
 
 How they think lives here, in plain Markdown you can edit:
 - `charter.md`: role, tools, workflow, hard rules.

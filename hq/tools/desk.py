@@ -581,16 +581,20 @@ def desk_tools(wing: str, tier: str) -> list[Tool]:
             tools += [ERB_MEMO, ERB_LINT]
         return tools
     if wing == "quant":
+        from hq.tools.brief import DECK_READINESS, READ_MODEL_BRIEF, SAVE_MODEL_BRIEF
         return [LIST_FILES, READ_FILE, SEARCH_FILE, WRITE_FILE, DRAFT_ASSUMPTIONS, BUILD_MODEL,
-                RUN_SIMULATIONS, GET_MODEL]
+                RUN_SIMULATIONS, GET_MODEL, READ_MODEL_BRIEF, SAVE_MODEL_BRIEF, DECK_READINESS]
     if wing == "screening":
         tools = [READ_SCREEN, PITCH_MEMO, LIST_FILES, READ_FILE, SEARCH_FILE, WRITE_FILE, GET_MODEL]
         if tier == "lead":
             tools = [RUN_SCREEN, *tools, ADD_TO_WATCHLIST]
         return tools
     if wing == "client_relations":
+        from hq.tools.brief import DECK_READINESS, READ_MODEL_BRIEF
         from hq.tools.client import client_tools
-        return [*client_tools(tier), LIST_FILES, READ_FILE, SEARCH_FILE, GET_MODEL]
+        from hq.tools.deck import deck_tools
+        return [*client_tools(tier), *deck_tools(tier), LIST_FILES, READ_FILE, SEARCH_FILE, GET_MODEL,
+                READ_MODEL_BRIEF, DECK_READINESS]
     if wing == "audit":   # Audit reads everything (Quant's drafts included) and writes nothing
         from hq.tools.audit import audit_tools
         return [*audit_tools(tier), LIST_FILES, READ_FILE, SEARCH_FILE, GET_MODEL]

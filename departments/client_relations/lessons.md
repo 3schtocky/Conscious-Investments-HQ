@@ -1,0 +1,6 @@
+- Say which return a figure is. The report's "return" can be the move to the price target while the rating uses total return with the dividend; label each, never mix them in one sentence.
+- A figure printed without its unit ties to nothing. Put "$", "%", "x" or "bn" in the cell, not only in the column heading.
+- A headline that names the topic ("Valuation") says nothing. Write the claim ("Three methods, blended, give the target").
+- Check that a report was written on the same numbers as the approved model before drafting anything from it; if they differ, Research refreshes first.
+- When the gate refuses, fix at the source slide. Softening a headline to dodge a figure check leaves the figure in the bullet.
+- Bullets and headlines end without punctuation. Write the last word and stop.

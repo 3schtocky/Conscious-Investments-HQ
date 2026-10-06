@@ -7,6 +7,7 @@ import pytest
 from conftest import nick, text_turn
 
 from hq import demo
+from hq.departments import DEPARTMENTS_DIR as DEPT
 from hq.departments import brief
 
 
@@ -83,3 +84,17 @@ async def test_an_agent_renamed_to_anything_still_works_end_to_end(make_office):
     assert office.resolve("dr. o'hara-smith") == "er_lead" and office.resolve("er_lead") == "er_lead"
     assert "You are **Dr. O'Hara-Smith** (`er_lead`)" in llm.calls[0]["params"]["system"]
     assert office.name("er_lead") == "Dr. O'Hara-Smith"
+
+
+def test_client_relations_lead_and_associate_get_their_own_manuals_without_company_facts(make_office):
+    import re
+
+    office, _ = make_office()
+    lead, assoc = (office.agents[a].system_prompt() for a in ("cr_lead", "cr_associate"))
+    assert "editor-in-chief" in lead and "production desk" in lead.lower()   # both read both manuals
+    assert "Source first, words second" in assoc and "Review once, well" in assoc
+    text = brief("client_relations")
+    assert 8_000 < len(text) < 20_000                      # pages are paid for on every run: keep them short
+    assert "{cr_lead}" in text and "{cr_associate}" in text and "{captain}" in text
+    assert not re.search(r"\$\d|\b\d+(?:\.\d+)?%|\b[A-Z]{2,5}\b(?=:)", "\n".join(
+        p.read_text() for p in (DEPT / "client_relations").glob("lessons.md")))   # lessons are about method only

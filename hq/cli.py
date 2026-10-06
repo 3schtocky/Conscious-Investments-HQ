@@ -128,6 +128,21 @@ def spend() -> int:
     return 0
 
 
+def final_audit(ticker: str) -> int:
+    """Tie every figure in a name's deliverables to its sources. Read-only and free: it records
+    nothing and calls no model. Exceptions are what the office's final audit would flag."""
+    from hq import finalaudit
+    from hq.engine.runtime import Office
+
+    t = ticker.upper()
+    r = finalaudit.audit_documents(Office(), t)
+    print(f"{t}: {', '.join(r['documents']) or 'no deliverables found'}")
+    print(f"{r['matched']} of {r['figures']} figures tie to a source; {len(r['exceptions'])} sentence(s) do not.")
+    for g in r["exceptions"]:
+        print(f"\n  {g['doc']} · {g['where'] or '(top)'} [{g['owner']}]\n    {finalaudit._detail(g)}")
+    return 0 if not r["exceptions"] else 1
+
+
 def captain_password() -> int:
     """Generate a strong password, store it in .env and show it once, here in the terminal."""
     import re
@@ -169,6 +184,8 @@ def main() -> None:
     p_run.add_argument("task", help="what you want done")
     p_run.add_argument("--title")
     sub.add_parser("spend", help="today's spend by agent and model")
+    p_fa = sub.add_parser("final-audit", help="tie a ticker's deliverables to their sources (free, read-only)")
+    p_fa.add_argument("ticker")
     sub.add_parser("captain-password", help="create the Captain's sign-in password for public mode")
     p_exp = sub.add_parser("export-static", help="write the public views as JSON for the Cloudflare Pages site")
     p_exp.add_argument("--db", help="database to export (default data/office.db)")
@@ -212,6 +229,8 @@ def main() -> None:
             print(e, file=sys.stderr)
             sys.exit(1)
         sys.exit(asyncio.run(_run_agent(args.agent, args.task, args.title)))
+    if args.cmd == "final-audit":
+        sys.exit(final_audit(args.ticker))
     if args.cmd == "spend":
         sys.exit(spend())
     if args.cmd == "captain-password":
