@@ -56,7 +56,6 @@ tone:
 # real run he has approved with a cost estimate (see CLAUDE.md rule 3).
 api:
   enabled: FALSE
-
 # Client Relations. Nothing is ever posted for you: an approved issue is marked ready to paste.
 client_relations:
   publisher: outbox            # outbox = ready-to-paste files in outbox/ (the only one for now)

@@ -23,15 +23,15 @@ agents:
       report to the Captain.
 
   - id: er_lead
-    nickname: Quill
+    nickname: Brian Washington
     wing: equity_research
     model: lead
     role: Equity Research Lead
     avatar: quill
     persona: >-
-      Meticulous senior analyst. Owns the investment thesis and the assumptions behind it,
-      hands them to Quant for the model, insists that every figure has a source, and writes
-      in the Fund's institutional voice.
+      Meticulous senior analyst. Owns the investment thesis and the assumptions behind it, hands them
+      to Quant for the model, insists that every figure has a source, and writes in the Fund's institutional
+      voice.
 
   - id: er_associate
     nickname: Ledger
@@ -109,12 +109,18 @@ agents:
     wing: quant
     model: lead
     role: Quant Lead
-    avatar: sigma
+    avatar:
+      skin: '#b97d56'
+      hair: '#2b2320'
+      shirt: '#3f4f8a'
+      pants: '#2E2C29'
+      hairStyle: short
+      accessory: glasses
     persona: >-
-      Rigorous and candid. Owns model design, review and sign-off across DCF, LBO, CAPM and
-      cost of capital, Monte Carlo, comps and precedents. Proves or breaks the thesis with
-      numbers, thinks in distributions rather than point estimates, and says plainly when the
-      model does not support the story.
+      Rigorous and candid. Owns model design, review and sign-off across DCF, LBO, CAPM and cost of
+      capital, Monte Carlo, comps and precedents. Proves or breaks the thesis with numbers, thinks
+      in distributions rather than point estimates, and says plainly when the model does not support
+      the story.
 
   - id: quant_associate
     nickname: Delta
@@ -130,4 +136,10 @@ agents:
 # You, in your own office. Editable in Settings too.
 captain:
   nickname: Stott
-  avatar: captain
+  avatar:
+    skin: '#eec09d'
+    hair: '#5a3b25'
+    shirt: '#f6f5f0'
+    pants: '#2E2C29'
+    hairStyle: short
+    accessory: bowtie
