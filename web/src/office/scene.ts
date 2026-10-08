@@ -11,13 +11,15 @@ import type { OfficeEvent, OfficeState } from "../state";
 
 const WALK_SPEED = 64;          // px per second
 const LOBBY_LINGER_MS = 9000;   // gathered colleagues drift back to their desks after this
+const DOUBLE_TAP_MS = 350;      // two taps closer together than this are a double tap
+const DOUBLE_TAP_SLOP = 24;     // px the second tap may land from the first
 const TAP_SLOP = 12;            // px a finger or mouse may move and still count as a tap, not a swipe
 
 export type Focus = { kind: "floor" } | { kind: "wing"; id: string } | { kind: "agent"; id: string };
 
 export interface SceneHooks {
   onAgentClick: (id: string) => void;
-  onRoomClick: (roomId: string) => void;
+  onDoubleTap: (roomId: string | null) => void;   // double click: a room to zoom into from the floor, else back out
   say: (id: string, text: string, ms: number) => void;
 }
 
@@ -71,13 +73,19 @@ export class OfficeScene extends Phaser.Scene {
     this.drawFloors();
     this.drawWalls();
     this.drawProps();
-    // A tap, not a press: a swipe that begins on the floor (to change wing on a phone) must not
-    // also open whoever it started on, or the room under the finger.
-    this.input.on("pointerup", (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
-      if (over.length || p.getDistance() > TAP_SLOP) return;
+    // A double tap, not a press: a swipe that begins on the floor (to change wing on a phone) must not
+    // open the room under the finger, and one tap alone moves nothing. Two taps close together zoom in
+    // on a room from the floor, or back out to the whole floor from anywhere else.
+    let last = { t: 0, x: 0, y: 0 };
+    this.input.on("pointerup", (p: Phaser.Input.Pointer) => {
+      if (p.getDistance() > TAP_SLOP) return;
+      const now = performance.now();
+      const again = now - last.t < DOUBLE_TAP_MS && Math.hypot(p.x - last.x, p.y - last.y) <= DOUBLE_TAP_SLOP;
+      last = again ? { t: 0, x: 0, y: 0 } : { t: now, x: p.x, y: p.y };
+      if (!again) return;
       const t = { x: Math.floor(p.worldX / TILE), y: Math.floor(p.worldY / TILE) };
       const room = ROOMS.find((r) => t.x >= r.rect.x && t.x < r.rect.x + r.rect.w && t.y >= r.rect.y && t.y < r.rect.y + r.rect.h);
-      if (room) this.hooks.onRoomClick(room.id);
+      this.hooks.onDoubleTap(room?.id ?? null);
     });
     this.scale.on("resize", (size: Phaser.Structs.Size) => {
       this.cameras.resize(size.width, size.height);

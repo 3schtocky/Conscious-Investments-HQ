@@ -533,10 +533,10 @@ async function boot() {
           focus,
           hooks: {
             onAgentClick: (id: string) => pickAgent(id),
-            onRoomClick: (room: string) => {
-              if (WING_ORDER.includes(room) && room !== "executive") setFocus({ kind: "wing", id: room });
+            onDoubleTap: (room: string | null) => {
+              if (focus.kind !== "floor") setFocus({ kind: "floor" });
+              else if (room && WING_ORDER.includes(room) && room !== "executive") setFocus({ kind: "wing", id: room });
               else if (room === "captain") pickAgent("captain");
-              else setFocus({ kind: "floor" });
             },
             say: (id: string, text: string, ms: number) => overlay.say(id, text, ms),
           },
