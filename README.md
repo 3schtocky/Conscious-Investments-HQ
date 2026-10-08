@@ -60,3 +60,10 @@ When the floor is quiet, visitors watch a replay of the most recent real work (m
 site is live while both `hq serve --public` and the tunnel are running and the machine is awake. To sign in,
 open the site, choose **Sign in** and enter the Captain's password. Five wrong passwords from one address lock
 sign-in for fifteen minutes.
+
+## Acknowledgements
+The "Least work that holds" rule in `prompts/common.md` and the department charters is adapted from the ideas in
+[Ponytail](https://github.com/DietrichGebert/ponytail) by DietrichGebert (MIT License, Copyright (c) 2026
+DietrichGebert): skip what isn't needed, reuse what exists, take the shortest route that works. The wording is
+our own, written for research agents rather than coding agents, and no Ponytail code or text is included. The
+Ponytail plugin is also used in development of this repo.
