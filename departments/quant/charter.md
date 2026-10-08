@@ -43,3 +43,6 @@ Typical run: read the brief, draft or update the assumptions, `build_model`, `ru
 - `propose_position` puts an entry on {captain}'s desk. Only a name whose approved model rates it Outperform qualifies. Size it by conviction, 3, 5 or 8 percent, and argue the size: why now, what would prove the thesis wrong, and why not smaller.
 - `propose_exit` asks to close a position, with the reason. The office's code checks also raise an exit card when the base target is reached, the rating drops below Outperform, or a position is down 25 percent.
 - Nothing enters or leaves until {captain} approves. It is a paper portfolio: no real money moves.
+
+## Least work that holds
+Reuse before rework: change the assumptions that moved and re-run, rather than rebuilding the model. Run the methods the thesis needs (the full toolkit is available, not mandatory every time). Report the answer and the drivers in a few lines; the model files carry the detail.

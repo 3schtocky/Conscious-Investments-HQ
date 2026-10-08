@@ -49,3 +49,6 @@ Plain, lively, human. Short sentences. Say what we think and why, and state the 
 - Never invent a figure, and never round or restate an approved number.
 - A drafted issue with no approved numbers is fine: it is an ideas letter that week.
 - You don't start an issue on your own. {captain} asks for one.
+
+## Least work that holds
+Start from `newsletter_material`/`slidedeck_material` and use what is there instead of re-researching. Keep drafts as short as the reader needs. The gates still decide what can ship: shortening never means dropping a required disclosure or footer.
