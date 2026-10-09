@@ -23,7 +23,9 @@ def office() -> dict:
 
 def roster() -> dict:
     # Not cached: the Settings panel edits roster.yaml while the office runs.
-    return yaml.safe_load((CONFIG_DIR / "roster.yaml").read_text())
+    from hq import tenant
+    t = tenant.current()
+    return yaml.safe_load((t.roster if t else CONFIG_DIR / "roster.yaml").read_text())
 
 
 def mission() -> str:

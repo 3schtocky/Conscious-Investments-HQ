@@ -15,6 +15,7 @@ from typing import Any
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
 
+from hq import tenant
 from hq.config import CONFIG_DIR, DATA_DIR, office
 
 ROSTER = CONFIG_DIR / "roster.yaml"
@@ -43,15 +44,26 @@ def _yaml() -> YAML:
     return y
 
 
+def _roster() -> Path:
+    t = tenant.current()
+    return t.roster if t else ROSTER
+
+
+def _avatars() -> Path:
+    t = tenant.current()
+    return t.avatars if t else AVATAR_DIR
+
+
 def _load():
-    return _yaml().load(ROSTER.read_text())
+    return _yaml().load(_roster().read_text())
 
 
 def _dump(data) -> None:
-    tmp = ROSTER.with_suffix(".yaml.tmp")
+    path = _roster()
+    tmp = path.with_suffix(".yaml.tmp")
     with tmp.open("w") as f:
         _yaml().dump(data, f)
-    tmp.replace(ROSTER)
+    tmp.replace(path)
 
 
 def validate_avatar(avatar: Any) -> Any:
@@ -149,8 +161,9 @@ def save_avatar_image(member_id: str, data_url: str) -> str:
         raise RosterError("That file isn't a PNG.")
     if len(raw) > MAX_AVATAR_BYTES:
         raise RosterError("Avatar images must be under 512 KB.")
-    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
-    path = AVATAR_DIR / f"{member_id}.png"
+    folder = _avatars()
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{member_id}.png"
     path.write_bytes(raw)
     return f"/avatars/{member_id}.png?v={int(path.stat().st_mtime)}"
 
@@ -158,7 +171,7 @@ def save_avatar_image(member_id: str, data_url: str) -> str:
 def avatar_file(name: str) -> Path | None:
     if not re.fullmatch(r"[a-z_]{1,32}\.png", name):
         return None
-    path = AVATAR_DIR / name
+    path = _avatars() / name
     return path if path.is_file() else None
 
 

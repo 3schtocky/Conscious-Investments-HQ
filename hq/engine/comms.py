@@ -74,7 +74,7 @@ class Comms:
             if await self._safe_run(delegate_id, sender, note) is None and fallback:
                 fallback()
 
-        task = asyncio.create_task(go(), name=f"comms-{delegate_id}")
+        task = asyncio.create_task(self.office.as_tenant(go()), name=f"comms-{delegate_id}")
         self.office._running.add(task)
         task.add_done_callback(self.office._running.discard)
         return task

@@ -12,6 +12,7 @@ import logging
 import re
 from pathlib import Path
 
+from hq import tenant
 from hq.config import DATA_DIR, ROOT, office, roster
 from hq.engine.agent import Agent
 from hq.engine.comms import Comms, is_delegate
@@ -46,6 +47,7 @@ class Office:
         self.comms = Comms(self)   # the delegates' comms desk (hq/engine/comms.py)
         self.rounds = Rounds(self)   # Juno's walk of the floor (hq/rounds.py)
         self.clocked_out = False
+        self.tenant = None   # set by hq.tenant.Registry: the customer whose office this is
         self.quant_dir = quant_dir or ROOT / "Quant"   # the Quant Department's model files
         self._model_locks: dict[str, asyncio.Lock] = {}
         from hq.memory import MEMORY_DIR
@@ -153,8 +155,15 @@ class Office:
         self._schedule(agent_id, task_id)
         return task_id
 
+    async def as_tenant(self, coro):
+        """Run work as this office's customer, whatever context started it (see hq.tenant)."""
+        if self.tenant is None:
+            return await coro
+        with tenant.use(self.tenant):
+            return await coro
+
     def _schedule(self, agent_id: str, task_id: int) -> asyncio.Task:
-        t = asyncio.create_task(self.agents[agent_id].work(task_id), name=f"task-{task_id}")
+        t = asyncio.create_task(self.as_tenant(self.agents[agent_id].work(task_id)), name=f"task-{task_id}")
         self._running.add(t)
         t.add_done_callback(self._running.discard)
         return t

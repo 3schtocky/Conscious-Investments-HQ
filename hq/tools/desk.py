@@ -15,10 +15,12 @@ from __future__ import annotations
 import asyncio
 import difflib
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
+from hq import tenant
 from hq.config import ERB_DIR
 from hq.engine.guards import GuardBlock
 from hq.tools.office import Tool, ToolContext, _str
@@ -42,8 +44,14 @@ def _ticker(inp: dict) -> str:
     return t
 
 
+def coverage_root() -> Path:
+    """Where research is kept: the customer's own folder, or erb's coverage/ for the Captain's office."""
+    t = tenant.current()
+    return t.coverage if t else ERB_DIR / "coverage"
+
+
 def coverage_dir(ticker: str) -> Path:
-    return ERB_DIR / "coverage" / ticker
+    return coverage_root() / ticker
 
 
 def _relative(ticker: str, rel: str) -> str:
@@ -93,6 +101,7 @@ async def run_erb(*args: str, timeout: float = 900) -> tuple[int, str]:
     code = f"import sys; from erb.cli import main; main({list(args)!r})"
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-c", code, cwd=str(ERB_DIR),
+        env={**os.environ, "ERB_COVERAGE_DIR": str(coverage_root())},
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout)
@@ -376,11 +385,11 @@ async def _get_model(ctx: ToolContext, inp: dict) -> str:
 def screen_dir(preset: str, day: str | None = None) -> Path:
     from datetime import date as _date
     day = day or _date.today().isoformat()  # noqa: DTZ011 - matches erb's local-date folder names
-    return ERB_DIR / "coverage" / "_screens" / (f"{day}-gems" if preset == "gems" else day)
+    return coverage_root() / "_screens" / (f"{day}-gems" if preset == "gems" else day)
 
 
 def latest_screen_dir(preset: str) -> Path | None:
-    root = ERB_DIR / "coverage" / "_screens"
+    root = coverage_root() / "_screens"
     if not root.is_dir():
         return None
     runs = [p for p in root.iterdir() if (p / "screen.csv").exists()

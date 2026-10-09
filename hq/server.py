@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from hq import roster_edit
+from hq import tenant as tenant_mod
 from hq.config import DATA_DIR, ROOT
 from hq.engine.runtime import Office
 
@@ -153,11 +154,17 @@ def security_headers(hosts: frozenset[str]) -> dict[str, str]:
 
 
 def create_app(*, demo: bool = False, demo_speed: float = 1.0,
-               office_factory=None, public: bool = False) -> FastAPI:
+               office_factory=None, public: bool = False, registry=None, resolve_tenant=None) -> FastAPI:
     """`public` puts the office on the open internet (behind a tunnel): the Captain signs in,
-    everyone else is a read-only visitor served only the sanitized views in `hq.public`."""
+    everyone else is a read-only visitor served only the sanitized views in `hq.public`.
+
+    `registry` (hq.tenant.Registry) makes it a multi-tenant host: every request must carry
+    something `resolve_tenant(cookies)` turns into a tenant id (accounts, Phase 10), and then
+    sees only that customer's office. Without a resolved tenant nothing is served."""
     from hq import public as pub
 
+    if registry is not None and resolve_tenant is None:
+        raise ValueError("A multi-tenant host needs resolve_tenant (who is this request?).")
     state: dict = {}
     public_hosts = frozenset(pub.hosts()) if public else frozenset()
     sessions, limiter = pub.Sessions(), pub.LoginLimiter()
@@ -169,8 +176,40 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
     def is_captain(cookies) -> bool:
         return not public or sessions.valid(cookies.get(pub.COOKIE))
 
+    def start_background(office: Office) -> None:
+        """The office's own timers: reminders, the daily digest, the portfolio tick, Juno's rounds."""
+        async def reminders() -> None:   # plain code, no API call
+            while True:
+                try:
+                    office.weekly_reminder()      # Juno's Monday nudge
+                except Exception:
+                    log.exception("weekly reminder failed")
+                try:
+                    if not demo:
+                        office.daily_digest()     # Tally's digest for each finished day
+                except Exception:
+                    log.exception("daily digest failed")
+                try:
+                    if office.store.positions():   # mark to market, raise exit flags
+                        from hq import portfolio
+                        office.portfolio_tick(await portfolio.fetch_prices(office))
+                except Exception:
+                    log.exception("portfolio tick failed")
+                await asyncio.sleep(1800)
+
+        state.setdefault("tasks", []).extend([
+            asyncio.create_task(office.as_tenant(reminders())),
+            asyncio.create_task(office.as_tenant(office.rounds.run_forever()))])   # Juno's rounds
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
+        if registry is not None:   # offices are built per customer, on first request
+            custom = registry.on_load
+            registry.on_load = lambda t, o: (custom and custom(t, o), start_background(o))[0]
+            yield
+            for t in state.get("tasks", []):
+                t.cancel()
+            return
         if demo:
             from hq.demo import DemoLLM, run_demo
 
@@ -196,31 +235,10 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         else:
             office = office_factory() if office_factory else Office()
         state["office"] = office
-
-        async def reminders() -> None:   # plain code, no API call
-            while True:
-                try:
-                    office.weekly_reminder()      # Juno's Monday nudge
-                except Exception:
-                    log.exception("weekly reminder failed")
-                try:
-                    if not demo:
-                        office.daily_digest()     # Tally's digest for each finished day
-                except Exception:
-                    log.exception("daily digest failed")
-                try:
-                    if office.store.positions():   # mark to market, raise exit flags
-                        from hq import portfolio
-                        office.portfolio_tick(await portfolio.fetch_prices(office))
-                except Exception:
-                    log.exception("portfolio tick failed")
-                await asyncio.sleep(1800)
-
-        state["reminder_task"] = asyncio.create_task(reminders())
-        state["rounds_task"] = asyncio.create_task(office.rounds.run_forever())   # Juno's rounds
+        start_background(office)
         yield
-        state["reminder_task"].cancel()
-        state["rounds_task"].cancel()
+        for t in state.get("tasks", []):
+            t.cancel()
         task = state.get("demo_task")
         if task:
             task.cancel()
@@ -235,9 +253,16 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
     async def gatekeeper(request, call_next):
         if not request_allowed(request.method, request.headers, public_hosts):
             return JSONResponse({"detail": "The office only answers its own page."}, status_code=403)
-        if not is_captain(request.cookies) and not visitor_allowed(request.method, request.url.path):
+        if registry is not None:
+            t = tenant_of(request.cookies)
+            if t is None:
+                return JSONResponse({"detail": "Sign in to open your office."}, status_code=401)
+            with tenant_mod.use(t):
+                response = await call_next(request)
+        elif not is_captain(request.cookies) and not visitor_allowed(request.method, request.url.path):
             return JSONResponse({"detail": "Sign in as the Captain to do that."}, status_code=401)
-        response = await call_next(request)
+        else:
+            response = await call_next(request)
         if public:
             for k, v in security_headers(public_hosts).items():
                 response.headers.setdefault(k, v)
@@ -245,7 +270,13 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
                 response.headers["Cache-Control"] = "no-store"
         return response
 
+    def tenant_of(cookies):
+        tid = resolve_tenant(cookies) if resolve_tenant else None
+        return registry.tenant(tid) if tid and registry.exists(tid) else None
+
     def office() -> Office:
+        if registry is not None:
+            return registry.office(tenant_mod.current().id)
         return state["office"]
 
     # ---- sign-in and the visitor's views -------------------------------------------------
@@ -598,7 +629,17 @@ def create_app(*, demo: bool = False, demo_speed: float = 1.0,
         if not request_allowed("WEBSOCKET", socket.headers, public_hosts):   # another site must not listen in
             await socket.close(code=1008)
             return
-        captain = is_captain(socket.cookies)
+        if registry is not None:
+            t = tenant_of(socket.cookies)
+            if t is None:
+                await socket.close(code=1008)
+                return
+            with tenant_mod.use(t):   # this socket's whole life belongs to one customer
+                await _ws_session(socket, True)
+            return
+        await _ws_session(socket, is_captain(socket.cookies))
+
+    async def _ws_session(socket: WebSocket, captain: bool) -> None:
         address = address_of(socket)
         if not captain:
             mine = sum(1 for a in visitors.values() if a == address)
