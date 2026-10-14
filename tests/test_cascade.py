@@ -132,3 +132,35 @@ async def test_budget_and_api_pauses_wait_instead_of_escalating(office):
     task = off.store.task(tid)
     assert cascade.review(off, task, {"status": "paused", "reason": "api_off"}, []) is None
     assert cascade.review(off, task, {"status": "paused_budget"}, []) is None
+
+
+async def test_plain_text_draft_is_not_reported_before_the_cascade_decides(office):
+    off, llm, _ = office
+    llm.script("quant_associate", tool_turn(("nope", {})), tool_turn(("nope", {})), text_turn("Rough draft."))
+    llm.script("quant_lead", text_turn("Polished."))
+    tid = await go(off)
+    assert tid not in off.reported and polish_of(off, tid)["escalation_reason"] == "gate_fails"
+
+
+async def test_a_bad_pattern_or_a_removed_kind_cannot_break_assignments(office):
+    off, llm, cfg = office
+    cfg["kinds"]["model"]["match"] = "(unbalanced"
+    llm.script("quant_lead", text_turn("Done."))
+    tid = await go(off)
+    assert off.store.task(tid)["assignee"] == "quant_lead"
+    cfg["kinds"]["model"]["match"] = "model"
+    llm.script("quant_associate", tool_turn(("nope", {})), tool_turn(("nope", {})), tool_turn(("submit_result", DONE)))
+    llm.script("quant_lead", text_turn("Took it."))
+    tid = await go(off, "Build the model for ABC.")
+    del cfg["kinds"]["model"]   # edited out of the config after the first pass started
+    assert polish_of(off, tid)["assignee"] == "quant_lead"
+
+
+async def test_lead_reviewed_work_is_counted_apart(office):
+    off, llm, cfg = office
+    cfg["kinds"]["model"]["lead_review"] = True
+    llm.script("quant_associate", tool_turn(("submit_result", DONE)))
+    llm.script("quant_lead", text_turn("Reviewed."))
+    await go(off)
+    s = cascade.summary(off.store)
+    assert s["lead_reviewed"] == 1 and s["finished_on_haiku"] == 0 and s["haiku_first"] == 1

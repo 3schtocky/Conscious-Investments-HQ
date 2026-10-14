@@ -10,10 +10,13 @@ Also the read-only reports behind `hq spend --by-tier`.
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from hq.config import model_config, office
 
+log = logging.getLogger(__name__)
+DEFAULTS = {"gate_fails": 2, "attempt_cap_usd": 0.40, "max_turns": 20, "lead_review": False}
 GUARD_KINDS = {"turn_cap", "task_cost_cap", "context_cap", "tool_loop"}
 LEAD_REVIEW = "lead_review"   # a clean pass the lead still finishes: not counted as an escalation
 
@@ -25,14 +28,22 @@ def kind_for(agent_id: str, title: str, body: str) -> tuple[str, dict] | None:
     if not cfg.get("enabled"):
         return None
     for name, k in (cfg.get("kinds") or {}).items():
-        if k.get("lead") == agent_id and (not k.get("match") or re.search(k["match"], f"{title}\n{body}", re.IGNORECASE)):
-            return name, {**(cfg.get("defaults") or {}), **k}
+        if k.get("lead") != agent_id:
+            continue
+        try:
+            hit = not k.get("match") or re.search(k["match"], f"{title}\n{body}", re.IGNORECASE)
+        except re.error as e:   # a typo in the config must not block every assignment to this lead
+            log.warning("cascade kind %r has a bad match pattern: %s", name, e)
+            continue
+        if hit:
+            return name, settings(name)
     return None
 
 
 def settings(name: str | None) -> dict:
+    """A kind's settings over the defaults; a kind removed from the config mid-flight still resolves."""
     cfg = office().get("cascade") or {}
-    return {**(cfg.get("defaults") or {}), **((cfg.get("kinds") or {}).get(name) or {})}
+    return {**DEFAULTS, **(cfg.get("defaults") or {}), **((cfg.get("kinds") or {}).get(name) or {})}
 
 
 def is_first_pass(task: dict) -> bool:
@@ -107,17 +118,18 @@ def polish_body(task: dict, reason: str, outcome: dict, errors: list[tuple[str, 
 def escalate(office_, task: dict, reason: str, outcome: dict, errors: list[tuple[str, str]]) -> int:
     """Close the first pass and hand its draft to the lead as a fresh task (never a mid-conversation
     model swap: Sonnet's thinking blocks and the cache prefix belong to one model)."""
-    k = settings(task["cascade"])
     store = office_.store
-    store.set_task_status(task["id"], "done", reason=f"escalated: {reason}")
-    new_id = store.create_task(
-        assignee=k["lead"], assigned_by=task["assigned_by"], kind="assignment", title=task["title"],
+    # The wing's lead from the roster, not the config: always valid, even if the kind was edited meanwhile.
+    lead = office_.lead_of(office_.agents[task["assignee"]].wing).id
+    new_id = store.create_task(   # the successor exists before the first pass is closed: work is never orphaned
+        assignee=lead, assigned_by=task["assigned_by"], kind="assignment", title=task["title"],
         body=polish_body(task, reason, outcome, errors), parent_id=task["id"], root_id=task["root_id"],
         attempt=2, escalated_from=task["id"], escalation_reason=reason, cascade=task["cascade"])
-    office_.bus.publish("task_created", k["lead"], new_id, title=task["title"], kind="assignment",
+    store.set_task_status(task["id"], "done", reason=f"escalated: {reason}")
+    office_.bus.publish("task_created", lead, new_id, title=task["title"], kind="assignment",
                         assigned_by=task["assigned_by"])
-    office_.bus.publish("cascade_escalated", task["assignee"], task["id"], to=k["lead"], reason=reason, task=new_id)
-    office_._schedule(k["lead"], new_id)
+    office_.bus.publish("cascade_escalated", task["assignee"], task["id"], to=lead, reason=reason, task=new_id)
+    office_._schedule(lead, new_id)
     return new_id
 
 
@@ -154,7 +166,7 @@ def summary(store, day: str | None = None) -> dict:
     """Cascade health: assignments that started on the cheap tier, how many the lead had to take
     over (a polish task points back at its first pass), and why. `lead_review` hand-ups are
     designed in, so they are counted apart from escalations."""
-    tasks = store.tasks()
+    all_tasks = tasks = store.tasks()
     if day:   # tasks created that local day, matching the ledger's `day` column
         from datetime import datetime
         from zoneinfo import ZoneInfo
@@ -162,11 +174,12 @@ def summary(store, day: str | None = None) -> dict:
         tz = ZoneInfo(office()["budget"]["timezone"])
         tasks = [t for t in tasks if datetime.fromtimestamp(t["created"], tz).strftime("%Y-%m-%d") == day]
     started = [t for t in tasks if t["cascade"] and t["attempt"] == 1]
-    handed = {t["escalated_from"]: t["escalation_reason"] for t in tasks if t["attempt"] == 2 and t["escalated_from"]}
+    handed = {t["escalated_from"]: t["escalation_reason"] for t in all_tasks if t["attempt"] == 2 and t["escalated_from"]}
     reasons: dict[str, int] = {}
     for r in handed.values():
         reasons[r] = reasons.get(r, 0) + 1
     escalated = [t for t in started if handed.get(t["id"]) not in (None, LEAD_REVIEW)]
     n = len(started)
-    return {"haiku_first": n, "finished_on_haiku": sum(1 for t in started if t["id"] not in handed and t["status"] == "done"),
+    return {"haiku_first": n, "lead_reviewed": sum(1 for t in started if handed.get(t["id"]) == LEAD_REVIEW),
+            "finished_on_haiku": sum(1 for t in started if t["id"] not in handed and t["status"] == "done"),
             "escalated": len(escalated), "escalation_rate": (len(escalated) / n) if n else 0.0, "reasons": reasons}

@@ -143,6 +143,8 @@ class Office:
         hit = cascade.kind_for(agent_id, title, body) if parent is None else None
         if hit and (d := self.delegate_of(self.agents[agent_id].wing)):
             first_pass = (hit[0], d.id)
+        elif hit:
+            log.warning("cascade kind %r matched but %s's wing has no associate: running on the lead", hit[0], agent_id)
         runner = first_pass[1] if first_pass else agent_id
         task_id = self.store.create_task(
             assignee=runner, assigned_by=by, kind="assignment", title=title, body=body,

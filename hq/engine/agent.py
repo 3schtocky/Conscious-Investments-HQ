@@ -139,9 +139,10 @@ class Agent:
                 task = self.office.store.task(task_id)
                 if cascade.is_first_pass(task) and outcome.get("reason") != "already finished":
                     outcome = await cascade.after_first_pass(
-                        self.office, task, outcome, self.cascade_errors.pop(task_id, []))
+                        self.office, task, outcome, self.cascade_errors.get(task_id, []))
                 return outcome
             finally:
+                self.cascade_errors.pop(task_id, None)
                 self.current_task = None
                 self.guard = None
                 if self.is_audit:   # a review that ended without a ruling must not hide its flags
@@ -372,6 +373,7 @@ class Agent:
         """A task the Captain gave directly must never end in silence: if the agent finished with
         a plain-text answer and sent no report, that answer is delivered to him."""
         if (final and task["kind"] == "assignment" and task["assigned_by"] == "captain"
+                and not cascade.is_first_pass(task)   # a first pass is reported once the cascade accepts it
                 and task["id"] not in self.office.reported):
             await self.office.report_to_captain(self.id, final, task_id=task["id"])
 
