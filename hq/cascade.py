@@ -31,7 +31,8 @@ def kind_for(agent_id: str, title: str, body: str) -> tuple[str, dict] | None:
         if k.get("lead") != agent_id:
             continue
         try:
-            text = title if k.get("match_in") == "title" else f"{title}\n{body}"
+            # anything but an explicit "any" reads the title only: a typo must not widen what gets cascaded
+            text = f"{title}\n{body}" if k.get("match_in") in (None, "any") else title
             hit = not k.get("match") or re.search(k["match"], text, re.IGNORECASE)
         except re.error as e:   # a typo in the config must not block every assignment to this lead
             log.warning("cascade kind %r has a bad match pattern: %s", name, e)

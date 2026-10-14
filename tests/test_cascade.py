@@ -238,7 +238,9 @@ def test_the_shipped_research_kind_only_takes_narrow_data_jobs():
     assert k["lead"] == "er_lead" and k["match_in"] == "title" and not k.get("lead_review")
     for yes in ("Refresh the EOSE facts pack", "Update the peer table for RMBS", "Refresh sources for MU"):
         assert re.search(k["match"], yes, re.IGNORECASE)
-    for no in ("Write the RMBS initiation memo", "Research META: facts pack, brief and memo", "What do you think of AMD?"):
+    for no in ("Write the RMBS initiation memo", "Research META: facts pack, brief and memo", "What do you think of AMD?",
+               "Initiate coverage of RMBS: facts and thesis", "Write reports on peers", "Check the facts on the AMD deal",
+               "What are the sources of MU's margin drop?", "Review the sources of the thesis"):
         assert not re.search(k["match"], no, re.IGNORECASE)
 
 
@@ -267,6 +269,7 @@ def erb(monkeypatch):
         return 0, "ok"
 
     monkeypatch.setattr(desk, "run_erb", fake_run_erb)
+    shutil.rmtree(coverage_dir("ZZZZ"), ignore_errors=True)   # a killed earlier run may have left it
     yield calls, fail
     shutil.rmtree(coverage_dir("ZZZZ"), ignore_errors=True)
 
@@ -300,3 +303,9 @@ async def test_erb_failing_twice_hands_the_job_to_quill_with_the_reason(office, 
 def test_the_research_associate_can_lint_its_own_work():
     from hq.tools.office import tools_for
     assert "erb_lint" in [t.name for t in tools_for("associate", "er_associate", "equity_research")]
+
+
+def test_a_mistyped_match_in_fails_closed_to_the_title(office):
+    _, _, cfg = office
+    cfg["kinds"]["facts"] = {**_real_kind("er_facts"), "match_in": "Titles"}
+    assert cascade.kind_for("er_lead", "Write the RMBS memo", "Refresh the facts pack first.") is None

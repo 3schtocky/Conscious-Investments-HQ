@@ -23,6 +23,7 @@ cascade:
     lead_review: false       # true: the lead always finishes the work (approval cards, sign-off) after a clean pass
   # name: {lead: <role id>, match: <regex on title+body>, ...overrides}. Also per kind: gate_tools (only these tools'
   # errors count), fail_markers (result wording that counts as a failed check even though the call succeeded).
+  # Kinds are tried in the order written and the first match for a lead wins, so keep patterns narrow.
   kinds:
     quant_model:             # Delta builds the workbook; Sigma reviews, signs off and files the approval card
       lead: quant_lead
@@ -33,8 +34,8 @@ cascade:
     er_facts:                # Ledger refreshes facts packs, peer tables and source lists; Quill takes it only if it trips
       lead: er_lead
       match_in: title        # a memo's body mentions the facts pack as a step, so only the title decides
-      match: '^(?!.*\b(memo|report|initiat|thesis|brief|model)\b).*\b(facts?\s+pack|facts|peers?|sources?)\b'
-      gate_tools: [erb_facts, erb_peers, write_file]
+      match: '^(?!.*(memo|report|initiat|thesis|brief|model|coverage|why|what|how)).*\b(refresh|update|rebuild|re-?run|pull)\w*\b.*\b(facts?\s+pack|peer\s+(table|comparison|multiples)|source\s+list|sources)\b'
+      gate_tools: [erb_facts, erb_peers]
 
 # USD per million tokens (Anthropic first-party rates, checked 2026-09-29).
 # Cache writes: 5-minute TTL = 1.25x input, 1-hour TTL = 2x input. Cache reads = 0.1x input.
