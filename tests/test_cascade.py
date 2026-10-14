@@ -309,3 +309,44 @@ def test_a_mistyped_match_in_fails_closed_to_the_title(office):
     _, _, cfg = office
     cfg["kinds"]["facts"] = {**_real_kind("er_facts"), "match_in": "Titles"}
     assert cascade.kind_for("er_lead", "Write the RMBS memo", "Refresh the facts pack first.") is None
+
+
+def test_the_shipped_screening_kind_takes_single_name_pitch_jobs_only():
+    import re
+    k = _real_kind("screen_pitch")
+    assert k["lead"] == "screen_lead" and k["match_in"] == "title" and not k.get("lead_review")
+    for yes in ("Fill the pitch for EOSE", "Dig the catalysts for RMBS", "Pitch memo for MU"):
+        assert re.search(k["match"], yes, re.IGNORECASE)
+    for no in ("Run the gem hunt and pitch the top five", "Shortlist five names", "Write the AMD memo",
+               "Pitch the core screen to Stott", "Initiate coverage with a pitch", "Add it to the watchlist"):
+        assert not re.search(k["match"], no, re.IGNORECASE)
+
+
+CLEAN_PITCH = "# Pitch: ZZZZ\\nRevenue grew 40% in FY24 [S1]. Backlog doubled [S2]."
+
+
+async def test_pip_fills_a_clean_pitch_without_waking_scout(office, erb):
+    off, llm, cfg = office
+    cfg["kinds"]["pitch"] = _real_kind("screen_pitch")
+    llm.script("screen_associate",
+               tool_turn(("write_file", {"ticker": "ZZZZ", "path": "pitch.md", "content": CLEAN_PITCH})),
+               tool_turn(("submit_result", {**DONE, "findings": "ZZZZ pitch filled, sources logged."})))
+    tid = off.assign("screen_lead", "Fill the pitch for ZZZZ")
+    await off.idle()
+    assert off.store.task(tid)["assignee"] == "screen_associate" and polish_of(off, tid) is None
+    assert tid in off.reported and not [c for c in llm.calls if c["who"] == "screen_lead"]
+
+
+async def test_a_pitch_that_states_a_price_target_goes_to_scout(office, erb):
+    off, llm, cfg = office
+    cfg["kinds"]["pitch"] = _real_kind("screen_pitch")
+    llm.script("screen_associate",
+               tool_turn(("write_file", {"ticker": "ZZZZ", "path": "pitch.md",
+                                         "content": CLEAN_PITCH + "\\nOur price target is $64."})),
+               tool_turn(("submit_result", DONE)))
+    llm.script("screen_lead", text_turn("Cut the target, kept the evidence."))
+    tid = off.assign("screen_lead", "Fill the pitch for ZZZZ")
+    await off.idle()
+    p = polish_of(off, tid)
+    assert p["assignee"] == "screen_lead" and p["escalation_reason"] == "audit_flag"
+    assert tid not in off.reported

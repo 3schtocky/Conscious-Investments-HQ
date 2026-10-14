@@ -36,6 +36,11 @@ cascade:
       match_in: title        # a memo's body mentions the facts pack as a step, so only the title decides
       match: '^(?!.*(memo|report|initiat|thesis|brief|model|coverage|why|what|how)).*\b(refresh|update|rebuild|re-?run|pull)\w*\b.*\b(facts?\s+pack|peer\s+(table|comparison|multiples)|source\s+list|sources)\b'
       gate_tools: [erb_facts, erb_peers]
+    screen_pitch:            # Pip digs and fills one name's pitch; Tally's no-valuation check is the gate, Scout polishes
+      lead: screen_lead
+      match_in: title        # a gem hunt is judgment end to end, so it stays with Scout
+      match: '^(?!.*(gem hunt|gems?\b|core|screen|shortlist|watchlist|report|initiat|model)).*\b(pitch|catalysts?|dig)\b'
+      gate_tools: [pitch_memo, read_screen]
 
 # USD per million tokens (Anthropic first-party rates, checked 2026-09-29).
 # Cache writes: 5-minute TTL = 1.25x input, 1-hour TTL = 2x input. Cache reads = 0.1x input.
