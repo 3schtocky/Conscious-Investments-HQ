@@ -515,9 +515,10 @@ class Store:
 
     def task_flags(self, task_id: int, also_rules: tuple[str, ...] = ()) -> list[dict]:
         """A task's flags, plus findings of any severity under `also_rules` (a note that should still escalate)."""
-        marks = ",".join("?" * len(also_rules))
-        return self._all("SELECT rule, subject, detail FROM audit_findings WHERE task_id=? AND "
-                         f"(severity='flag'{f' OR rule IN ({marks})' if also_rules else ''})",
+        clause = "severity='flag'"
+        if also_rules:
+            clause += f" OR rule IN ({','.join('?' * len(also_rules))})"
+        return self._all(f"SELECT rule, subject, detail FROM audit_findings WHERE task_id=? AND ({clause})",
                          (task_id, *also_rules))
 
     def count_findings(self, status: str, severity: str) -> int:

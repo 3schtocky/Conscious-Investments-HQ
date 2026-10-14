@@ -45,14 +45,14 @@ cascade:
     cr_newsletter:           # Wren drafts the issue behind the code gate; Harbor always edits, finalizes and files the card
       lead: cr_lead
       match_in: title
-      match: '^(?!.*(outreach|email|slidedeck|deck|memo|initiat)).*\b(newsletters?|weekly\s+note|this\s+week''?s\s+issue)\b'
+      match: '^(?!.*(outreach|email|slidedeck|deck|memo|initiat|finaliz|approv|send|sent|file|publish|release|package|sign)).*\b(newsletters?|weekly\s+note|this\s+week''?s\s+issue)\b'
       lead_review: true      # finalize_newsletter and the approval card are lead-only
       gate_tools: [save_newsletter]
-      fail_markers: ["Fix every error and save again."]
+      fail_markers: ["Fix every error and save again."]   # the save tools' wording; tests/test_cascade.py keeps them in step
     cr_outreach:             # Wren drafts a one-to-one email behind check_email; Harbor finalizes
       lead: cr_lead
       match_in: title
-      match: '^(?!.*(newsletter|slidedeck|deck|suppress|opt-?out|unsubscribe|approach|strategy|plan)).*\b(outreach|emails?)\b'
+      match: '^(?!.*(newsletter|slidedeck|deck|suppress|opt-?out|unsubscribe|approach|strategy|plan|finaliz|approv|send|sent|file|publish|release|package|sign|reply|deliverab|bounce)).*(\b(draft|write|compose|prepare)\w*\b.{0,40}\b(outreach|emails?)\b|\boutreach\b|^email\b)'
       lead_review: true
       gate_tools: [save_outreach]
       fail_markers: ["Fix every error and save again."]

@@ -81,8 +81,10 @@ def review(office_, task: dict, outcome: dict, errors: list[tuple[str, str]]) ->
         return None
     if len(errors) >= k["gate_fails"]:
         return "gate_fails"
-    if office_.store.task_flags(task["id"], tuple(k.get("escalate_on") or ())):
+    if office_.store.task_flags(task["id"]):
         return "audit_flag"
+    if office_.store.task_flags(task["id"], tuple(k.get("escalate_on") or ())):
+        return "audit_note"   # a note the kind treats as unfinished work (e.g. [VERIFY] left in a pitch)
     return LEAD_REVIEW if k.get("lead_review") else None
 
 
@@ -110,7 +112,7 @@ def draft_text(result) -> str:
 
 def polish_body(task: dict, reason: str, outcome: dict, errors: list[tuple[str, str]]) -> str:
     """The lead's brief: the original request, the draft, and exactly what stopped the first pass."""
-    stuck = {"gate_fails": "its tool calls were refused or failed too often", "audit_flag": "Tally flagged its work",
+    stuck = {"gate_fails": "its tool calls were refused or failed too often", "audit_flag": "Tally flagged its work", "audit_note": "its draft still has open parts Tally noted",
              "turn_cap": "it ran out of turns", "task_cost_cap": "it reached its first-pass $ cap",
              "context_cap": "its conversation grew too large", "tool_loop": "it repeated the same call",
              "error": "it hit an error", "declined": "the model declined",

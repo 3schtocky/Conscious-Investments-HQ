@@ -362,12 +362,14 @@ def test_the_shipped_client_relations_kinds_are_narrow_and_always_finish_with_ha
     for yes in ("Draft this week's newsletter", "Write the weekly note"):
         assert re.search(news["match"], yes, re.IGNORECASE)
     for no in ("Fix the issue with the outbox", "Build the slidedeck newsletter", "Draft an outreach email to Jo",
-               "Write the RMBS memo"):
+               "Write the RMBS memo", "Finalize the newsletter", "Send this week's newsletter", "Approve the weekly note"):
         assert not re.search(news["match"], no, re.IGNORECASE)
     for yes in ("Draft an outreach email to Jo", "Email Jo at Acme about the note"):
         assert re.search(mail["match"], yes, re.IGNORECASE)
     for no in ("Suppress this contact: jo@x.com", "Plan the outreach approach", "Unsubscribe Jo from outreach",
-               "Draft this week's newsletter", "Build the slidedeck"):
+               "Draft this week's newsletter", "Build the slidedeck", "Finalize the outreach email to Jo",
+               "Send outreach email 4", "Reply to the email from Acme", "Check email deliverability",
+               "Why did the email bounce"):
         assert not re.search(mail["match"], no, re.IGNORECASE)
 
 
@@ -414,4 +416,15 @@ async def test_a_pitch_left_with_verify_markers_goes_to_scout(office, erb):
     llm.script("screen_lead", text_turn("Filled the open spots."))
     tid = off.assign("screen_lead", "Fill the pitch for ZZZZ")
     await off.idle()
-    assert polish_of(off, tid)["escalation_reason"] == "audit_flag"
+    assert polish_of(off, tid)["escalation_reason"] == "audit_note"
+
+
+def test_the_save_tools_still_say_what_the_config_counts_as_a_failed_gate():
+    from hq.tools import client
+    meta = {"id": "x", "status": "draft", "words": 1,
+            "problems": [{"level": "error", "where": "body", "msg": "no"}]}
+    for report in (client._report(meta), client._email_report(meta)):
+        for name in ("cr_newsletter", "cr_outreach"):
+            assert all(m in report["next"] for m in _real_kind(name)["fail_markers"])
+    clean = {**meta, "problems": []}
+    assert not any(m in client._report(clean)["next"] for m in _real_kind("cr_newsletter")["fail_markers"])
