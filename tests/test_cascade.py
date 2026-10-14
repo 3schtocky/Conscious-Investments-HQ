@@ -167,9 +167,13 @@ async def test_lead_reviewed_work_is_counted_apart(office):
     assert s["lead_reviewed"] == 1 and s["finished_on_haiku"] == 0 and s["haiku_first"] == 1
 
 
-def _real_quant_kind():
+def _real_kind(name):
     import yaml
-    return yaml.safe_load((config.ROOT / "config" / "office.yaml").read_text())["cascade"]["kinds"]["quant_model"]
+    return yaml.safe_load((config.ROOT / "config" / "office.yaml").read_text())["cascade"]["kinds"][name]
+
+
+def _real_quant_kind():
+    return _real_kind("quant_model")
 
 
 def test_the_shipped_quant_kind_matches_model_work_only():
@@ -226,3 +230,73 @@ async def test_delta_builds_on_real_tools_and_sigma_files_the_approval_card(offi
     assert card["kind"] == "model" and card["agent"] == "quant_lead"
     tiers = cascade.by_tier(off.store)["tiers"]
     assert tiers["associate"]["calls"] == 3 and tiers["lead"]["calls"] == 2
+
+
+def test_the_shipped_research_kind_only_takes_narrow_data_jobs():
+    import re
+    k = _real_kind("er_facts")
+    assert k["lead"] == "er_lead" and k["match_in"] == "title" and not k.get("lead_review")
+    for yes in ("Refresh the EOSE facts pack", "Update the peer table for RMBS", "Refresh sources for MU"):
+        assert re.search(k["match"], yes, re.IGNORECASE)
+    for no in ("Write the RMBS initiation memo", "Research META: facts pack, brief and memo", "What do you think of AMD?"):
+        assert not re.search(k["match"], no, re.IGNORECASE)
+
+
+def test_a_memo_whose_body_mentions_the_facts_pack_is_not_cascaded(office):
+    _, _, cfg = office
+    cfg["kinds"]["facts"] = _real_kind("er_facts")
+    assert cascade.kind_for("er_lead", "Write the RMBS memo", "Start with the facts pack, then the memo.") is None
+    assert cascade.kind_for("er_lead", "Refresh the RMBS facts pack", "Use erb_facts.")[0] == "facts"
+
+
+@pytest.fixture
+def erb(monkeypatch):
+    """erb stubbed (no network) for a throwaway ticker; `calls` records each erb command."""
+    import shutil
+
+    from hq.tools import desk
+    calls, fail = [], {"on": False}
+
+    async def fake_run_erb(*args, timeout=900):
+        calls.append(args[0])
+        if fail["on"]:
+            return 1, "Traceback\nConnectionError: SEC EDGAR unreachable"
+        facts = coverage_dir("ZZZZ") / "facts"
+        facts.mkdir(parents=True, exist_ok=True)
+        (facts / "facts.md").write_text("# Facts\nRevenue FY24: 100 [S1]")
+        return 0, "ok"
+
+    monkeypatch.setattr(desk, "run_erb", fake_run_erb)
+    yield calls, fail
+    shutil.rmtree(coverage_dir("ZZZZ"), ignore_errors=True)
+
+
+async def test_ledger_refreshes_a_facts_pack_without_waking_quill(office, erb):
+    off, llm, cfg = office
+    cfg["kinds"]["facts"] = _real_kind("er_facts")
+    llm.script("er_associate", tool_turn(("erb_facts", {"ticker": "ZZZZ"})),
+               tool_turn(("submit_result", {**DONE, "findings": "ZZZZ facts pack refreshed."})))
+    tid = off.assign("er_lead", "Refresh the ZZZZ facts pack")
+    await off.idle()
+    assert off.store.task(tid)["assignee"] == "er_associate" and polish_of(off, tid) is None
+    assert erb[0] == ["facts"] and tid in off.reported
+    assert not [c for c in llm.calls if c["who"] == "er_lead"]
+
+
+async def test_erb_failing_twice_hands_the_job_to_quill_with_the_reason(office, erb):
+    off, llm, cfg = office
+    cfg["kinds"]["facts"] = _real_kind("er_facts")
+    erb[1]["on"] = True
+    llm.script("er_associate", tool_turn(("erb_facts", {"ticker": "ZZZZ"})),
+               tool_turn(("erb_facts", {"ticker": "ZZZZ"})), text_turn("Could not get the filings."))
+    llm.script("er_lead", text_turn("Took it."))
+    tid = off.assign("er_lead", "Refresh the ZZZZ facts pack")
+    await off.idle()
+    p = polish_of(off, tid)
+    assert p["assignee"] == "er_lead" and p["escalation_reason"] == "gate_fails"
+    assert "SEC EDGAR unreachable" in p["body"] and tid not in off.reported
+
+
+def test_the_research_associate_can_lint_its_own_work():
+    from hq.tools.office import tools_for
+    assert "erb_lint" in [t.name for t in tools_for("associate", "er_associate", "equity_research")]

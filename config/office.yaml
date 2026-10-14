@@ -30,6 +30,11 @@ cascade:
       lead_review: true      # associates cannot file approval cards, so the lead always finishes
       gate_tools: [draft_assumptions, build_model, run_simulations, save_model_brief]
       fail_markers: ["Formula check FAILED"]
+    er_facts:                # Ledger refreshes facts packs, peer tables and source lists; Quill takes it only if it trips
+      lead: er_lead
+      match_in: title        # a memo's body mentions the facts pack as a step, so only the title decides
+      match: '^(?!.*\b(memo|report|initiat|thesis|brief|model)\b).*\b(facts?\s+pack|facts|peers?|sources?)\b'
+      gate_tools: [erb_facts, erb_peers, write_file]
 
 # USD per million tokens (Anthropic first-party rates, checked 2026-09-29).
 # Cache writes: 5-minute TTL = 1.25x input, 1-hour TTL = 2x input. Cache reads = 0.1x input.

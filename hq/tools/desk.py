@@ -585,9 +585,9 @@ GET_MODEL = Tool(
 def desk_tools(wing: str, tier: str) -> list[Tool]:
     """Work tools by wing. Everyone can read the approved model."""
     if wing == "equity_research":
-        tools = [ERB_FACTS, ERB_PEERS, LIST_FILES, READ_FILE, SEARCH_FILE, WRITE_FILE, GET_MODEL]
+        tools = [ERB_FACTS, ERB_PEERS, ERB_LINT, LIST_FILES, READ_FILE, SEARCH_FILE, WRITE_FILE, GET_MODEL]
         if tier == "lead":
-            tools += [ERB_MEMO, ERB_LINT]
+            tools += [ERB_MEMO]   # erb_lint is plain code, so a first-pass associate can check its own work
         return tools
     if wing == "quant":
         from hq.tools.brief import DECK_READINESS, READ_MODEL_BRIEF, SAVE_MODEL_BRIEF
