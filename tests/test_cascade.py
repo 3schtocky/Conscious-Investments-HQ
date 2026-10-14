@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from hq import cascade, config
+from hq.tools.desk import coverage_dir
 from tests.conftest import text_turn, tool_turn
 
 HAIKU_TURN = 0.002    # one USAGE turn at the fake Haiku price: 1000*1 + 200*5 per MTok
@@ -164,3 +165,58 @@ async def test_lead_reviewed_work_is_counted_apart(office):
     await go(off)
     s = cascade.summary(off.store)
     assert s["lead_reviewed"] == 1 and s["finished_on_haiku"] == 0 and s["haiku_first"] == 1
+
+
+def _real_quant_kind():
+    import yaml
+    return yaml.safe_load((config.ROOT / "config" / "office.yaml").read_text())["cascade"]["kinds"]["quant_model"]
+
+
+def test_the_shipped_quant_kind_matches_model_work_only():
+    import re
+    k = _real_quant_kind()
+    assert k["lead"] == "quant_lead" and k["lead_review"] is True
+    for yes in ("Build the META model", "Update the RMBS assumptions", "Re-run the valuation for EOSE"):
+        assert re.search(k["match"], yes, re.IGNORECASE)
+    for no in ("How is Delta doing?", "What model should we use?"):
+        assert not re.search(k["match"], no, re.IGNORECASE)
+
+
+async def test_a_failed_formula_check_counts_even_though_the_call_succeeded(office):
+    off, _, cfg = office
+    cfg["kinds"]["model"] = {**_real_quant_kind(), "match": "model"}
+    tid = off.store.create_task(assignee="quant_associate", assigned_by="captain", kind="assignment",
+                                title="Model", body="x", cascade="model")
+    task = off.store.task(tid)
+    bad = '{"check": "Formula check FAILED:\\n- Outputs!B4 differs"}'
+    assert cascade.counts_as_failure(task, "build_model", bad, False)
+    assert not cascade.counts_as_failure(task, "build_model", '{"check": "Formula check PASSED"}', False)
+    assert not cascade.counts_as_failure(task, "read_file", bad, False)   # only the kind's gate tools
+    assert cascade.counts_as_failure(task, "read_file", "No file", True)
+
+
+needs_meta = pytest.mark.skipif(not (coverage_dir("META") / "assumptions.yaml").exists(),
+                                reason="needs local META coverage in the submodule")
+
+
+@needs_meta
+async def test_delta_builds_on_real_tools_and_sigma_files_the_approval_card(office):
+    off, llm, cfg = office
+    cfg["kinds"]["model"] = {**_real_quant_kind(), "match": "model"}
+    llm.script("quant_associate", tool_turn(("build_model", {"ticker": "META"})),
+               tool_turn(("run_simulations", {"ticker": "META", "runs": 300})),
+               tool_turn(("submit_result", {**DONE, "findings": "META model v1 built, check passed."})))
+    llm.script("quant_lead",
+               tool_turn(("request_approval", {"kind": "model", "ticker": "META", "version": 1,
+                                               "title": "META model v1", "summary": "Base target, drivers, risks."})),
+               text_turn("Filed."))
+    tid = await go(off, "Build the META model from the assumptions.")
+    p = polish_of(off, tid)
+    assert p["escalation_reason"] == "lead_review" and p["status"] == "done"
+    assert "META model v1 built, check passed." in p["body"]
+    [m] = off.store.models("META")
+    assert m["status"] == "awaiting" and m["summary"]["check"]["ok"]   # on Stott's desk, not yet approved
+    [card] = off.store.approvals("pending")
+    assert card["kind"] == "model" and card["agent"] == "quant_lead"
+    tiers = cascade.by_tier(off.store)["tiers"]
+    assert tiers["associate"]["calls"] == 3 and tiers["lead"]["calls"] == 2

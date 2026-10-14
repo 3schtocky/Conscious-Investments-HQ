@@ -405,7 +405,8 @@ class Agent:
                 text = f"The tool failed: {type(e).__name__}: {e}"[:1500]
         bus.publish("tool_result", self.id, ctx.task["id"], tool=name, is_error=is_error,
                     text=text[:2000])
-        if is_error and not ctx.hold_turn and cascade.is_first_pass(ctx.task):
+        if (not ctx.hold_turn and cascade.is_first_pass(ctx.task)
+                and cascade.counts_as_failure(ctx.task, str(name), text, is_error)):
             self.cascade_errors.setdefault(ctx.task["id"], []).append((str(name), text))
         result = {"type": "tool_result", "tool_use_id": block["id"], "content": text}
         if is_error:

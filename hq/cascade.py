@@ -46,6 +46,17 @@ def settings(name: str | None) -> dict:
     return {**DEFAULTS, **(cfg.get("defaults") or {}), **((cfg.get("kinds") or {}).get(name) or {})}
 
 
+def counts_as_failure(task: dict, tool: str, text: str, is_error: bool) -> bool:
+    """Does this tool result count against the first pass? A raised refusal or failure always does;
+    a check that fails in plain words (Quant's "Formula check FAILED") counts when the kind lists
+    that wording in `fail_markers`."""
+    if is_error:
+        return True
+    gate_tools = settings(task["cascade"]).get("gate_tools") or [tool]
+    markers = settings(task["cascade"]).get("fail_markers") or []
+    return tool in gate_tools and any(m in text for m in markers)
+
+
 def is_first_pass(task: dict) -> bool:
     return bool(task.get("cascade")) and task.get("attempt") == 1
 

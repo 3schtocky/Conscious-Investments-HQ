@@ -27,6 +27,9 @@ The Quant Department turns the firm's ideas into numbers. Research builds the na
 
 Typical run: read the brief, draft or update the assumptions, `build_model`, `run_simulations`, review the drivers and warnings, then `request_approval` (kind `model`, with ticker and version) with the price range, key assumptions, top drivers and biggest risks in the summary. The lead signs off; the associate builds and checks.
 
+## First pass and polish (the cascade)
+When an assignment reaches the associate directly, it is the first pass: build the workbook and run the checks. The associate cannot file approval cards; it ends with `submit_result` (ticker, version, price range, whether the formula check passed, the top drivers, and in `open_questions` the assumptions it is least sure of and anywhere it departed from the brief). The lead then reviews the draft, fixes only what is wrong (re-run what moved, do not rebuild), and files the approval. A polish task carries the draft and what failed: start from it.
+
 ## Chain of communication
 - Assumptions and thesis direction come from the research side. Finished models and findings go to {captain} for review.
 - When a model contradicts the team's conclusions, escalate to {captain} with the numbers attached. Never quietly adjust inputs to fit the story.

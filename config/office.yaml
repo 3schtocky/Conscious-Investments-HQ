@@ -21,7 +21,15 @@ cascade:
     attempt_cap_usd: 0.40    # the first pass's own $ cap; hitting it escalates instead of pausing
     max_turns: 20
     lead_review: false       # true: the lead always finishes the work (approval cards, sign-off) after a clean pass
-  kinds: {}                  # name: {lead: <role id>, match: <regex on title+body>, ...overrides}
+  # name: {lead: <role id>, match: <regex on title+body>, ...overrides}. Also per kind: gate_tools (only these tools'
+  # errors count), fail_markers (result wording that counts as a failed check even though the call succeeded).
+  kinds:
+    quant_model:             # Delta builds the workbook; Sigma reviews, signs off and files the approval card
+      lead: quant_lead
+      match: '\b(build|rebuild|update|refresh|draft|re-?run|create)\b.{0,60}\b(model|assumptions|valuation)'
+      lead_review: true      # associates cannot file approval cards, so the lead always finishes
+      gate_tools: [draft_assumptions, build_model, run_simulations, save_model_brief]
+      fail_markers: ["Formula check FAILED"]
 
 # USD per million tokens (Anthropic first-party rates, checked 2026-09-29).
 # Cache writes: 5-minute TTL = 1.25x input, 1-hour TTL = 2x input. Cache reads = 0.1x input.
