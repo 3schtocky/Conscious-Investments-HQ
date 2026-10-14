@@ -113,7 +113,7 @@ async def _run_agent(agent: str, body: str, title: str | None) -> int:
     return 0 if t["status"] == "done" else 2
 
 
-def spend() -> int:
+def spend(*, by_task: bool = False, by_tier: bool = False, everything: bool = False, top: int = 15) -> int:
     from hq.config import DATA_DIR
     from hq.engine.ledger import Ledger
     from hq.store import Store
@@ -121,6 +121,25 @@ def spend() -> int:
     store = Store(DATA_DIR / "office.db")
     ledger = Ledger(store)
     day = ledger.today()
+    if by_tier:
+        from hq import cascade
+        scope = None if everything else day
+        r = cascade.by_tier(store, scope)
+        print(f"{'all days' if everything else day}: spend by model tier")
+        for name, t in sorted(r["tiers"].items()):
+            print(f"  {name:<10} {t['calls']:>4} calls  ${t['cost']:.2f}")
+        c = cascade.summary(store, scope)
+        print(f"  cascade: {c['haiku_first']} assignment(s) started on Haiku, {c['escalated']} escalated "
+              f"({c['escalation_rate']:.0%})" + (f"  reasons {c['reasons']}" if c["reasons"] else ""))
+        return 0
+    if by_task:
+        rows = store.spend_by_task(None if everything else day, top)
+        print(f"{'all days' if everything else day}: biggest tasks first (context = tokens read per call)")
+        for r in rows:
+            print(f"  #{r['task_id'] or '-':<4} {r['agent']:<16} {r['calls']:>3} calls  context {int(r['avg_context']):>7}"
+                  f"  out {r['output_tokens']:>6}  ${r['cost']:.2f}  {(r['title'] or '')[:42]}")
+        print(f"  total ${sum(r['cost'] for r in rows):.2f} over {len(rows)} task(s) shown")
+        return 0
     print(f"{day}: ${ledger.spent_today():.2f} of ${ledger.daily_cap:.2f}")
     for r in store.spend_breakdown(day):
         print(f"  {r['agent']:<18} {r['model']:<20} {r['calls']:>3} calls  in {r['input_tokens']:>8}"
@@ -183,7 +202,11 @@ def main() -> None:
     p_run.add_argument("agent", help="agent role id, e.g. er_lead (a nickname also works)")
     p_run.add_argument("task", help="what you want done")
     p_run.add_argument("--title")
-    sub.add_parser("spend", help="today's spend by agent and model")
+    p_spend = sub.add_parser("spend", help="today's spend by agent and model")
+    p_spend.add_argument("--by-task", action="store_true", help="biggest tasks first, with the context each call carried")
+    p_spend.add_argument("--by-tier", action="store_true", help="spend per model tier plus cascade escalation rate")
+    p_spend.add_argument("--all", action="store_true", help="with --by-task or --by-tier: every day, not just today")
+    p_spend.add_argument("--top", type=int, default=15, help="with --by-task: how many tasks to show")
     p_fa = sub.add_parser("final-audit", help="tie a ticker's deliverables to their sources (free, read-only)")
     p_fa.add_argument("ticker")
     sub.add_parser("captain-password", help="create the Captain's sign-in password for public mode")
@@ -232,7 +255,7 @@ def main() -> None:
     if args.cmd == "final-audit":
         sys.exit(final_audit(args.ticker))
     if args.cmd == "spend":
-        sys.exit(spend())
+        sys.exit(spend(by_task=args.by_task, by_tier=args.by_tier, everything=args.all, top=args.top))
     if args.cmd == "captain-password":
         sys.exit(captain_password())
     if args.cmd == "export-static":

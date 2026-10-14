@@ -208,6 +208,11 @@ class Store:
             cols = {r[1] for r in self._db.execute("PRAGMA table_info(chat)")}
             if "original" not in cols:   # the Captain's words before the tone rewrite
                 self._db.execute("ALTER TABLE chat ADD COLUMN original TEXT")
+            tcols = {r[1] for r in self._db.execute("PRAGMA table_info(tasks)")}
+            for col, ddl in (("attempt", "INTEGER NOT NULL DEFAULT 1"),   # cascade: 1 = Haiku, 2 = Sonnet polish
+                             ("escalated_from", "INTEGER"), ("escalation_reason", "TEXT")):
+                if col not in tcols:
+                    self._db.execute(f"ALTER TABLE tasks ADD COLUMN {col} {ddl}")
 
     def _exec(self, sql: str, args: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
@@ -219,12 +224,15 @@ class Store:
 
     # tasks -------------------------------------------------------------------------------
     def create_task(self, *, assignee: str, assigned_by: str, kind: str, title: str, body: str,
-                    parent_id: int | None = None, root_id: int | None = None) -> int:
+                    parent_id: int | None = None, root_id: int | None = None, attempt: int = 1,
+                    escalated_from: int | None = None, escalation_reason: str | None = None) -> int:
         now = time.time()
         cur = self._exec(
             "INSERT INTO tasks (created, updated, assignee, assigned_by, kind, parent_id, root_id,"
-            " title, body, status) VALUES (?,?,?,?,?,?,?,?,?, 'queued')",
-            (now, now, assignee, assigned_by, kind, parent_id, root_id, title, body),
+            " title, body, status, attempt, escalated_from, escalation_reason)"
+            " VALUES (?,?,?,?,?,?,?,?,?, 'queued', ?,?,?)",
+            (now, now, assignee, assigned_by, kind, parent_id, root_id, title, body,
+             attempt, escalated_from, escalation_reason),
         )
         task_id = cur.lastrowid
         if root_id is None:
@@ -391,6 +399,24 @@ class Store:
             " SUM(cost) AS cost FROM spend WHERE day=? GROUP BY agent, model ORDER BY cost DESC",
             (day,),
         )
+
+    def spend_by_task(self, day: str | None = None, limit: int = 20) -> list[dict]:
+        """Where the money went, task by task: calls, the average conversation each call carried
+        (what it paid to read), output tokens and cost. Biggest first."""
+        where, args = ("WHERE s.day=?", (day, limit)) if day else ("", (limit,))
+        return self._all(
+            "SELECT s.task_id, s.agent, t.title AS title, COUNT(*) AS calls,"
+            " (SUM(s.input_tokens) + SUM(s.cache_read_tokens) + SUM(s.cache_write_tokens)) / COUNT(*)"
+            " AS avg_context, SUM(s.output_tokens) AS output_tokens, SUM(s.cost) AS cost"
+            f" FROM spend s LEFT JOIN tasks t ON t.id = s.task_id {where}"
+            " GROUP BY s.task_id, s.agent ORDER BY cost DESC LIMIT ?", args)
+
+    def spend_by_root_model(self, day: str | None = None) -> list[dict]:
+        """Cost per assignment (root task) and model: the raw material for the by-tier view."""
+        where, args = ("WHERE day=?", (day,)) if day else ("", ())
+        return self._all(
+            "SELECT root_id, model, COUNT(*) AS calls, SUM(cost) AS cost FROM spend "
+            f"{where} GROUP BY root_id, model", args)
 
     def clear_spend(self) -> None:
         """Demo only: wipe recorded spend (the demo database is separate and disposable)."""
