@@ -178,21 +178,27 @@ def test_the_shipped_quant_kind_matches_model_work_only():
     assert k["lead"] == "quant_lead" and k["lead_review"] is True
     for yes in ("Build the META model", "Update the RMBS assumptions", "Re-run the valuation for EOSE"):
         assert re.search(k["match"], yes, re.IGNORECASE)
-    for no in ("How is Delta doing?", "What model should we use?"):
+    for no in ("How is Delta doing?", "What model should we use?", "Update me on the META model",
+               "Draft a note on the valuation"):
         assert not re.search(k["match"], no, re.IGNORECASE)
 
 
-async def test_a_failed_formula_check_counts_even_though_the_call_succeeded(office):
-    off, _, cfg = office
+async def test_a_failed_formula_check_counts_until_the_same_check_passes(office):
+    _, _, cfg = office
     cfg["kinds"]["model"] = {**_real_quant_kind(), "match": "model"}
-    tid = off.store.create_task(assignee="quant_associate", assigned_by="captain", kind="assignment",
-                                title="Model", body="x", cascade="model")
-    task = off.store.task(tid)
+    task = {"cascade": "model"}
     bad = '{"check": "Formula check FAILED:\\n- Outputs!B4 differs"}'
-    assert cascade.counts_as_failure(task, "build_model", bad, False)
-    assert not cascade.counts_as_failure(task, "build_model", '{"check": "Formula check PASSED"}', False)
-    assert not cascade.counts_as_failure(task, "read_file", bad, False)   # only the kind's gate tools
-    assert cascade.counts_as_failure(task, "read_file", "No file", True)
+    good = '{"check": "Formula check PASSED"}'
+    errs: list = []
+    cascade.record(errs, task, "build_model", bad, False)
+    cascade.record(errs, task, "build_model", bad, False)
+    assert len(errs) == 2
+    cascade.record(errs, task, "build_model", good, False)   # fixed on the third build
+    assert errs == []
+    cascade.record(errs, task, "read_file", "No file", True)   # not one of the kind's gate tools
+    assert errs == []
+    cascade.record(errs, task, "run_simulations", "crashed", True)
+    assert len(errs) == 1
 
 
 needs_meta = pytest.mark.skipif(not (coverage_dir("META") / "assumptions.yaml").exists(),

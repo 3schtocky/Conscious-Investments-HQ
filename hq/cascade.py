@@ -46,15 +46,20 @@ def settings(name: str | None) -> dict:
     return {**DEFAULTS, **(cfg.get("defaults") or {}), **((cfg.get("kinds") or {}).get(name) or {})}
 
 
-def counts_as_failure(task: dict, tool: str, text: str, is_error: bool) -> bool:
-    """Does this tool result count against the first pass? A raised refusal or failure always does;
-    a check that fails in plain words (Quant's "Formula check FAILED") counts when the kind lists
-    that wording in `fail_markers`."""
-    if is_error:
-        return True
-    gate_tools = settings(task["cascade"]).get("gate_tools") or [tool]
-    markers = settings(task["cascade"]).get("fail_markers") or []
-    return tool in gate_tools and any(m in text for m in markers)
+def record(errors: list[tuple[str, str]], task: dict, tool: str, text: str, is_error: bool) -> None:
+    """Note a tool result against a first pass. A raised refusal or failure counts; so does a check that
+    fails in plain words (Quant's "Formula check FAILED") when the kind lists that wording in
+    `fail_markers`. With `gate_tools` only those tools count. A later pass of the same check clears its
+    earlier plain-words failures: a fixed workbook is not a failure."""
+    k = settings(task.get("cascade"))
+    if k.get("gate_tools") and tool not in k["gate_tools"]:
+        return
+    markers = k.get("fail_markers") or []
+    failed = is_error or any(m in text for m in markers)
+    if failed:
+        errors.append((tool, text))
+    elif markers:
+        errors[:] = [e for e in errors if not (e[0] == tool and any(m in e[1] for m in markers))]
 
 
 def is_first_pass(task: dict) -> bool:
@@ -72,9 +77,7 @@ def review(office_, task: dict, outcome: dict, errors: list[tuple[str, str]]) ->
         return outcome["reason"] if outcome.get("reason") in GUARD_KINDS else None   # budget / API off: just wait
     if status != "done":
         return None
-    gate_tools = set(k.get("gate_tools") or [])
-    counted = [e for e in errors if not gate_tools or e[0] in gate_tools]
-    if len(counted) >= k["gate_fails"]:
+    if len(errors) >= k["gate_fails"]:
         return "gate_fails"
     if office_.store.task_flags(task["id"]):
         return "audit_flag"

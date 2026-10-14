@@ -26,7 +26,7 @@ cascade:
   kinds:
     quant_model:             # Delta builds the workbook; Sigma reviews, signs off and files the approval card
       lead: quant_lead
-      match: '\b(build|rebuild|update|refresh|draft|re-?run|create)\b.{0,60}\b(model|assumptions|valuation)'
+      match: '\b(build|rebuild|update|refresh|re-?run|create)\b(?!\s+(me|us)\b).{0,60}\b(model|assumptions|valuation)'
       lead_review: true      # associates cannot file approval cards, so the lead always finishes
       gate_tools: [draft_assumptions, build_model, run_simulations, save_model_brief]
       fail_markers: ["Formula check FAILED"]
