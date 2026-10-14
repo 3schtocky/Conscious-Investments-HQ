@@ -81,7 +81,7 @@ def review(office_, task: dict, outcome: dict, errors: list[tuple[str, str]]) ->
         return None
     if len(errors) >= k["gate_fails"]:
         return "gate_fails"
-    if office_.store.task_flags(task["id"]):
+    if office_.store.task_flags(task["id"], tuple(k.get("escalate_on") or ())):
         return "audit_flag"
     return LEAD_REVIEW if k.get("lead_review") else None
 

@@ -315,14 +315,16 @@ def test_the_shipped_screening_kind_takes_single_name_pitch_jobs_only():
     import re
     k = _real_kind("screen_pitch")
     assert k["lead"] == "screen_lead" and k["match_in"] == "title" and not k.get("lead_review")
-    for yes in ("Fill the pitch for EOSE", "Dig the catalysts for RMBS", "Pitch memo for MU"):
+    for yes in ("Fill the pitch for EOSE", "Dig the catalysts for RMBS", "Pitch memo for MU",
+                "Fill the pitch for ENCORE", "Dig catalysts for SCORE"):   # tickers holding 'core' stay in
         assert re.search(k["match"], yes, re.IGNORECASE)
     for no in ("Run the gem hunt and pitch the top five", "Shortlist five names", "Write the AMD memo",
-               "Pitch the core screen to Stott", "Initiate coverage with a pitch", "Add it to the watchlist"):
+               "Pitch the core screen to Stott", "Initiate coverage with a pitch", "Add it to the watchlist",
+               "Pitch five names", "Pitch the top ideas to Stott", "Pitch deck for 3 names"):
         assert not re.search(k["match"], no, re.IGNORECASE)
 
 
-CLEAN_PITCH = "# Pitch: ZZZZ\\nRevenue grew 40% in FY24 [S1]. Backlog doubled [S2]."
+CLEAN_PITCH = "# Pitch: ZZZZ\nRevenue grew 40% in FY24 [S1]. Backlog doubled [S2]."
 
 
 async def test_pip_fills_a_clean_pitch_without_waking_scout(office, erb):
@@ -342,7 +344,7 @@ async def test_a_pitch_that_states_a_price_target_goes_to_scout(office, erb):
     cfg["kinds"]["pitch"] = _real_kind("screen_pitch")
     llm.script("screen_associate",
                tool_turn(("write_file", {"ticker": "ZZZZ", "path": "pitch.md",
-                                         "content": CLEAN_PITCH + "\\nOur price target is $64."})),
+                                         "content": CLEAN_PITCH + "\nOur price target is $64."})),
                tool_turn(("submit_result", DONE)))
     llm.script("screen_lead", text_turn("Cut the target, kept the evidence."))
     tid = off.assign("screen_lead", "Fill the pitch for ZZZZ")
@@ -350,3 +352,66 @@ async def test_a_pitch_that_states_a_price_target_goes_to_scout(office, erb):
     p = polish_of(off, tid)
     assert p["assignee"] == "screen_lead" and p["escalation_reason"] == "audit_flag"
     assert tid not in off.reported
+
+
+def test_the_shipped_client_relations_kinds_are_narrow_and_always_finish_with_harbor():
+    import re
+    news, mail = _real_kind("cr_newsletter"), _real_kind("cr_outreach")
+    for k in (news, mail):
+        assert k["lead"] == "cr_lead" and k["lead_review"] is True and k["match_in"] == "title"
+    for yes in ("Draft this week's newsletter", "Write the weekly note"):
+        assert re.search(news["match"], yes, re.IGNORECASE)
+    for no in ("Fix the issue with the outbox", "Build the slidedeck newsletter", "Draft an outreach email to Jo",
+               "Write the RMBS memo"):
+        assert not re.search(news["match"], no, re.IGNORECASE)
+    for yes in ("Draft an outreach email to Jo", "Email Jo at Acme about the note"):
+        assert re.search(mail["match"], yes, re.IGNORECASE)
+    for no in ("Suppress this contact: jo@x.com", "Plan the outreach approach", "Unsubscribe Jo from outreach",
+               "Draft this week's newsletter", "Build the slidedeck"):
+        assert not re.search(mail["match"], no, re.IGNORECASE)
+
+
+NEWS = {"title": "Week one", "x_post": "New note is up.", "linkedin_post": "Our new weekly note is up.",
+        "body": "## What we are watching\nWe are tracking how the market digests the quarter."}
+
+
+async def test_wren_fixes_a_refused_draft_and_harbor_still_finalizes(office):
+    off, llm, cfg = office
+    cfg["kinds"]["news"] = {**_real_kind("cr_newsletter"), "match": "newsletter"}
+    bad = {**NEWS, "body": NEWS["body"] + "\nThis stock is guaranteed to double, so buy now."}
+    llm.script("cr_associate", tool_turn(("save_newsletter", bad)),
+               tool_turn(("save_newsletter", NEWS)),
+               tool_turn(("submit_result", {**DONE, "findings": "Issue saved, gate clean."})))
+    llm.script("cr_lead", text_turn("Read it, edited it, finalizing next."))
+    tid = off.assign("cr_lead", "Draft this week's newsletter")
+    await off.idle()
+    p = polish_of(off, tid)
+    assert off.store.task(tid)["assignee"] == "cr_associate" and "Fix every error" in str(
+        off.store.events_where(task_ids=[tid], types=["tool_result"], limit=10))
+    assert p["assignee"] == "cr_lead" and p["escalation_reason"] == "lead_review"   # fixed, so not a failure
+    assert "Issue saved, gate clean." in p["body"]
+
+
+async def test_a_draft_that_never_clears_the_gate_is_a_real_escalation(office):
+    off, llm, cfg = office
+    cfg["kinds"]["news"] = {**_real_kind("cr_newsletter"), "match": "newsletter"}
+    bad = {**NEWS, "body": NEWS["body"] + "\nThis stock is guaranteed to double, so buy now."}
+    llm.script("cr_associate", tool_turn(("save_newsletter", bad)), tool_turn(("save_newsletter", bad)),
+               text_turn("The gate keeps refusing my draft."))
+    llm.script("cr_lead", text_turn("Taking it from here."))
+    tid = off.assign("cr_lead", "Draft this week's newsletter")
+    await off.idle()
+    assert polish_of(off, tid)["escalation_reason"] == "gate_fails"
+
+
+async def test_a_pitch_left_with_verify_markers_goes_to_scout(office, erb):
+    off, llm, cfg = office
+    cfg["kinds"]["pitch"] = _real_kind("screen_pitch")
+    llm.script("screen_associate",
+               tool_turn(("write_file", {"ticker": "ZZZZ", "path": "pitch.md",
+                                         "content": CLEAN_PITCH + "\nBacklog [VERIFY: source]."})),
+               tool_turn(("submit_result", DONE)))
+    llm.script("screen_lead", text_turn("Filled the open spots."))
+    tid = off.assign("screen_lead", "Fill the pitch for ZZZZ")
+    await off.idle()
+    assert polish_of(off, tid)["escalation_reason"] == "audit_flag"

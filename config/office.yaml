@@ -36,11 +36,26 @@ cascade:
       match_in: title        # a memo's body mentions the facts pack as a step, so only the title decides
       match: '^(?!.*(memo|report|initiat|thesis|brief|model|coverage|why|what|how)).*\b(refresh|update|rebuild|re-?run|pull)\w*\b.*\b(facts?\s+pack|peer\s+(table|comparison|multiples)|source\s+list|sources)\b'
       gate_tools: [erb_facts, erb_peers]
-    screen_pitch:            # Pip digs and fills one name's pitch; Tally's no-valuation check is the gate, Scout polishes
+    screen_pitch:            # Pip digs and fills one name's pitch; Tally's target/rating check is the gate, Scout polishes
       lead: screen_lead
       match_in: title        # a gem hunt is judgment end to end, so it stays with Scout
-      match: '^(?!.*(gem hunt|gems?\b|core|screen|shortlist|watchlist|report|initiat|model)).*\b(pitch|catalysts?|dig)\b'
-      gate_tools: [pitch_memo, read_screen]
+      match: '^(?!.*(\bgem hunt|\bgems?\b|\bcore\b|\bscreens?\b|shortlist|watchlist|report|initiat|\bmodels?\b|\bnames\b|\btop\b|\b(five|three|ten|all|each|every|several)\b|\d)).*\b(pitch|catalysts?|dig)\b'
+      gate_tools: [pitch_memo, read_screen, write_file]
+      escalate_on: [verify_left]   # a pitch with [VERIFY] still in it is unfinished, though Tally only notes it
+    cr_newsletter:           # Wren drafts the issue behind the code gate; Harbor always edits, finalizes and files the card
+      lead: cr_lead
+      match_in: title
+      match: '^(?!.*(outreach|email|slidedeck|deck|memo|initiat)).*\b(newsletters?|weekly\s+note|this\s+week''?s\s+issue)\b'
+      lead_review: true      # finalize_newsletter and the approval card are lead-only
+      gate_tools: [save_newsletter]
+      fail_markers: ["Fix every error and save again."]
+    cr_outreach:             # Wren drafts a one-to-one email behind check_email; Harbor finalizes
+      lead: cr_lead
+      match_in: title
+      match: '^(?!.*(newsletter|slidedeck|deck|suppress|opt-?out|unsubscribe|approach|strategy|plan)).*\b(outreach|emails?)\b'
+      lead_review: true
+      gate_tools: [save_outreach]
+      fail_markers: ["Fix every error and save again."]
 
 # USD per million tokens (Anthropic first-party rates, checked 2026-09-29).
 # Cache writes: 5-minute TTL = 1.25x input, 1-hour TTL = 2x input. Cache reads = 0.1x input.

@@ -513,9 +513,12 @@ class Store:
             (time.time(), agent, task_id, root_id, rule, severity, subject, detail))
         return cur.lastrowid, True
 
-    def task_flags(self, task_id: int) -> list[dict]:
-        return self._all("SELECT rule, subject, detail FROM audit_findings WHERE task_id=? AND severity='flag'",
-                         (task_id,))
+    def task_flags(self, task_id: int, also_rules: tuple[str, ...] = ()) -> list[dict]:
+        """A task's flags, plus findings of any severity under `also_rules` (a note that should still escalate)."""
+        marks = ",".join("?" * len(also_rules))
+        return self._all("SELECT rule, subject, detail FROM audit_findings WHERE task_id=? AND "
+                         f"(severity='flag'{f' OR rule IN ({marks})' if also_rules else ''})",
+                         (task_id, *also_rules))
 
     def count_findings(self, status: str, severity: str) -> int:
         return self._all("SELECT COUNT(*) AS n FROM audit_findings WHERE status=? AND severity=?",
