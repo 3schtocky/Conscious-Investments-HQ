@@ -12,6 +12,17 @@ models:
     thinking_budget_tokens: 2048   # Haiku 4.5 uses a thinking token budget, not effort (0 = off)
     max_tokens: 16000
 
+# Model cascade: the cheap tier (the wing's associate) takes an assignment first; the lead only steps in when the
+# first pass trips a trigger, and polishes the draft rather than redoing it. Off until a wing is switched on.
+cascade:
+  enabled: false
+  defaults:
+    gate_fails: 2            # refused or failed tool calls (code gates, bad paths) before the lead steps in
+    attempt_cap_usd: 0.40    # the first pass's own $ cap; hitting it escalates instead of pausing
+    max_turns: 20
+    lead_review: false       # true: the lead always finishes the work (approval cards, sign-off) after a clean pass
+  kinds: {}                  # name: {lead: <role id>, match: <regex on title+body>, ...overrides}
+
 # USD per million tokens (Anthropic first-party rates, checked 2026-09-29).
 # Cache writes: 5-minute TTL = 1.25x input, 1-hour TTL = 2x input. Cache reads = 0.1x input.
 pricing:

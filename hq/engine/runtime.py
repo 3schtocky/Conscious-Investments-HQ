@@ -12,7 +12,7 @@ import logging
 import re
 from pathlib import Path
 
-from hq import tenant
+from hq import cascade, tenant
 from hq.config import DATA_DIR, ROOT, office, roster
 from hq.engine.agent import Agent
 from hq.engine.comms import Comms, is_delegate
@@ -125,7 +125,12 @@ class Office:
                     "When done, call submit_result.")
         if task["kind"] == "message":
             return task["body"]
-        return f"New assignment from {who}: **{task['title']}**\n\n{task['body']}"
+        text = f"New assignment from {who}: **{task['title']}**\n\n{task['body']}"
+        if cascade.is_first_pass(task):
+            text += ("\n\nYou have the first pass at this. Do the work and call submit_result with your findings."
+                     " If the checks refuse your work or you cannot finish it, say so plainly: your lead"
+                     " polishes the draft from there.")
+        return text
 
     # scheduling -------------------------------------------------------------------------
     def assign(self, agent_id: str, body: str, *, title: str | None = None,
@@ -134,10 +139,16 @@ class Office:
         new task part of the same piece of work, so it shares that work's $ cap."""
         agent_id = self.resolve(agent_id)
         title = title or _title(body)
+        first_pass = None   # cascade: the wing's associate goes first, the lead polishes if it trips a trigger
+        hit = cascade.kind_for(agent_id, title, body) if parent is None else None
+        if hit and (d := self.delegate_of(self.agents[agent_id].wing)):
+            first_pass = (hit[0], d.id)
+        runner = first_pass[1] if first_pass else agent_id
         task_id = self.store.create_task(
-            assignee=agent_id, assigned_by=by, kind="assignment", title=title, body=body,
+            assignee=runner, assigned_by=by, kind="assignment", title=title, body=body,
             parent_id=parent["id"] if parent else None,
-            root_id=parent["root_id"] if parent else None)
+            root_id=parent["root_id"] if parent else None,
+            cascade=first_pass[0] if first_pass else None)
         if by == CAPTAIN:
             self.conversations.record_message(CAPTAIN, [agent_id], body)
             self.store.add_chat(channel=f"dm:{CAPTAIN}|{agent_id}", sender=CAPTAIN,
@@ -150,9 +161,9 @@ class Office:
             self.store.add_chat(channel=channel, sender=by, recipients=[agent_id], text=text,
                                 task_id=task_id)
             self.bus.publish("chat", by, task_id, channel=channel, recipients=[agent_id], text=text)
-        self.bus.publish("task_created", agent_id, task_id, title=title, kind="assignment",
+        self.bus.publish("task_created", runner, task_id, title=title, kind="assignment",
                          assigned_by=by)
-        self._schedule(agent_id, task_id)
+        self._schedule(runner, task_id)
         return task_id
 
     async def as_tenant(self, coro):

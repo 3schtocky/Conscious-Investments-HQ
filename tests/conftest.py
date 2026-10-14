@@ -105,7 +105,7 @@ def _never_spend(monkeypatch, _pinned_config):
     safe = copy.deepcopy(real)
     safe.setdefault("api", {})["enabled"] = False
     monkeypatch.setattr(config, "office", lambda: safe)
-    for mod in ("hq.engine.ledger", "hq.engine.agent", "hq.engine.runtime", "hq.engine.guards"):
+    for mod in ("hq.engine.ledger", "hq.engine.agent", "hq.engine.runtime", "hq.engine.guards", "hq.cascade"):
         monkeypatch.setattr(f"{mod}.office", lambda: safe)
     # No test reaches Yahoo either: quotes come back empty unless a test supplies its own.
     monkeypatch.setattr("hq.quotes._download", lambda tickers: dict.fromkeys(tickers))
@@ -123,14 +123,21 @@ def make_office(monkeypatch, tmp_path):
     patched = copy.deepcopy(config.office())   # already the API-off copy from _never_spend
     patched["pricing"]["fake"] = {"input": 2.0, "output": 10.0, "cache_read": 0.2,
                                   "cache_write_5m": 2.5, "cache_write_1h": 4.0}
+    # Two-model pair at the real price gap, for cascade tests (`tiered=True` in _make).
+    patched["pricing"]["fake-sonnet"] = dict(patched["pricing"]["fake"])
+    patched["pricing"]["fake-haiku"] = {"input": 1.0, "output": 5.0, "cache_read": 0.1,
+                                        "cache_write_5m": 1.25, "cache_write_1h": 2.0}
     for tier in patched["models"].values():
         tier["id"] = "fake"
     monkeypatch.setattr(config, "office", lambda: patched)
     for mod in ("hq.engine.ledger", "hq.engine.agent", "hq.engine.runtime",
-                "hq.engine.guards"):
+                "hq.engine.guards", "hq.cascade"):
         monkeypatch.setattr(f"{mod}.office", lambda: patched)
 
-    def _make(daily_cap: float = 10.0, audit_reserve: float = 0.25):
+    def _make(daily_cap: float = 10.0, audit_reserve: float = 0.25, tiered: bool = False):
+        if tiered:
+            patched["models"]["lead"]["id"] = "fake-sonnet"
+            patched["models"]["associate"]["id"] = "fake-haiku"
         store = Store(":memory:")
         ref: dict = {}
         llm = FakeLLM(ref)

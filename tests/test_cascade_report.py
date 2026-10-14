@@ -19,14 +19,14 @@ def store(tmp_path):
         s.add_spend(day="2026-10-14", agent=agent, task_id=task, root_id=task, model=model,
                     usage=USAGE, cost=cost, request_id=None)
 
-    ok = s.create_task(assignee="quant_associate", assigned_by="captain", kind="assignment", title="Model A", body="x")
+    ok = s.create_task(assignee="quant_associate", assigned_by="captain", kind="assignment", title="Model A", body="x", cascade="q")
     s.set_task_status(ok, "done")
     spend("quant_associate", ok, HAIKU, 0.10)
-    hard = s.create_task(assignee="quant_associate", assigned_by="captain", kind="assignment", title="Model B", body="x")
+    hard = s.create_task(assignee="quant_associate", assigned_by="captain", kind="assignment", title="Model B", body="x", cascade="q")
     s.set_task_status(hard, "done")
     spend("quant_associate", hard, HAIKU, 0.20)
-    s.create_task(assignee="quant_lead", assigned_by="office", kind="polish", title="Polish B", body="x",
-                  root_id=hard, attempt=2, escalated_from=hard, escalation_reason="gate_fails")
+    s.create_task(assignee="quant_lead", assigned_by="office", kind="assignment", title="Polish B", body="x",
+                  root_id=hard, attempt=2, cascade="q", escalated_from=hard, escalation_reason="gate_fails")
     spend("quant_lead", hard, SONNET, 0.30)
     return s
 

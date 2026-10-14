@@ -15,6 +15,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from hq import cascade
 from hq.config import ROOT, mission, model_config, office
 from hq.departments import brief as department_brief
 from hq.engine.guards import GuardBlock, GuardTripped, TaskGuard
@@ -49,6 +50,7 @@ class Agent:
         self.id: str = entry["id"]
         self.update_profile(entry)
         self.desk = asyncio.Lock()          # one task at a time
+        self.cascade_errors: dict[int, list[tuple[str, str]]] = {}   # first pass: task id -> failed tool calls
         self.gate = asyncio.Event()         # cleared = paused
         self.gate.set()
         self.inbox: list[str] = []
@@ -133,7 +135,12 @@ class Agent:
         async with self.desk:
             self.current_task = task_id
             try:
-                return await self._run(task_id)
+                outcome = await self._run(task_id)
+                task = self.office.store.task(task_id)
+                if cascade.is_first_pass(task) and outcome.get("reason") != "already finished":
+                    outcome = await cascade.after_first_pass(
+                        self.office, task, outcome, self.cascade_errors.pop(task_id, []))
+                return outcome
             finally:
                 self.current_task = None
                 self.guard = None
@@ -146,6 +153,12 @@ class Agent:
 
     def _task_guard(self, task: dict, messages: list[dict]) -> TaskGuard:
         cfg = office()
+        if cascade.is_first_pass(task):   # the cheap first pass has its own small allowance
+            k = cascade.settings(task["cascade"])
+            guard = TaskGuard(max_turns=k["max_turns"], cost_cap=k["attempt_cap_usd"],
+                              max_context_tokens=cfg["delegation"]["max_context_tokens"])
+            guard.turns = sum(1 for m in messages if m["role"] == "assistant")
+            return guard
         if task["kind"] == "delegation":
             d = cfg["delegation"]
             guard = TaskGuard(max_turns=d["max_turns"], cost_cap=d["per_delegation_cap_usd"],
@@ -270,7 +283,8 @@ class Agent:
             return {"status": "paused", "reason": "api_off", "detail": str(e)}
         except GuardTripped as g:
             store.set_task_status(task_id, "paused", reason=f"{g.kind}: {g.detail}")
-            office_.raise_incident(self.id, task_id, g.kind, g.detail)
+            if not cascade.is_first_pass(task):   # a first pass hands up to its lead instead
+                office_.raise_incident(self.id, task_id, g.kind, g.detail)
             bus.publish("task_paused", self.id, task_id, reason=g.kind, detail=g.detail)
             return {"status": "paused", "reason": g.kind, "detail": g.detail}
         except asyncio.CancelledError:
@@ -389,6 +403,8 @@ class Agent:
                 text = f"The tool failed: {type(e).__name__}: {e}"[:1500]
         bus.publish("tool_result", self.id, ctx.task["id"], tool=name, is_error=is_error,
                     text=text[:2000])
+        if is_error and not ctx.hold_turn and cascade.is_first_pass(ctx.task):
+            self.cascade_errors.setdefault(ctx.task["id"], []).append((str(name), text))
         result = {"type": "tool_result", "tool_use_id": block["id"], "content": text}
         if is_error:
             result["is_error"] = True

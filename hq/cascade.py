@@ -1,11 +1,138 @@
-"""Cascade reporting: what each tier costs and how often the cheap model's first try had to be
-polished by the expensive one. Read-only; the engine's escalation lives elsewhere."""
+"""Model cascade: the wing's associate (Haiku) takes an assignment first; the lead (Sonnet) only
+steps in when the first pass trips a code trigger, and polishes the draft instead of redoing it.
+
+Triggers are plain code: failed or refused tool calls (the gates), a Tally flag, a guard trip
+(turns, $ cap, context, loop), an error or a refusal. The associate's own `confidence` is
+recorded but never decides. Off unless `cascade.enabled` and a kind matches (config/office.yaml).
+Also the read-only reports behind `hq spend --by-tier`.
+"""
 
 from __future__ import annotations
 
-from hq.config import model_config
+import json
+import re
+
+from hq.config import model_config, office
+
+GUARD_KINDS = {"turn_cap", "task_cost_cap", "context_cap", "tool_loop"}
+LEAD_REVIEW = "lead_review"   # a clean pass the lead still finishes: not counted as an escalation
 
 
+# configuration -------------------------------------------------------------------------------
+def kind_for(agent_id: str, title: str, body: str) -> tuple[str, dict] | None:
+    """The cascade kind (name, settings) an assignment to `agent_id` falls under, if any."""
+    cfg = office().get("cascade") or {}
+    if not cfg.get("enabled"):
+        return None
+    for name, k in (cfg.get("kinds") or {}).items():
+        if k.get("lead") == agent_id and (not k.get("match") or re.search(k["match"], f"{title}\n{body}", re.IGNORECASE)):
+            return name, {**(cfg.get("defaults") or {}), **k}
+    return None
+
+
+def settings(name: str | None) -> dict:
+    cfg = office().get("cascade") or {}
+    return {**(cfg.get("defaults") or {}), **((cfg.get("kinds") or {}).get(name) or {})}
+
+
+def is_first_pass(task: dict) -> bool:
+    return bool(task.get("cascade")) and task.get("attempt") == 1
+
+
+# triggers -------------------------------------------------------------------------------------
+def review(office_, task: dict, outcome: dict, errors: list[tuple[str, str]]) -> str | None:
+    """Why this first pass needs the lead, or None to accept it. `errors` are its failed tool calls."""
+    k = settings(task["cascade"])
+    status = outcome.get("status")
+    if status in ("error", "declined"):
+        return status
+    if status == "paused":
+        return outcome["reason"] if outcome.get("reason") in GUARD_KINDS else None   # budget / API off: just wait
+    if status != "done":
+        return None
+    gate_tools = set(k.get("gate_tools") or [])
+    counted = [e for e in errors if not gate_tools or e[0] in gate_tools]
+    if len(counted) >= k["gate_fails"]:
+        return "gate_fails"
+    if office_.store.task_flags(task["id"]):
+        return "audit_flag"
+    return LEAD_REVIEW if k.get("lead_review") else None
+
+
+def draft_text(result) -> str:
+    """The first pass's work product as the lead (or the Captain) should read it."""
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except ValueError:
+            return result
+    if not isinstance(result, dict):
+        return str(result or "")
+    parts = [str(result.get("findings") or "").strip()]
+    figs = result.get("figures") or []
+    if figs:
+        parts.append("Figures:\n" + "\n".join(
+            f"- {f.get('label')}: {f.get('value')}{(' ' + f['unit']) if f.get('unit') else ''}"
+            f" ({f.get('period') or 'n/a'}; {f.get('source')})" for f in figs))
+    if result.get("open_questions"):
+        parts.append("Open questions:\n" + "\n".join(f"- {q}" for q in result["open_questions"]))
+    if result.get("notes"):
+        parts.append(str(result["notes"]))
+    return "\n\n".join(p for p in parts if p)
+
+
+def polish_body(task: dict, reason: str, outcome: dict, errors: list[tuple[str, str]]) -> str:
+    """The lead's brief: the original request, the draft, and exactly what stopped the first pass."""
+    stuck = {"gate_fails": "its tool calls were refused or failed too often", "audit_flag": "Tally flagged its work",
+             "turn_cap": "it ran out of turns", "task_cost_cap": "it reached its first-pass $ cap",
+             "context_cap": "its conversation grew too large", "tool_loop": "it repeated the same call",
+             "error": "it hit an error", "declined": "the model declined",
+             LEAD_REVIEW: "this kind of work is always finished by the lead"}[reason]
+    draft = draft_text(outcome.get("result")) if outcome.get("status") == "done" else ""
+    out = [f"Polish pass. Your wing's associate took the first pass at this and handed it up because {stuck}.",
+           ("Fix only what is wrong: keep what is sound, do not start over, check every figure against its source,"
+            " then finish the assignment as you normally would (report, approval, sign-off)."),
+           f"Original assignment: **{task['title']}**\n\n{task['body']}"]
+    if draft:
+        out.append(f"The first pass's draft:\n\n{draft}")
+    elif outcome.get("detail"):
+        out.append(f"Where it stopped: {outcome['detail']}")
+    if errors:
+        out.append("What was refused or failed (latest first):\n" + "\n".join(
+            f"- {name}: {text[:300]}" for name, text in reversed(errors[-5:])))
+    out.append("The first pass's files and notes are in the wing's desk and folders: read them with your tools.")
+    return "\n\n".join(out)
+
+
+def escalate(office_, task: dict, reason: str, outcome: dict, errors: list[tuple[str, str]]) -> int:
+    """Close the first pass and hand its draft to the lead as a fresh task (never a mid-conversation
+    model swap: Sonnet's thinking blocks and the cache prefix belong to one model)."""
+    k = settings(task["cascade"])
+    store = office_.store
+    store.set_task_status(task["id"], "done", reason=f"escalated: {reason}")
+    new_id = store.create_task(
+        assignee=k["lead"], assigned_by=task["assigned_by"], kind="assignment", title=task["title"],
+        body=polish_body(task, reason, outcome, errors), parent_id=task["id"], root_id=task["root_id"],
+        attempt=2, escalated_from=task["id"], escalation_reason=reason, cascade=task["cascade"])
+    office_.bus.publish("task_created", k["lead"], new_id, title=task["title"], kind="assignment",
+                        assigned_by=task["assigned_by"])
+    office_.bus.publish("cascade_escalated", task["assignee"], task["id"], to=k["lead"], reason=reason, task=new_id)
+    office_._schedule(k["lead"], new_id)
+    return new_id
+
+
+async def after_first_pass(office_, task: dict, outcome: dict, errors: list[tuple[str, str]]) -> dict:
+    """Called when a first pass ends: hand it up, or accept it and tell the Captain."""
+    reason = review(office_, task, outcome, errors)
+    if reason:
+        escalate(office_, task, reason, outcome, errors)
+        return {**outcome, "escalated": reason}
+    if outcome.get("status") == "done" and task["assigned_by"] == "captain" and task["id"] not in office_.reported:
+        await office_.report_to_captain(task["assignee"], draft_text(outcome.get("result")), task_id=task["id"])
+    return outcome
+
+
+# reports (read-only) --------------------------------------------------------------------------
 def tier_of(model: str) -> str:
     return model_config(model)[0]
 
@@ -24,33 +151,22 @@ def by_tier(store, day: str | None = None) -> dict:
 
 
 def summary(store, day: str | None = None) -> dict:
-    """Cascade health over assignments that ran Haiku first (attempt 1 with a lead-tier polish
-    behind it is an escalation). Returns counts and the share that escalated."""
+    """Cascade health: assignments that started on the cheap tier, how many the lead had to take
+    over (a polish task points back at its first pass), and why. `lead_review` hand-ups are
+    designed in, so they are counted apart from escalations."""
     tasks = store.tasks()
     if day:   # tasks created that local day, matching the ledger's `day` column
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
-        from hq.config import office
         tz = ZoneInfo(office()["budget"]["timezone"])
         tasks = [t for t in tasks if datetime.fromtimestamp(t["created"], tz).strftime("%Y-%m-%d") == day]
-    tiers = _agent_tiers()
-    started = [t for t in tasks if t["kind"] != "polish" and t["attempt"] == 1 and t["root_id"] == t["id"]
-               and t["assignee"] != "chief_of_staff"   # Juno's routing is Haiku by design
-               and tiers.get(t["assignee"], "lead") == "associate"]
-    polished = {t["escalated_from"] for t in tasks if t["kind"] == "polish"}
-    done = [t for t in started if t["status"] == "done"]
-    escalated = [t for t in started if t["id"] in polished]
+    started = [t for t in tasks if t["cascade"] and t["attempt"] == 1]
+    handed = {t["escalated_from"]: t["escalation_reason"] for t in tasks if t["attempt"] == 2 and t["escalated_from"]}
     reasons: dict[str, int] = {}
-    for t in tasks:
-        if t["kind"] == "polish" and t["escalation_reason"]:
-            reasons[t["escalation_reason"]] = reasons.get(t["escalation_reason"], 0) + 1
+    for r in handed.values():
+        reasons[r] = reasons.get(r, 0) + 1
+    escalated = [t for t in started if handed.get(t["id"]) not in (None, LEAD_REVIEW)]
     n = len(started)
-    return {"haiku_first": n, "finished_on_haiku": len(done) - len([t for t in done if t in escalated]),
-            "escalated": len(escalated), "escalation_rate": (len(escalated) / n) if n else 0.0,
-            "reasons": reasons}
-
-
-def _agent_tiers() -> dict[str, str]:
-    from hq.config import roster
-    return {a["id"]: model_config(a.get("model", "lead"))[0] for a in roster().get("agents", [])}
+    return {"haiku_first": n, "finished_on_haiku": sum(1 for t in started if t["id"] not in handed and t["status"] == "done"),
+            "escalated": len(escalated), "escalation_rate": (len(escalated) / n) if n else 0.0, "reasons": reasons}

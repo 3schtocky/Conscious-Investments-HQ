@@ -210,7 +210,8 @@ class Store:
                 self._db.execute("ALTER TABLE chat ADD COLUMN original TEXT")
             tcols = {r[1] for r in self._db.execute("PRAGMA table_info(tasks)")}
             for col, ddl in (("attempt", "INTEGER NOT NULL DEFAULT 1"),   # cascade: 1 = Haiku, 2 = Sonnet polish
-                             ("escalated_from", "INTEGER"), ("escalation_reason", "TEXT")):
+                             ("escalated_from", "INTEGER"), ("escalation_reason", "TEXT"),
+                             ("cascade", "TEXT")):   # cascade kind a task was started under
                 if col not in tcols:
                     self._db.execute(f"ALTER TABLE tasks ADD COLUMN {col} {ddl}")
 
@@ -225,14 +226,15 @@ class Store:
     # tasks -------------------------------------------------------------------------------
     def create_task(self, *, assignee: str, assigned_by: str, kind: str, title: str, body: str,
                     parent_id: int | None = None, root_id: int | None = None, attempt: int = 1,
-                    escalated_from: int | None = None, escalation_reason: str | None = None) -> int:
+                    escalated_from: int | None = None, escalation_reason: str | None = None,
+                    cascade: str | None = None) -> int:
         now = time.time()
         cur = self._exec(
             "INSERT INTO tasks (created, updated, assignee, assigned_by, kind, parent_id, root_id,"
-            " title, body, status, attempt, escalated_from, escalation_reason)"
-            " VALUES (?,?,?,?,?,?,?,?,?, 'queued', ?,?,?)",
+            " title, body, status, attempt, escalated_from, escalation_reason, cascade)"
+            " VALUES (?,?,?,?,?,?,?,?,?, 'queued', ?,?,?,?)",
             (now, now, assignee, assigned_by, kind, parent_id, root_id, title, body,
-             attempt, escalated_from, escalation_reason),
+             attempt, escalated_from, escalation_reason, cascade),
         )
         task_id = cur.lastrowid
         if root_id is None:
@@ -510,6 +512,10 @@ class Store:
             " detail, status) VALUES (?,?,?,?,?,?,?,?, 'open')",
             (time.time(), agent, task_id, root_id, rule, severity, subject, detail))
         return cur.lastrowid, True
+
+    def task_flags(self, task_id: int) -> list[dict]:
+        return self._all("SELECT rule, subject, detail FROM audit_findings WHERE task_id=? AND severity='flag'",
+                         (task_id,))
 
     def count_findings(self, status: str, severity: str) -> int:
         return self._all("SELECT COUNT(*) AS n FROM audit_findings WHERE status=? AND severity=?",
